@@ -5,5 +5,5 @@ use clap::{Parser, Subcommand};
 
 #[derive(Debug,Parser)]
 pub struct Args{
-	input: Vec<String>
+	pub input: Vec<String>
 }
