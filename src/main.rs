@@ -34,7 +34,7 @@ async fn test_request_to_openai(req: &OpenAIRequest,api_key:&str) -> anyhow::Res
    
     let output = client
         .post("https://api.openai.com/v1/chat/completions")
-        .timeout(Duration::from_secs(4))
+        .timeout(Duration::from_secs(40))
         .headers(headers)
         .json(req)
         .send()

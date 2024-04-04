@@ -1,7 +1,13 @@
 [package]
 name = "clai"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
+email = "sascha.smolkov@gmail.com"
+authors = ["Aleksndr Smolkov"]
+description = "Command line ai assistent"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/smolkov/clai"
+keywords = ["ai", "cli", "chatbot"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -12,3 +18,4 @@ reqwest = { version = "0.12", features = ["json"] }
 tokio = { version = "1.37.0", features = ["full"] }
 serde_json = "1.0.115"
 serde = { version = "1.0.197", features = ["derive"] }
+console = "0.15.8"

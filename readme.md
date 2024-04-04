@@ -1,4 +1,3 @@
 # `clai`
 
-Your command line AI.
-
+Your command line AI assistant
