@@ -12,7 +12,6 @@ async fn main() -> anyhow::Result<()> {
 
     let args = Args::parse();
     let question = args.input.join(" ");
-    println!("user:{}",question);
     let message = OpenAIRequest{
         model: "gpt-3.5-turbo".to_owned(),
         messages:vec![Message{ role: "user".to_owned(), content:question}],
