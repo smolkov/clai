@@ -1,6 +1,6 @@
 [package]
 name = "clai"
-version = "0.1.1"
+version = "0.1.5"
 edition = "2021"
 email = "sascha.smolkov@gmail.com"
 authors = ["Aleksndr Smolkov"]

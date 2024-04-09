@@ -1,5 +1,4 @@
 use anyhow::Result;
-use std::path::PathBuf;
 use tokio::fs;
 
 use crate::data::Message;
@@ -10,10 +9,10 @@ pub struct Prompt {
 
 impl Prompt {
     pub async fn load(prompt: &str) -> Result<Prompt> {
-        let path = dirs::config_dir()
-            .unwrap_or(PathBuf::from("."))
-            .join(&format!("clai/{prompt}"));
-        let content = fs::read_to_string(path).await?;
+        // let path = dirs::config_dir()
+            // .unwrap_or(PathBuf::from("."))
+            // .join(&format!("clai/{prompt}"));
+        let content = fs::read_to_string(prompt).await?;
         Ok(Prompt { content })
     }
     pub async fn messages(&self) -> Vec<Message> {

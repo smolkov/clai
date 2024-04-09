@@ -1,12 +1,15 @@
 use std::path::PathBuf;
 
 use anyhow::Result;
+use reqwest::header::{HeaderMap, AUTHORIZATION, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
+use tokio::fs;
 
 pub const OPENAI_API_KEY: &str = "OPENAI_API_KEY";
+pub const OPENAI_MODEL: &str = "OPENAI_MODEL";
 
 #[derive(Serialize, Deserialize, Debug)]
-struct Config {
+pub struct Config {
     pub api_key: String,
     pub model: String,
 }
@@ -22,10 +25,21 @@ impl Config {
         Ok(())
     }
     #[allow(dead_code)]
-    pub fn load() -> Result<Config> {
-        let path = dirs::config_dir().unwrap_or(PathBuf::from(".")).join("clai/clai.toml");
-        let config =serde_json::from_str(&std::fs::read_to_string(path)?)?;
+    pub async fn load() -> Result<Config> {
+        let path = dirs::config_dir()
+            .unwrap_or(PathBuf::from("."))
+            .join("clai/clai.toml");
+        let config = serde_json::from_str(&fs::read_to_string(path).await?)?;
         Ok(config)
+    }
+    pub fn header(&self) -> Result<HeaderMap> {
+        let mut header = HeaderMap::new();
+        header.insert(
+            AUTHORIZATION,
+            format!("Bearer {}", self.api_key).parse()?,
+        );
+        header.insert(CONTENT_TYPE, "application/json".parse()?);
+        Ok(header)
     }
 }
 
@@ -33,12 +47,9 @@ impl Default for Config {
     fn default() -> Self {
         Config {
             api_key: std::env::var(OPENAI_API_KEY).unwrap_or("empty".to_owned()),
-            model: "gpt-3.5-turbo".to_owned(),
+            model: std::env::var(OPENAI_MODEL).unwrap_or("gpt-3.5-turbo".to_owned()),
         }
     }
 }
 
-
-impl Config {
-
-}
+impl Config {}
