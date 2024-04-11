@@ -6,7 +6,7 @@ pub struct Args {
     /// Load prompt name
     #[arg(short, long)]
     pub prompt: Option<String>,
-    /// Load prompt name
+    /// Save prompt 
     #[arg(short, long, default_value_t = false)]
     pub update: bool,
     // User question

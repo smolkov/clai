@@ -26,18 +26,18 @@ impl Config {
     }
     #[allow(dead_code)]
     pub async fn load() -> Result<Config> {
-        let path = dirs::config_dir()
-            .unwrap_or(PathBuf::from("."))
-            .join("clai/clai.toml");
+        let config_dir = directory();
+        if !config_dir.is_dir() {
+            fs::create_dir_all(&config_dir).await?;
+        }
+        let path = config_dir.join("clai/clai.toml");
         let config = serde_json::from_str(&fs::read_to_string(path).await?)?;
         Ok(config)
     }
+
     pub fn header(&self) -> Result<HeaderMap> {
         let mut header = HeaderMap::new();
-        header.insert(
-            AUTHORIZATION,
-            format!("Bearer {}", self.api_key).parse()?,
-        );
+        header.insert(AUTHORIZATION, format!("Bearer {}", self.api_key).parse()?);
         header.insert(CONTENT_TYPE, "application/json".parse()?);
         Ok(header)
     }
@@ -52,4 +52,11 @@ impl Default for Config {
     }
 }
 
-impl Config {}
+impl Config {
+  
+}
+pub fn directory() -> PathBuf {
+    dirs::config_dir()
+        .unwrap_or(PathBuf::from("."))
+        .join("clai")
+}
