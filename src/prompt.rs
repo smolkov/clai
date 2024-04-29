@@ -4,7 +4,7 @@ use anyhow::Result;
 use tokio::fs;
 
 use crate::config;
-use crate::data::{Message, OpenAIRequest};
+use crate::data::Message;
 
 pub struct Prompt {
     pub path: PathBuf,
