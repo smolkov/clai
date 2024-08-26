@@ -34,7 +34,7 @@ pub struct OpenAIChatResponse {
     pub created: u64,
     pub model: String,
     #[serde(rename = "system_fingerprint")]
-    pub fingerprint: String,
+    pub fingerprint: Option<String>,
     pub choices: Vec<Choise>,
     pub usage: Usage,
 }
@@ -47,6 +47,30 @@ impl Message {
         }
     }
 }
+
+// {
+//     "id": "chatcmpl-9jk5ul8nqFIEUIi3ajIH6EXLup7oZ",
+//     "object": "chat.completion",
+//     "created": 1720688974,
+//     "model": "gpt-3.5-turbo-0125",
+//     "choices": [
+//       {
+//         "index": 0,
+//         "message": {
+//           "role": "assistant",
+//           "content": "Hello! How can I assist you today?"
+//         },
+//         "logprobs": null,
+//         "finish_reason": "stop"
+//       }
+//     ],
+//     "usage": {
+//       "prompt_tokens": 7,
+//       "completion_tokens": 9,
+//       "total_tokens": 16
+//     },
+//     "system_fingerprint": null
+//   }
 
 // {
 // 	"choices": [

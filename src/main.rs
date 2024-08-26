@@ -17,7 +17,7 @@ async fn main() -> anyhow::Result<()> {
     config.check()?;
     
     let client = Client::new(config);
-    let chat =Chat::new(&client);
+    let chat = Chat::new(&client);
     let answer = chat.send(&prompt).await?;
 
     println!(
