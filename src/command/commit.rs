@@ -12,7 +12,7 @@ impl Commit {
         let output = Command::new("git").arg("diff").output().await?;
         let git_diff = String::from_utf8_lossy(&output.stdout);
         let chat = Chat::new(client);
-        let message = format!("Write a Git commit message for these changes: {}", git_diff);
+        let message = format!("What is the best way to summarize these changes in a Git commit message: {}", git_diff);
         let message = Message::new("user", &message);
         let response = chat.send(vec![message]).await?;
         println!("{}", response.choices.last().unwrap().message.content);
