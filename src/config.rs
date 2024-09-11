@@ -30,7 +30,7 @@ impl Config {
         if !config_dir.is_dir() {
             fs::create_dir_all(&config_dir).await?;
         }
-        let path = config_dir.join("clai/clai.toml");
+        let path = config_dir.join("clai/config.toml");
         let config = serde_json::from_str(&fs::read_to_string(path).await?)?;
         Ok(config)
     }
@@ -52,9 +52,7 @@ impl Default for Config {
     }
 }
 
-impl Config {
-  
-}
+
 pub fn directory() -> PathBuf {
     dirs::config_dir()
         .unwrap_or(PathBuf::from("."))
