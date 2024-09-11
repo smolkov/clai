@@ -47,7 +47,7 @@ impl Default for Config {
     fn default() -> Self {
         Config {
             api_key: std::env::var(OPENAI_API_KEY).unwrap_or("empty".to_owned()),
-            model: std::env::var(OPENAI_MODEL).unwrap_or("gpt-3.5-turbo".to_owned()),
+            model: std::env::var(OPENAI_MODEL).unwrap_or("gpt-4o-mini".to_owned()),
         }
     }
 }

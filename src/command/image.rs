@@ -1,13 +1,14 @@
 use clap::Parser;
 use anyhow::Result;
+use crate::client::Client;
 
 #[derive(Debug,Parser)]
-pub struct Image{
-
+pub struct Image {
+	text: Vec<String>,
 }
 
 impl Image {
-	pub fn run(&self) -> Result<()> {
+	pub async fn run(&self,client: &Client) -> Result<()> {
 		Ok(())
 	}
 }

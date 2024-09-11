@@ -1,7 +1,7 @@
 use anyhow::Result;
 
 use crate::client::Client;
-use crate::data::{OpenAIChatResponse, OpenAIRequest};
+use crate::data::{Message, OpenAIChatResponse, OpenAIRequest};
 use crate::prompt::Prompt;
 
 pub struct Chat<'a> {
@@ -13,10 +13,10 @@ impl<'a> Chat<'a> {
         Chat { client }
     }
 
-    pub async fn send(&self, prompt: &Prompt) -> Result<OpenAIChatResponse> {
+    pub async fn send(&self, messages: Vec<Message>) -> Result<OpenAIChatResponse> {
 		let req: OpenAIRequest = OpenAIRequest {
 			model: self.client.config.model.clone(),
-			messages: prompt.messages.clone(),
+			messages,
 		};
         let output = self.client.post("chat/completions", &req).await?;
         Ok(output)

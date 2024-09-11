@@ -1,5 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
+use crate::client::Client;
 
 #[derive(Parser, Debug)]
 pub struct Chat {
@@ -8,7 +9,7 @@ pub struct Chat {
 
 
 impl Chat {
-    pub fn run(&self) -> Result<()> {
+    pub async fn run(&self,client: &Client) -> Result<()> {
         
         Ok(())
     }

@@ -23,18 +23,17 @@ impl Client {
         O: DeserializeOwned,
     {
 
-    let body = self
-            .client
-            .post(&format!("https://api.openai.com/v1/{}", path))
-            .timeout(Duration::from_secs(40))
-            .headers(self.config.header()?)
-            .json(request)
-            .send()
-            .await?
-            .text()
-            .await?;
-
-        println!("{body}");
+    // let body = self
+    //         .client
+    //         .post(&format!("https://api.openai.com/v1/{}", path))
+    //         .timeout(Duration::from_secs(40))
+    //         .headers(self.config.header()?)
+    //         .json(request)
+    //         .send()
+    //         .await?
+    //         .text()
+    //         .await?;
+    // println!("{body}");
 
         let output = self
             .client
