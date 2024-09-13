@@ -17,7 +17,7 @@ You can reuse your saved prompt like this
 ### `chat`
 
 ```sh
-clai chat a question related to the background from the file my_prompt 
+clai chat here is a place for user input.
 ```
 
 ### `commit`
