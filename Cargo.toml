@@ -1,6 +1,6 @@
 [package]
 name = "clai"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 email = "sascha.smolkov@gmail.com"
 authors = ["Aleksndr Smolkov"]
@@ -12,7 +12,7 @@ keywords = ["ai", "cli", "chatbot"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-clap = { version = "4.5.4", features = ["derive"] }
+clap = { version = "4.5.22", features = ["derive"] }
 anyhow = "1.0.81"
 reqwest = { version = "0.12", features = ["json"] }
 tokio = { version = "1.37.0", features = ["full"] }
@@ -21,4 +21,5 @@ serde = { version = "1.0.197", features = ["derive"] }
 console = "0.15.8"
 dirs = "5.0.1"
 once_cell = "1.19.0"
-secrecy = "0.8.0"
+secrecy = "0.10.3"
+toml = "0.8.19"

@@ -31,7 +31,7 @@ impl Config {
             fs::create_dir_all(&config_dir).await?;
         }
         let path = config_dir.join("config.toml");
-        let config = serde_json::from_str(&fs::read_to_string(path).await?)?;
+        let config = toml::from_str(&fs::read_to_string(path).await?)?;
         Ok(config)
     }
 
