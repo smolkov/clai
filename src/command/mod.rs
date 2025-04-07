@@ -13,6 +13,7 @@ use commit::Commit;
 use chat::Chat;
 use correction::Correction;
 use translate::Translate;
+
 use crate::client::Client;
 
 #[derive(Debug, Subcommand)]
@@ -29,7 +30,7 @@ pub enum Command {
 
 
 impl Command {
-    pub async fn run(&self,client: &Client) -> Result<()> {
+    pub async fn run(&self,client: &mut Client) -> Result<()> {
         match self {
             Command::Chat(cmd)  => cmd.run(client).await,
             Command::Commit(cmd) => cmd.run(client).await,

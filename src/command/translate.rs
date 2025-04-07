@@ -1,7 +1,9 @@
-use crate::{chat::Chat, client::Client, data::Message};
+use std::fmt::format;
+
 use anyhow::Result;
 use clap::Parser;
 
+use crate::client::Client;
 #[derive(Debug, Parser)]
 pub struct Translate {
     /// English text for translate
@@ -9,13 +11,10 @@ pub struct Translate {
 }
 
 impl Translate {
-    pub async fn run(&self, client: &Client) -> Result<()> {
-        let user_text = self.text.join(" ");
-        let chat = Chat::new(client);
-        let message1 = Message::new("user", "Please translate into English:");
-        let message2 = Message::new("user", &user_text);
-        let response = chat.send(vec![message1, message2]).await?;
-        println!("{}", response.choices.last().unwrap().message.content);
+    pub async fn run(&self, client: &mut Client) -> Result<()> {
+        let user_text = format!("Translate into English:{}",self.text.join(" "));
+        let response = client.send_message(&user_text).await?;
+        println!("{}", response);
         Ok(())
     }
 }

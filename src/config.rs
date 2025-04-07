@@ -12,6 +12,7 @@ pub const OPENAI_MODEL: &str = "OPENAI_MODEL";
 pub struct Config {
     pub api_key: String,
     pub model: String,
+    pub provider: String,
 }
 
 impl Config {
@@ -48,6 +49,7 @@ impl Default for Config {
         Config {
             api_key: std::env::var(OPENAI_API_KEY).unwrap_or("empty".to_owned()),
             model: std::env::var(OPENAI_MODEL).unwrap_or("gpt-4o-mini".to_owned()),
+            provider: "openai".to_owned(),
         }
     }
 }

@@ -1,6 +1,6 @@
 use clap::Parser;
 use anyhow::Result;
-use crate::{chat::Chat, client::Client, data::Message};
+use crate::client::Client;
 
 #[derive(Debug,Parser)]
 pub struct Correction {
@@ -9,13 +9,10 @@ pub struct Correction {
 }
 
 impl Correction {
-	pub async fn run(&self,client: &Client) -> Result<()> {
-		let user_text = self.text.join(" ");
-        let chat = Chat::new(client);
-        let message1 = Message::new("user", "Correct my English:");
-        let message2 = Message::new("user", &user_text);
-        let response = chat.send(vec![message1, message2]).await?;
-        println!("{}", response.choices.last().unwrap().message.content);
+	pub async fn run(&self,client: &mut Client) -> Result<()> {
+        let user_text = format!("Correct my English:{}", self.text.join(" "));
+        let response = client.send_message(&user_text).await?;
+        println!("{}", response);
         Ok(())
 	}
 }
