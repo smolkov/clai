@@ -8,7 +8,7 @@ pub struct Image {
 }
 
 impl Image {
-	pub async fn run(&self,client: &Client) -> Result<()> {
+	pub async fn run(&self,_client: &mut Client) -> Result<()> {
 		Ok(())
 	}
 }
