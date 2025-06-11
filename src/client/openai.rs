@@ -49,8 +49,13 @@ impl OpenaiClient {
             .json(&request)
             .send()
             .await?;
-        let json_result:serde_json::Value = output.json().await?;
-        let msg = json_result["choices"][0]["message"]["content"].to_string();
+        let json_result: serde_json::Value = output.json().await?;
+        let value = &json_result["choices"][0]["message"]["content"];
+        let msg = value
+            .as_str()
+            .ok_or(anyhow::anyhow!("get value error"))?
+            .trim_matches('"')
+            .to_string();
         Ok(msg)
     }
 }

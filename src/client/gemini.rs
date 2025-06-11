@@ -60,7 +60,12 @@ impl GeminiClient {
             .send()
             .await?;
 		let result:serde_json::Value = output.json().await?;
-		let msg = result["candidates"][0]["content"]["parts"][0]["text"].to_string();
+		let value = &result["candidates"][0]["content"]["parts"][0]["text"];
+        let msg = value
+            .as_str()
+            .ok_or(anyhow::anyhow!("get value error"))?
+            .trim_matches('"')
+            .to_string();
         Ok(msg)
 	}
 }
