@@ -15,7 +15,6 @@ impl Commit {
         let message = format!("What is the best way to summarize these changes in a Git commit message: {}", git_diff);
         let response = client.send_message(&message).await?;
         println!("{}", response);
-		
         Ok(())
     }
 }
