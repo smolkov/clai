@@ -42,6 +42,12 @@ impl Config {
         header.insert(CONTENT_TYPE, "application/json".parse()?);
         Ok(header)
     }
+
+    pub fn with_api_key<S:Into<String>>(mut self,api_key:S) -> Self {
+        self.api_key = api_key.into(); 
+        self
+    }
+
 }
 
 impl Default for Config {

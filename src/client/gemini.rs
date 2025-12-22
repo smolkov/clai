@@ -60,11 +60,18 @@ impl GeminiClient {
             .send()
             .await?;
         let result: serde_json::Value = output.json().await?;
-
+        if result.get("error").is_some() {
+            return Err(anyhow::anyhow!(
+                "Gemini API error: {}",
+                result["error"]["message"]
+                    .as_str()
+                    .unwrap_or("Unknown error")
+            ));
+        }
         let value = &result["candidates"][0]["content"]["parts"][0]["text"];
         let msg = value
             .as_str()
-            .ok_or(anyhow::anyhow!("get value error"))?
+            .ok_or(anyhow::anyhow!("gemini: get text value unknown error"))?
             .trim_matches('"')
             .to_string();
         Ok(msg)

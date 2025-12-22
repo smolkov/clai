@@ -10,7 +10,7 @@ pub struct Correction {
 
 impl Correction {
 	pub async fn run(&self,client: &mut Client) -> Result<()> {
-        let user_text = format!("Correct my English:{}", self.text.join(" "));
+        let user_text = format!("Correct and improve my English:{}", self.text.join(" "));
         let response = client.send_message(&user_text).await?;
         println!("{}", response);
         Ok(())

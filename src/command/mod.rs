@@ -8,7 +8,6 @@ pub mod translate;
 pub mod commit;
 
 
-
 use commit::Commit;
 use chat::Chat;
 use correction::Correction;
@@ -25,7 +24,7 @@ pub enum Command {
     /// Correct my english
     Correction(Correction) ,
     /// Translate to english
-    Translate(Translate)
+    Translate(Translate),
 }
 
 
