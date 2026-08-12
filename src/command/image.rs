@@ -1,6 +1,6 @@
 use clap::Parser;
 use anyhow::Result;
-use crate::client::Client;
+use crate::agent::Agent;
 
 #[derive(Debug,Parser)]
 pub struct Image {
@@ -8,7 +8,7 @@ pub struct Image {
 }
 
 impl Image {
-	pub async fn run(&self,_client: &mut Client) -> Result<()> {
+	pub async fn run(&self,_agent: &mut Agent) -> Result<()> {
 		Ok(())
 	}
 }

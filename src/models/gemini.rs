@@ -3,19 +3,19 @@ use serde_json::json;
 use std::time::Duration;
 
 use super::Result;
-use crate::config::Config;
+use crate::config::ModelConfig;
 
-pub struct GeminiClient {
+pub struct GeminiModel {
     client: reqwest::Client,
-    config: Config,
+    config: ModelConfig,
 }
 
-impl GeminiClient {
-    pub fn new(config: Config) -> GeminiClient {
+impl GeminiModel {
+    pub fn new(config: ModelConfig) -> GeminiModel {
         let client = reqwest::Client::new();
-        GeminiClient { client, config }
+        GeminiModel { client, config }
     }
-    pub async fn send_message(&mut self, message: &str) -> Result<String> {
+    pub async fn generate(&mut self, message: &str) -> Result<String> {
         let url = format!(
             "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent",
             self.config.model

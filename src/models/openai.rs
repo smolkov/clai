@@ -3,19 +3,19 @@ use std::time::Duration;
 
 use super::Result;
 
-use crate::config::Config;
+use crate::config::ModelConfig;
 
-pub struct OpenaiClient {
+pub struct OpenaiModel {
     client: reqwest::Client,
-    config: Config,
+    config: ModelConfig,
 }
 
-impl OpenaiClient {
-    pub fn new(config: Config) -> OpenaiClient {
+impl OpenaiModel {
+    pub fn new(config: ModelConfig) -> OpenaiModel {
         let client = reqwest::Client::new();
-        OpenaiClient { client, config }
+        OpenaiModel { client, config }
     }
-    pub async fn send_message(&mut self, message: &str) -> Result<String> {
+    pub async fn generate(&mut self, message: &str) -> Result<String> {
         //          curl https://api.openai.com/v1/chat/completions \
         //    -H "Content-Type: application/json" \
         //    -H "Authorization: Bearer $OPENAI_API_KEY" \

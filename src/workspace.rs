@@ -1,0 +1,56 @@
+use once_cell::sync::Lazy;
+use std::cell::OnceCell;
+use std::fs;
+use std::path::{Path, PathBuf};
+pub const CONFIG_FILE: &str = "config.toml";
+pub const CLAI_DIR: &str = "clai";
+// Solution 2 all dirs in struct
+pub static WORKSPACE: Lazy<Workspace> = Lazy::new(Workspace::new);
+
+#[derive(Debug)]
+pub struct Workspace {
+    home: PathBuf,
+    config: PathBuf,
+    config_file: PathBuf,
+    local_config_file: PathBuf,
+}
+
+impl Workspace {
+    pub fn new() -> Workspace {
+        
+        let home = dirs::home_dir().unwrap_or(PathBuf::from("."));
+        let config = dirs::config_dir().unwrap_or(PathBuf::from("."));
+        let config = config.join(CLAI_DIR);
+        if !config.is_dir() {
+            fs::create_dir_all(&config).expect(
+                "Error initializing workspace: Failed to create configuration directory '.sprsh'",
+            );
+        }
+        let config_file = config.join(CONFIG_FILE);
+        let local_config_file = PathBuf::from(&format!("./{CONFIG_FILE}"));
+        Workspace {
+            home,
+            config,
+            config_file,
+            local_config_file,
+        }
+    }
+    pub fn home(&self) -> &Path {
+        &self.home
+    }
+    pub fn config(&self) -> &Path {
+        &self.config
+    }
+    pub fn config_file(&self) -> &Path {
+        &self.config_file
+    }
+    pub fn local_config_file(&self) -> &Path {
+        &self.local_config_file
+    }
+}
+
+impl Default for Workspace {
+    fn default() -> Self {
+        Workspace::new()
+    }
+}

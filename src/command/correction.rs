@@ -1,18 +1,18 @@
-use clap::Parser;
+use crate::agent::Agent;
 use anyhow::Result;
-use crate::client::Client;
+use clap::Parser;
 
-#[derive(Debug,Parser)]
+#[derive(Debug, Parser)]
 pub struct Correction {
-	/// English text for correction
-	text: Vec<String>,
+    /// English text for correction
+    text: Vec<String>,
 }
 
 impl Correction {
-	pub async fn run(&self,client: &mut Client) -> Result<()> {
+    pub async fn run(&self, agent: &mut Agent) -> Result<()> {
         let user_text = format!("Correct and improve my English:{}", self.text.join(" "));
-        let response = client.send_message(&user_text).await?;
+        let response = agent.send_message(&user_text).await?;
         println!("{}", response);
         Ok(())
-	}
+    }
 }
