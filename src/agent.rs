@@ -1,7 +1,9 @@
 use crate::config::Config;
+use crate::tools::McpTool;
 use anyhow::Result;
 
 pub struct Agent {
+    tools: Vec<Box<dyn McpTool>>,
 }
 
 impl Agent {
@@ -18,6 +20,6 @@ impl AgentBuilder {
     }
 
     pub fn build(&self, _config: Config) -> Agent {
-        Agent {}
+        Agent { tools: Vec::new() }
     }
 }

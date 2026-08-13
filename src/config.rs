@@ -20,7 +20,7 @@ pub struct ModelConfig {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Config {
-    pub active: String,
+    pub selected: String,
     pub models: Vec<ModelConfig>,
 }
 
@@ -75,7 +75,7 @@ impl Default for ModelConfig {
 impl Default for Config {
     fn default() -> Self {
         Config {
-            active: "openai".to_owned(),
+            selected: "openai".to_owned(),
             models: vec![ModelConfig::default()],
         }
     }
