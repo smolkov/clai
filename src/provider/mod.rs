@@ -1,7 +1,6 @@
 use anyhow::Result;
 
-use crate::config::ModelConfig;
-
+pub mod claude;
 pub mod gemini;
 pub mod openai;
 
@@ -15,6 +14,7 @@ pub trait GenModel: Send + Sync {
 pub enum Model {
     Gemini(gemini::GeminiModel),
     Openai(openai::OpenaiModel),
+    Claude(claude::ClaudeModel),
 }
 
 impl Model {
@@ -22,6 +22,7 @@ impl Model {
         match self {
             Self::Gemini(model) => model.generate(message).await,
             Self::Openai(model) => model.generate(message).await,
+            Self::Claude(model) => model.generate(message).await,
         }
     }
 }

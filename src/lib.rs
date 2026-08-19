@@ -5,7 +5,7 @@ pub mod config;
 pub mod data;
 pub mod dirs;
 pub mod message;
-pub mod models;
+pub mod provider;
 pub mod prompt;
 pub mod tools;
 pub mod workspace;

@@ -1,3 +1,4 @@
+use reqwest::header::{HeaderMap, CONTENT_TYPE};
 use serde_json::json;
 use std::time::Duration;
 
@@ -16,6 +17,9 @@ impl OpenaiModel {
         OpenaiModel { client, config }
     }
     pub async fn generate(&mut self, message: &str) -> Result<String> {
+        let mut header = HeaderMap::new();
+        header.insert("Authorization", format!("Bearer {}", self.config.api_key).parse()?);
+        header.insert(CONTENT_TYPE, "application/json".parse()?);
         //          curl https://api.openai.com/v1/chat/completions \
         //    -H "Content-Type: application/json" \
         //    -H "Authorization: Bearer $OPENAI_API_KEY" \
