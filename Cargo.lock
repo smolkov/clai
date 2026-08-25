@@ -166,6 +166,7 @@ dependencies = [
  "clap",
  "console",
  "dirs",
+ "log",
  "once_cell",
  "reqwest",
  "secrecy",

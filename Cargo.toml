@@ -7,11 +7,12 @@ authors = ["Aleksandr Smolkov"]
 description = "Command line ai assistent"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/smolkov/clai"
-keywords = ["ai", "cli", "chatbot"]
+keywords = ["ai", "cli", "chatbot","assistant"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+log = "0.4.20"
 clap = { version = "4.6.6", features = ["derive"] }
 anyhow = "1.0.104"
 reqwest = { version = "0.13.4", features = ["json"] }

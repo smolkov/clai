@@ -15,7 +15,7 @@ impl Commit {
             "What is the best way to summarize these changes in a Git commit message: {}",
             git_diff
         );
-        let response = agent.send_message(&message).await?;
+        let response = agent.generate(&message).await?;
         println!("{}", response);
         Ok(())
     }

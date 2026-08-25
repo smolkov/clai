@@ -12,7 +12,7 @@ async fn main() -> anyhow::Result<()> {
         .inspect_err(|e| eprintln!("load config error: {e}"))
         .unwrap_or_default();
     let builder = AgentBuilder::new();
-    let mut agent = builder.build(config);
+    let mut agent = builder.build(config)?;
     args.command.run(&mut agent).await?;
     Ok(())
 }

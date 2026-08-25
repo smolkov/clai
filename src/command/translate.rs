@@ -11,7 +11,7 @@ pub struct Translate {
 impl Translate {
     pub async fn run(&self, agent: &mut Agent) -> Result<()> {
         let user_text = format!("Translate into English:{}", self.text.join(" "));
-        let response = agent.send_message(&user_text).await?;
+        let response = agent.generate(&user_text).await?;
         println!("{}", response);
         Ok(())
     }

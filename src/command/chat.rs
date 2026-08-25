@@ -10,7 +10,7 @@ pub struct Chat {
 impl Chat {
     pub async fn run(&self, agent: &mut Agent) -> Result<()> {
         let user_text = self.text.join(" ");
-        let response = agent.send_message(&user_text).await?;
+        let response = agent.generate(&user_text).await?;
         println!("{}", response);
         Ok(())
     }
