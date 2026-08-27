@@ -93,6 +93,12 @@ impl McpTool for CreateFileTool {
         let safe_path = WORKSPACE.validate_path(path)?;
         // Backup falls überschrieben wird
         if safe_path.exists() {
+            if !overwrite {
+                return Err(anyhow::anyhow!(
+                    "File {} already exists. Use overwrite=true to replace it.",
+                    safe_path.display()
+                ));
+            }
             let old_content = tokio::fs::read_to_string(&safe_path).await.map_err(|e| {
                 anyhow::anyhow!(
                     "Failed to read existing file {}: {}",
@@ -102,7 +108,6 @@ impl McpTool for CreateFileTool {
             })?;
             self.backup(&safe_path, &old_content).await?;
         }
-
         // Fehlende Parent-Verzeichnisse anlegen
         if let Some(parent) = safe_path.parent() {
             tokio::fs::create_dir_all(parent).await.map_err(|e| {

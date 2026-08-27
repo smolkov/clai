@@ -27,3 +27,16 @@ impl Message {
         self
     }
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolCall {
+    pub role: String,
+    pub tool_name: String,
+    pub message: String,
+    pub input: serde_json::Value,
+}
+
+pub enum ResponseMessage {
+    Text(Message),
+    ToolCall(ToolCall),
+}

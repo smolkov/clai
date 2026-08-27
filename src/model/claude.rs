@@ -25,20 +25,37 @@ impl ClaudeModel {
         tools: &Vec<serde_json::Value>,
     ) -> Result<String> {
         let url = format!("https://api.anthropic.com/v1/messages",);
+        let date = chrono::Local::now().date_naive();
         let mut header = HeaderMap::new();
         header.insert("X-Api-Key", self.config.api_key.as_str().parse()?);
         header.insert(CONTENT_TYPE, "application/json".parse()?);
-
+        header.insert("anthropic-version", "2023-06-01".parse()?);
+        let mut messages = history
+            .get_history()
+            .iter()
+            .map(|msg| {
+                json!({
+                    "role": msg.role,
+                    "content": msg.content,
+                })
+            })
+            .collect::<Vec<_>>();
+        messages.push(json!({
+            "role": "user",
+            "content": message,
+        }));
         let request = json!({
             "max_tokens": 1024,
             "model": self.config.model,
             "temperature": 1,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": message
-                }
-            ],
+            "messages": messages,
+            "system": [
+            {
+              "text": format!("Today'\''s date is {}.",date.format("%Y-%m-%d")),
+              "type": "text"
+            }
+          ],
+          "tools": tools,
         });
 
         let output = self
@@ -52,6 +69,7 @@ impl ClaudeModel {
             .json::<serde_json::Value>()
             .await?;
 
+        println!("Claude response: {:?}", output);
         if let Some(text) = output["content"][0]["text"].as_str() {
             Ok(text.to_string())
         } else {

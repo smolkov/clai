@@ -2,7 +2,6 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use log;
-use reqwest::header::{HeaderMap, AUTHORIZATION, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
 use tokio::fs;
 
@@ -13,6 +12,7 @@ pub const GEMINI_API_KEY: &str = "GEMINI_API_KEY";
 pub const GEMINI_MODEL: &str = "GEMINI_MODEL";
 #[derive(Serialize, Deserialize, Clone)]
 pub struct ModelConfig {
+    pub name: String,
     pub model: String,
     pub provider: String,
     pub api_key: String,
@@ -23,7 +23,7 @@ pub struct ModelConfig {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Config {
-    pub provider: String,
+    pub model: String,
     pub models: Vec<ModelConfig>,
 }
 
@@ -48,6 +48,7 @@ impl ModelConfig {
 impl std::fmt::Debug for ModelConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ModelConfig")
+            .field("name", &self.name)
             .field("model", &self.model)
             .field("provider", &self.provider)
             .field("api_key", &"<redacted>")
@@ -99,6 +100,7 @@ impl Config {
 impl Default for ModelConfig {
     fn default() -> Self {
         ModelConfig {
+            name: "gemini".to_owned(),
             api_key: std::env::var(GEMINI_API_KEY).unwrap_or("empty".to_owned()),
             model: std::env::var(GEMINI_MODEL).unwrap_or("gemini-2.5-flash".to_owned()),
             provider: "gemini".to_owned(),
@@ -112,7 +114,7 @@ impl Default for ModelConfig {
 impl Default for Config {
     fn default() -> Self {
         Config {
-            provider: "gemini".to_owned(),
+            model: "gemini".to_owned(),
             models: vec![ModelConfig::default()],
         }
     }

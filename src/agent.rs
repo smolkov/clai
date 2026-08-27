@@ -55,7 +55,7 @@ impl AgentBuilder {
                 let model_config = config
                     .models
                     .iter()
-                    .find(|m| m.provider == config.provider)
+                    .find(|m| m.name == config.model)
                     .or_else(|| config.models.first())
                     .ok_or(anyhow::anyhow!("no model config found"))?;
 

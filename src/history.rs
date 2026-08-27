@@ -28,7 +28,11 @@ impl History {
         } else {
             Vec::new()
         };
-        Ok(History { name: prompt.to_string(), path, messages })
+        Ok(History {
+            name: prompt.to_string(),
+            path,
+            messages,
+        })
     }
     pub fn extend(&mut self, messages: Vec<Message>) {
         self.messages.extend(messages);
@@ -36,6 +40,9 @@ impl History {
     pub async fn update(&self) -> Result<()> {
         fs::write(&self.path, serde_json::to_string(&self.messages)?).await?;
         Ok(())
+    }
+    pub fn get_history(&self) -> &Vec<Message> {
+        &self.messages
     }
 }
 
