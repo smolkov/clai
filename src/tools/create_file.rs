@@ -73,7 +73,6 @@ impl McpTool for CreateFileTool {
             }
         })
     }
-
     async fn call(&self, args: Value) -> Result<String> {
         let path = args["path"]
             .as_str()
