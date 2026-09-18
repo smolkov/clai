@@ -1,6 +1,7 @@
 pub mod read_file;
 pub mod create_file;
 pub mod edit_file;
+pub mod execute_command;
 pub mod list_files;
 
 use anyhow::Result;
