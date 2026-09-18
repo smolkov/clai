@@ -1,8 +1,25 @@
 use super::McpTool;
-use anyhow::Result;
-
+use crate::validator::Validator;
+use anyhow::{Result, anyhow};
+use async_trait::async_trait;
+use serde_json::json;
 pub struct EditFileTool {
-    allowed_root: PathBuf, // Sandbox-Wurzel!
+    validator: Validator,
+}
+
+
+impl EditFileTool {
+    pub fn new(validator: Validator) -> Self {
+        EditFileTool { validator }
+    }
+
+    async fn backup(&self, path: &std::path::Path, content: &str) -> Result<()> {
+        let backup_path = path.with_extension("bak");
+        tokio::fs::write(&backup_path, content)
+            .await
+            .map_err(|e| anyhow!("Failed to create backup file {}: {}", backup_path.display(), e))?;
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -56,37 +73,37 @@ impl McpTool for EditFileTool {
         })
     }
 
-    async fn call(&self, args: Value) -> Result<String> {
-        let path = args["path"].as_str().ok_or(ToolError::BadArgs)?;
-        let old_str = args["old_str"].as_str().ok_or(ToolError::BadArgs)?;
-        let new_str = args["new_str"].as_str().ok_or(ToolError::BadArgs)?;
+    async fn call(&self, args: serde_json::Value) -> Result<String> {
+        let path = args["path"].as_str().ok_or(anyhow::anyhow!("Missing or invalid 'path'"))?;
+        let old_str = args["old_str"].as_str().ok_or(anyhow::anyhow!("Missing or invalid 'old_str'"))?;
+        let new_str = args["new_str"].as_str().ok_or(anyhow::anyhow!("Missing or invalid 'new_str'"))?;
 
-        let safe_path = self.validate_path(path)?;
+        let safe_path: std::path::PathBuf = self.validator.validate_path(path)?;
         let content = tokio::fs::read_to_string(&safe_path)
             .await
-            .map_err(|e| ToolError::Io(e.to_string()))?;
+            .map_err(|e| anyhow::anyhow!("Failed to read file {}: {}", safe_path.display(), e))?;
 
-        // Eindeutigkeit erzwingen — sonst kann das Model ungewollt
-        // die falsche Stelle treffen
+        // Enforce uniqueness; otherwise the model may accidentally target the wrong location.
         let matches = content.matches(old_str).count();
         match matches {
-            0 => return Err(anyhow::anyhow!("old_str nicht in Datei gefunden".into())),
+            0 => return Err(anyhow::anyhow!("old_str '{}' not found in file {}", old_str, path)),
             1 => {}
             n => {
-                return Err(anyhow::anyhow!(format!(
-                    "old_str kommt {n}x vor — muss eindeutig sein"
-                )))
+                return Err(anyhow::anyhow!(
+                    "old_str '{}' found {} times in file {}. Please make it unique or use the 'occurrence' parameter.",
+                    old_str, n, path
+                ));
             }
         }
 
         let new_content = content.replacen(old_str, new_str, 1);
 
-        // Backup vor dem Schreiben
+        // Create a backup before writing
         self.backup(&safe_path, &content).await?;
 
         tokio::fs::write(&safe_path, new_content)
             .await
-            .map_err(|e| ToolError::Io(e.to_string()))?;
+            .map_err(|e| anyhow!("Failed to write file {}: {}", safe_path.display(), e))?;
 
         Ok(format!("Datei {path} erfolgreich geändert"))
     }

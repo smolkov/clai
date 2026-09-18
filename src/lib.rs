@@ -8,4 +8,5 @@ pub mod message;
 pub mod model;
 pub mod history;
 pub mod tools;
+pub mod validator;
 pub mod workspace;

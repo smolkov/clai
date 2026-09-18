@@ -14,7 +14,7 @@ pub struct Workspace {
     config: PathBuf,
     config_file: PathBuf,
     local_config_file: PathBuf,
-    allowed_root: PathBuf,
+    root: PathBuf,
 }
 
 impl Workspace {
@@ -34,7 +34,7 @@ impl Workspace {
             config,
             config_file,
             local_config_file,
-            allowed_root: PathBuf::from(".")
+            root: PathBuf::from(".")
                 .canonicalize()
                 .expect("Failed to canonicalize current directory"),
         }
@@ -51,42 +51,32 @@ impl Workspace {
     pub fn local_config_file(&self) -> &Path {
         &self.local_config_file
     }
-    pub fn allowed_root(&self) -> &Path {
-        &self.allowed_root
+    pub fn root(&self) -> &Path {
+        &self.root
     }
     pub fn validate_path(&self, path: &str) -> Result<PathBuf> {
-        let requested = self.allowed_root.join(path);
+        let requested = self.root.join(path);
 
-        // Verhindert ../../ direkt im String, bevor überhaupt was existiert
-        if path.contains("..") {
-            return Err(anyhow::anyhow!(
-                "Path {path} is not allowed. Must be within {:?}",
-                self.allowed_root
-            ));
-        }
-        let mut check_dir = requested
-            .parent()
-            .unwrap_or(&self.allowed_root)
-            .to_path_buf();
+       
+        let mut check_dir = requested.parent().unwrap_or(&self.root).to_path_buf();
 
         while !check_dir.exists() {
             check_dir = check_dir
                 .parent()
                 .ok_or(anyhow::anyhow!(
                     "Path {path} is not allowed. Must be within {:?}",
-                    self.allowed_root
+                    self.root
                 ))?
                 .to_path_buf();
         }
-        let canonical_parent = check_dir.canonicalize().map_err(|_| anyhow::anyhow!(
-            "Path {path} is not allowed. Must be within {:?}",
-            self.allowed_root
-        ))?;
+        let canonical_parent = check_dir.canonicalize().map_err(|_| {
+            anyhow::anyhow!("Path {path} is not allowed. Must be within {:?}", self.root)
+        })?;
 
-        if !canonical_parent.starts_with(&self.allowed_root) {
+        if !canonical_parent.starts_with(&self.root) {
             return Err(anyhow::anyhow!(
                 "Path {path} is not allowed. Must be within {:?}",
-                self.allowed_root
+                self.root
             ));
         }
         Ok(requested)

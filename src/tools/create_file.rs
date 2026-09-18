@@ -2,10 +2,7 @@ use crate::workspace::WORKSPACE;
 
 use super::McpTool;
 use anyhow::Result;
-use std::{
-    any,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
 use serde_json::{json, Value};
