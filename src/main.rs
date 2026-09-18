@@ -16,7 +16,7 @@ async fn main() -> anyhow::Result<()> {
 
     let validator = clai::validator::Validator::new(WORKSPACE.root());
     let tools: Vec<Box<dyn McpTool>> = vec![
-        Box::new(read_file::ReadFileTool {}),
+        Box::new(read_file::ReadFileTool::new(validator.clone())),
         Box::new(list_files::ListFilesTool::new(validator.clone())),
     ];
 
