@@ -30,45 +30,42 @@ impl McpTool for EditFileTool {
 
     fn schema(&self) -> serde_json::Value {
         json!({
-            "type": "function",
-            "function": {
-                "name": "edit_file",
-                "description": "Replaces a piece of text in a file with new text. \
-                                 `old_str` must match the file content EXACTLY, including \
-                                 whitespace and indentation. If `old_str` appears multiple \
-                                 times in the file, either (1) include enough surrounding \
-                                 context lines to make it unique, or (2) use the `occurrence` \
-                                 parameter to specify which match to replace.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "path": {
-                            "type": "string",
-                            "description": "Path to the file to edit"
-                        },
-                        "old_str": {
-                            "type": "string",
-                            "description": "Exact text to be replaced. Must match the file \
-                                             content exactly, including whitespace. If this \
-                                             text appears more than once in the file, add \
-                                             surrounding lines until it is unique, or use \
-                                             `occurrence` to pick a specific match."
-                        },
-                        "new_str": {
-                            "type": "string",
-                            "description": "New text to replace old_str with"
-                        },
-                        "occurrence": {
-                            "type": "integer",
-                            "description": "Which occurrence of old_str to replace, if it \
-                                             appears multiple times (1 = first, 2 = second, \
-                                             etc.). Use -1 to replace all occurrences. \
-                                             Omit if old_str is already unique in the file.",
-                            "default": 1
-                        }
+            "name": "edit_file",
+            "description": "Replaces a piece of text in a file with new text. \
+                             `old_str` must match the file content EXACTLY, including \
+                             whitespace and indentation. If `old_str` appears multiple \
+                             times in the file, either (1) include enough surrounding \
+                             context lines to make it unique, or (2) use the `occurrence` \
+                             parameter to specify which match to replace.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to the file to edit"
                     },
-                    "required": ["path", "old_str", "new_str"]
-                }
+                    "old_str": {
+                        "type": "string",
+                        "description": "Exact text to be replaced. Must match the file \
+                                         content exactly, including whitespace. If this \
+                                         text appears more than once in the file, add \
+                                         surrounding lines until it is unique, or use \
+                                         `occurrence` to pick a specific match."
+                    },
+                    "new_str": {
+                        "type": "string",
+                        "description": "New text to replace old_str with"
+                    },
+                    "occurrence": {
+                        "type": "integer",
+                        "description": "Which occurrence of old_str to replace, if it \
+                                         appears multiple times (1 = first, 2 = second, \
+                                         etc.). Use -1 to replace all occurrences. \
+                                         Omit if old_str is already unique in the file.",
+                        "default": 1
+                    }
+                },
+                "required": ["path", "old_str", "new_str"]
             }
         })
     }

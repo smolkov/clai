@@ -21,8 +21,8 @@ impl OpenaiModel {
     pub async fn generate(
         &mut self,
         message: &str,
-        history: &History,
-        tools: &Vec<serde_json::Value>,
+        _history: &History,
+        _tools: &[Box<dyn McpTool>],
     ) -> Result<String> {
         let mut header = HeaderMap::new();
         header.insert(

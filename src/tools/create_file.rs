@@ -41,32 +41,29 @@ impl McpTool for CreateFileTool {
 
     fn schema(&self) -> serde_json::Value {
         json!({
-            "type": "function",
-            "function": {
-                "name": "create_file",
-                "description": "Creates a new file with the given content. Fails if the \
-                                 file already exists, unless `overwrite` is set to true. \
-                                 Automatically creates any missing parent directories.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "path": {
-                            "type": "string",
-                            "description": "Path of the file to create, relative to the project root"
-                        },
-                        "content": {
-                            "type": "string",
-                            "description": "Full content to write to the file"
-                        },
-                        "overwrite": {
-                            "type": "boolean",
-                            "description": "If true, overwrite the file if it already exists. \
-                                             Default false — use edit_file for existing files instead.",
-                            "default": false
-                        }
+            "name": "create_file",
+            "description": "Creates a new file with the given content. Fails if the \
+                             file already exists, unless `overwrite` is set to true. \
+                             Automatically creates any missing parent directories.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path of the file to create, relative to the project root"
                     },
-                    "required": ["path", "content"]
-                }
+                    "content": {
+                        "type": "string",
+                        "description": "Full content to write to the file"
+                    },
+                    "overwrite": {
+                        "type": "boolean",
+                        "description": "If true, overwrite the file if it already exists. \
+                                         Default false — use edit_file for existing files instead.",
+                        "default": false
+                    }
+                },
+                "required": ["path", "content"]
             }
         })
     }

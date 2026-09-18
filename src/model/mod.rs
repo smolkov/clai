@@ -26,7 +26,7 @@ impl Model {
         &mut self,
         message: &str,
         history: &History,
-        tools: &Vec<serde_json::Value>,
+        tools: &[Box<dyn McpTool>],
     ) -> Result<String> {
         match self {
             Self::Gemini(model) => model.generate(message, history, tools).await,

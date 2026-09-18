@@ -29,32 +29,29 @@ impl McpTool for ListFilesTool {
 	
     fn schema(&self) -> serde_json::Value {
         json!({
-            "type": "function",
-            "function": {
-                "name": "list_files",
-                "description": "Lists files and directories at the given path. Use this to \
-                                 explore the project structure before reading or editing files.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "path": {
-                            "type": "string",
-                            "description": "Directory path to list, relative to the project root. Use \".\" for the root.",
-                            "default": "."
-                        },
-                        "recursive": {
-                            "type": "boolean",
-                            "description": "If true, list files in subdirectories too",
-                            "default": false
-                        },
-                        "max_depth": {
-                            "type": "integer",
-                            "description": "Maximum depth when recursive is true (default 3)",
-                            "default": 3
-                        }
+            "name": "list_files",
+            "description": "Lists files and directories at the given path. Use this to \
+                             explore the project structure before reading or editing files.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Directory path to list, relative to the project root. Use \".\" for the root.",
+                        "default": "."
                     },
-                    "required": []
-                }
+                    "recursive": {
+                        "type": "boolean",
+                        "description": "If true, list files in subdirectories too",
+                        "default": false
+                    },
+                    "max_depth": {
+                        "type": "integer",
+                        "description": "Maximum depth when recursive is true (default 3)",
+                        "default": 3
+                    }
+                },
+                "required": []
             }
         })
     }

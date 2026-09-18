@@ -12,9 +12,8 @@ pub struct Agent {
 
 impl Agent {
     pub async fn generate(&mut self, _message: &str) -> Result<String> {
-        let tool_schemas: Vec<serde_json::Value> = self.tools.iter().map(|t| t.schema()).collect();
         self.model
-            .generate(_message, &self.history, &tool_schemas)
+            .generate(_message, &self.history, &self.tools)
             .await
     }
 }
