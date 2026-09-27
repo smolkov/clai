@@ -8,5 +8,6 @@ pub mod message;
 pub mod provider;
 pub mod session;
 pub mod tools;
+pub mod tui;
 pub mod validator;
 pub mod workspace;

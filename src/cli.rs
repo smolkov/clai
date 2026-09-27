@@ -8,5 +8,5 @@ use crate::command::Command;
 pub struct Args {
     /// Subcommand
     #[command(subcommand)]
-    pub command: Command,
+    pub command: Option<Command>,
 }

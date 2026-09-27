@@ -8,16 +8,17 @@ use crate::message::Message;
 pub struct Agent {
     tools: Vec<Box<dyn McpTool>>,
     model: Provider,
-    history: Session,
+    session: Session,
 }
 
 impl Agent {
     pub async fn generate(&mut self, _message: &str) -> Result<Message> {
         self.model
-            .generate(_message, &self.history, &self.tools)
+            .generate(_message, &self.session, &self.tools)
             .await
     }
     pub async fn status(&self) {
+        println!("Agent status: {:?}", self.session);
     }
 }
 
@@ -73,7 +74,7 @@ impl AgentBuilder {
         Ok(Agent {
             tools,
             model,
-            history,
+            session: history,
         })
     }
 }

@@ -26,6 +26,11 @@ async fn main() -> anyhow::Result<()> {
 
     let builder = AgentBuilder::new().tools(tools);
     let mut agent = builder.build(config)?;
-    args.command.run(&mut agent).await?;
+    match args.command {
+        Some(command) => command.run(&mut agent).await?,
+        None => {
+            clai::tui::run(&mut agent)?;
+        }
+    }
     Ok(())
 }
