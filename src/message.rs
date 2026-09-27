@@ -13,6 +13,18 @@ impl Message {
             content: Content::Text(msg.to_string()),
         }
     }
+    pub fn new_tool_call(tool_type: &str, name: &str, id: &str, message: &str, input: serde_json::Value) -> Message {
+        Message {
+            role: "user".to_string(),
+            content: Content::ToolCall(ToolCall {
+                tool_type: tool_type.to_string(),
+                name: name.to_string(),
+                id: id.to_string(),
+                message: message.to_string(),
+                input,
+            }),
+        }
+    }
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolCall {

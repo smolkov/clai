@@ -1,8 +1,14 @@
 # Note
 
+* Agents use channels for communication with tui
+
+
 ## Todo
 
 * [x] Read codebase in AI prompt
+* [] Move tools call logic into agent
+* [] Implement channel-based communication between agent and tui
+* [] Implement channel-based communication between agent and tools
 * [] Add mistral API support
 * [x] Add google gemini API support
 * [] Add support for local models (llama.cpp, gpt4all, etc)

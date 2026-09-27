@@ -4,7 +4,8 @@ use std::time::Duration;
 
 use super::Result;
 use crate::config::ModelConfig;
-use crate::history::History;
+use crate::message::Message;
+use crate::session::Session;
 use crate::tools::McpTool;
 
 pub struct ClaudeModel {
@@ -64,9 +65,9 @@ impl ClaudeModel {
     pub async fn generate(
         &mut self,
         message: &str,
-        history: &History,
+        history: &Session,
         tools: &[Box<dyn McpTool>],
-    ) -> Result<String> {
+    ) -> Result<Message> {
         let mut header = HeaderMap::new();
         header.insert("X-Api-Key", self.config.api_key.as_str().parse()?);
         header.insert(CONTENT_TYPE, "application/json".parse()?);
@@ -92,10 +93,7 @@ impl ClaudeModel {
         for _ in 0..MAX_TOOL_ITERATIONS {
             let output = self.call_api(&header, &messages, &tool_schemas).await?;
 
-            let content_blocks = output["content"]
-                .as_array()
-                .cloned()
-                .unwrap_or_default();
+            let content_blocks = output["content"].as_array().cloned().unwrap_or_default();
             let stop_reason = output["stop_reason"].as_str().unwrap_or("");
 
             messages.push(json!({
@@ -109,7 +107,7 @@ impl ClaudeModel {
                     .filter_map(|block| block["text"].as_str())
                     .collect::<Vec<_>>()
                     .join("\n");
-                return Ok(text);
+                return Ok(Message::new(&text));
             }
 
             let mut tool_results = Vec::new();

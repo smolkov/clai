@@ -42,7 +42,9 @@ impl ExecuteCommandTool {
         Self::confirm_from(BufReader::new(tokio::io::stdin())).await
     }
 
-    async fn confirm_from<R: tokio::io::AsyncRead + Unpin>(mut reader: BufReader<R>) -> Result<bool> {
+    async fn confirm_from<R: tokio::io::AsyncRead + Unpin>(
+        mut reader: BufReader<R>,
+    ) -> Result<bool> {
         let mut line = String::new();
         reader
             .read_line(&mut line)
@@ -120,7 +122,7 @@ impl McpTool for ExecuteCommandTool {
             return Err(anyhow!("Command execution declined by user: {command}"));
         }
 
-        let mut child = Command::new("sh")
+        let child = Command::new("sh")
             .arg("-c")
             .arg(command)
             .current_dir(&self.cwd)
@@ -130,14 +132,17 @@ impl McpTool for ExecuteCommandTool {
             .spawn()
             .map_err(|e| anyhow!("Failed to spawn command: {e}"))?;
 
-        let output = match tokio::time::timeout(Duration::from_secs(timeout_secs), child.wait_with_output()).await {
-            Ok(result) => result.map_err(|e| anyhow!("Failed to run command: {e}"))?,
-            Err(_) => {
-                return Err(anyhow!(
-                    "Command timed out after {timeout_secs}s: {command}"
-                ));
-            }
-        };
+        let output =
+            match tokio::time::timeout(Duration::from_secs(timeout_secs), child.wait_with_output())
+                .await
+            {
+                Ok(result) => result.map_err(|e| anyhow!("Failed to run command: {e}"))?,
+                Err(_) => {
+                    return Err(anyhow!(
+                        "Command timed out after {timeout_secs}s: {command}"
+                    ));
+                }
+            };
 
         let stdout = truncate(&String::from_utf8_lossy(&output.stdout));
         let stderr = truncate(&String::from_utf8_lossy(&output.stderr));
@@ -175,10 +180,7 @@ mod tests {
 
     #[tokio::test]
     async fn captures_stdout_and_exit_code() {
-        let result = tool()
-            .call(json!({"command": "echo hi"}))
-            .await
-            .unwrap();
+        let result = tool().call(json!({"command": "echo hi"})).await.unwrap();
         assert!(result.contains("exit code: 0"));
         assert!(result.contains("hi"));
     }

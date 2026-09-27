@@ -4,7 +4,7 @@ use serde_json::json;
 use std::path::Path;
 
 use super::McpTool;
-use crate::validator::{self, Validator};
+use crate::validator::Validator;
 
 const IGNORED_DIRS: &[&str] = &[
     ".git",
@@ -26,7 +26,7 @@ impl McpTool for ListFilesTool {
     fn name(&self) -> &str {
         "list_files"
     }
-	
+
     fn schema(&self) -> serde_json::Value {
         json!({
             "name": "list_files",
@@ -122,7 +122,10 @@ fn walk_dir(
             continue;
         }
 
-        let rel: std::path::Display<'_> = path.strip_prefix(validator.root()).unwrap_or(&path).display();
+        let _rel: std::path::Display<'_> = path
+            .strip_prefix(validator.root())
+            .unwrap_or(&path)
+            .display();
         let indent = "  ".repeat(depth);
 
         if path.is_dir() {

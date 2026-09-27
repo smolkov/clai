@@ -1,26 +1,29 @@
 use crate::config::Config;
-use crate::history::{self, History};
-use crate::model::Model;
+use crate::provider::Provider;
+use crate::session::Session;
 use crate::tools::McpTool;
 use anyhow::Result;
+use crate::message::Message;
 
 pub struct Agent {
     tools: Vec<Box<dyn McpTool>>,
-    model: Model,
-    history: History,
+    model: Provider,
+    history: Session,
 }
 
 impl Agent {
-    pub async fn generate(&mut self, _message: &str) -> Result<String> {
+    pub async fn generate(&mut self, _message: &str) -> Result<Message> {
         self.model
             .generate(_message, &self.history, &self.tools)
             .await
     }
+    pub async fn status(&self) {
+    }
 }
 
 pub struct AgentBuilder {
-    model: Option<Model>,
-    history: Option<History>,
+    model: Option<Provider>,
+    history: Option<Session>,
     tools: Vec<Box<dyn McpTool>>,
 }
 
@@ -42,7 +45,7 @@ impl AgentBuilder {
         self
     }
 
-    pub fn history(mut self, history: History) -> Self {
+    pub fn history(mut self, history: Session) -> Self {
         self.history = Some(history);
         self
     }
@@ -58,12 +61,12 @@ impl AgentBuilder {
                     .or_else(|| config.models.first())
                     .ok_or(anyhow::anyhow!("no model config found"))?;
 
-                Model::new(model_config.clone())?
+                Provider::new(model_config.clone())?
             }
         };
         let history = match self.history {
             Some(history) => history,
-            None => History::new("default"),
+            None => Session::new("default"),
         };
         let tools = self.tools;
 

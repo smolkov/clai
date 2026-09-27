@@ -5,6 +5,7 @@ use std::time::Duration;
 use super::Result;
 use crate::config::ModelConfig;
 use crate::history::History;
+use crate::message::Message;
 use crate::tools::McpTool;
 
 pub struct GeminiModel {

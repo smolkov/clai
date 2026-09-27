@@ -4,7 +4,8 @@ use std::time::Duration;
 
 use super::Result;
 use crate::config::ModelConfig;
-use crate::history::History;
+use crate::message::Message;
+use crate::session::Session;
 use crate::tools::McpTool;
 
 pub struct GeminiModel {
@@ -20,9 +21,9 @@ impl GeminiModel {
     pub async fn generate(
         &mut self,
         message: &str,
-        _history: &History,
+        _history: &Session,
         _tools: &[Box<dyn McpTool>],
-    ) -> Result<String> {
+    ) -> Result<Message> {
         let url = format!(
             "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent",
             self.config.model
@@ -79,8 +80,7 @@ impl GeminiModel {
         let msg = value
             .as_str()
             .ok_or(anyhow::anyhow!("gemini: get text value unknown error"))?
-            .trim_matches('"')
-            .to_string();
-        Ok(msg)
+            .trim_matches('"');
+        Ok(Message::new(msg))
     }
 }

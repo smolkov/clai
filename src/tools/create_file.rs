@@ -9,13 +9,13 @@ use serde_json::{json, Value};
 
 const MAX_FILE_SIZE: usize = 1_000_000; // 1 MB
 pub struct CreateFileTool {
-    allowed_root: PathBuf,
+    _allowed_root: PathBuf,
 }
 
 impl CreateFileTool {
     pub fn new<T: AsRef<Path>>(path: T) -> Self {
         CreateFileTool {
-            allowed_root: path.as_ref().to_path_buf(),
+            _allowed_root: path.as_ref().to_path_buf(),
         }
     }
     pub async fn backup(&self, path: &PathBuf, old_content: &str) -> Result<()> {

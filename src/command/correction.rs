@@ -12,7 +12,7 @@ impl Correction {
     pub async fn run(&self, agent: &mut Agent) -> Result<()> {
         let user_text = format!("Correct and improve my English:{}", self.text.join(" "));
         let response = agent.generate(&user_text).await?;
-        println!("{}", response);
+        println!("{}", response.content.as_text().unwrap());
         Ok(())
     }
 }

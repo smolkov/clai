@@ -1,7 +1,8 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::history::History;
+use crate::message::Message;
+use crate::session::Session;
 use crate::tools::McpTool;
 
 pub mod claude;
@@ -11,23 +12,23 @@ pub mod openai;
 pub type DefaultModel = gemini::GeminiModel;
 
 #[async_trait]
-pub trait GenModel: Send + Sync {
-    async fn generate(&self, prompt: &str) -> Result<String>;
+pub trait GenProvider: Send + Sync {
+    async fn generate(&self, prompt: &str) -> Result<Message>;
 }
 
-pub enum Model {
+pub enum Provider {
     Gemini(gemini::GeminiModel),
     Openai(openai::OpenaiModel),
     Claude(claude::ClaudeModel),
 }
 
-impl Model {
+impl Provider {
     pub async fn generate(
         &mut self,
         message: &str,
-        history: &History,
+        history: &Session,
         tools: &[Box<dyn McpTool>],
-    ) -> Result<String> {
+    ) -> Result<Message> {
         match self {
             Self::Gemini(model) => model.generate(message, history, tools).await,
             Self::Openai(model) => model.generate(message, history, tools).await,

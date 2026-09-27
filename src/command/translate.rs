@@ -12,7 +12,7 @@ impl Translate {
     pub async fn run(&self, agent: &mut Agent) -> Result<()> {
         let user_text = format!("Translate into English:{}", self.text.join(" "));
         let response = agent.generate(&user_text).await?;
-        println!("{}", response);
+        println!("{}", response.content.as_text().unwrap());
         Ok(())
     }
 }

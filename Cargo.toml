@@ -7,7 +7,7 @@ authors = ["Aleksandr Smolkov"]
 description = "Command line ai assistent"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/smolkov/clai"
-keywords = ["ai", "cli", "chatbot","assistant"]
+keywords = ["ai", "cli", "chatbot", "assistant"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -26,3 +26,6 @@ secrecy = "0.10.3"
 toml = "1.1.4"
 async-trait = "0.1.92"
 chrono = "0.4.45"
+uuid = { version = "1.26.1", features = ["v4"] }
+ratatui = "0.30.2"
+crossterm = "0.29.0"

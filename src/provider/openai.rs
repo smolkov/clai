@@ -5,7 +5,8 @@ use std::time::Duration;
 use super::Result;
 
 use crate::config::ModelConfig;
-use crate::history::History;
+use crate::message::Message;
+use crate::session::Session;
 use crate::tools::McpTool;
 
 pub struct OpenaiModel {
@@ -21,9 +22,9 @@ impl OpenaiModel {
     pub async fn generate(
         &mut self,
         message: &str,
-        _history: &History,
+        _history: &Session,
         _tools: &[Box<dyn McpTool>],
-    ) -> Result<String> {
+    ) -> Result<Message> {
         let mut header = HeaderMap::new();
         header.insert(
             AUTHORIZATION,
@@ -53,8 +54,7 @@ impl OpenaiModel {
         let msg = value
             .as_str()
             .ok_or(anyhow::anyhow!("get value error"))?
-            .trim_matches('"')
-            .to_string();
-        Ok(msg)
+            .trim_matches('"');
+        Ok(Message::new(msg))
     }
 }

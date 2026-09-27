@@ -16,7 +16,7 @@ impl Commit {
             git_diff
         );
         let response = agent.generate(&message).await?;
-        println!("{}", response);
+        println!("{}", response.content.as_text().unwrap());
         Ok(())
     }
 }
