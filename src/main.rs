@@ -29,7 +29,7 @@ async fn main() -> anyhow::Result<()> {
     match args.command {
         Some(command) => command.run(&mut agent).await?,
         None => {
-            clai::tui::run(&mut agent)?;
+            clai::tui::run(&mut agent).await?;
         }
     }
     Ok(())

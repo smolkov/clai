@@ -29,3 +29,4 @@ chrono = "0.4.45"
 uuid = { version = "1.26.1", features = ["v4"] }
 ratatui = "0.30.2"
 crossterm = "0.29.0"
+tui-big-text = "0.8.10"

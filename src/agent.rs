@@ -20,6 +20,11 @@ impl Agent {
     pub async fn status(&self) {
         println!("Agent status: {:?}", self.session);
     }
+    pub async fn start(&mut self) -> Result<()> {
+        println!("Starting agent with session: {:?}", self.session);
+        Ok(())  
+    }
+
 }
 
 pub struct AgentBuilder {
