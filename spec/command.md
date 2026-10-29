@@ -84,14 +84,15 @@ Runs one task without the TUI and exits when it is done.
 - Runs in a temporary session that is not listed and ends with the task.
 - Standard output: the model's final answer as plain text (Markdown source).
   Standard error: tool calls and their results, one line each.
-- Permissions: there is no one to ask. A tool call that would need permission
-  is denied, and the model is told so, unless an allow rule matches or
-  `--yes` is given. **(assumption)**
+- Permissions: there is no one to ask, so a tool call whose action is `ask`
+  is denied and the model is told so. `--yes` allows it instead; `deny`
+  rules and the workspace boundary still apply (see
+  [`config.md`](config.md), "Permissions").
 
 | Option | Meaning |
 |--------|---------|
 | `--model` | Model to use. Default: `default_model`. |
-| `--yes` | Allow all tool calls without asking. |
+| `--yes` | Allow tool calls that would ask; `deny` rules still apply. |
 | `-C DIR` | Workspace. Default: the current directory. |
 
 ## clai new

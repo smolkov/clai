@@ -86,9 +86,12 @@ mode, and output that is not a terminal, use plain text instead.
   write new file, run shell command with a timeout. Every tool returns
   either a result or an error message to the model; a tool error never ends
   the session.
-- **Permissions:** reading inside the workspace is allowed. Writing files
-  and running commands ask the user, showing the diff or the command, unless
-  an allow rule matches. Access outside the workspace is denied by default.
+- **Permissions:** each tool call is allowed, asked about or denied by
+  per-tool defaults and `allow`/`ask`/`deny` rules in the configuration.
+  By default reading inside the workspace is allowed; writing files and
+  running commands ask the user, showing the diff or the command. Access
+  outside the workspace is denied. Details: [`config.md`](config.md),
+  "Permissions".
 - **Configuration:** read from `~/.config/clai/config.toml`, then
   `<workspace>/.clai/config.toml`, then environment variables, then
   command-line options; later sources win. All providers and models are
@@ -118,10 +121,9 @@ When a spec file is added, renamed or removed, update this table and
 | [`tui.md`](tui.md) | draft | Full-screen interface: layout, session list, model picker, keys, permission prompts, input editor. |
 | [`sessions.md`](sessions.md) | draft | Server, several sessions, attach/detach, session commands. |
 | [`commit.md`](commit.md) | draft | Commit messages: `clai commit` (prints to stdout) and the TUI `/commit`. |
-| [`config.md`](config.md) | draft | Config files, precedence, providers and models, validation, reloading. |
+| [`config.md`](config.md) | draft | Config files, precedence, providers and models, tool permissions, TUI settings and themes, validation, reloading. |
 | `agent-loop.md` | planned | Request/response cycle, streaming, limits, cancellation. |
 | `tools.md` | planned | Each tool: arguments, results, errors, limits. |
-| `permissions.md` | planned | Allow/ask/deny rules, workspace boundary, `--yes`. |
 | `providers.md` | planned | API types, request format, streaming, retries. |
 | `context.md` | planned | System prompt, project instructions, history size and truncation. |
 
@@ -137,8 +139,8 @@ coding agent working on this repository).
    types to support first ([`config.md`](config.md))?
 3. **First version:** which of interactive mode (TUI) and one-shot mode come
    first?
-4. **Permissions default:** is `--yes` wanted at all, and should allow rules
-   be stored per project?
+4. **Permissions:** should "always allow" answers from the TUI be saveable
+   to the user configuration?
 5. **Platforms:** Linux only, or also macOS and Windows?
 6. **Sandbox:** should commands run in a sandbox, or only behind the
    permission prompt?

@@ -18,5 +18,4 @@
 
 - [Agent loop]()
 - [Tools]()
-- [Permissions]()
 - [Context]()

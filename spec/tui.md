@@ -162,9 +162,9 @@ e.g. line count or exit code), failed (`✗`), denied (`⊘`), waiting for
 permission (`?`).
 
 Tool calls are collapsed (`▸`) by default and expanded (`▾`) while they wait
-for permission. Long outputs are cut to 20 lines in the view, with a
-"… N more lines" marker; the full text stays available in the expanded entry.
-**(assumption)**
+for permission. Long outputs are cut to `tui.tool_output_lines` lines (default
+20) in the view, with a "… N more lines" marker; the full text stays
+available in the expanded entry. See [`config.md`](config.md), "TUI".
 
 ## Permission prompts
 
@@ -177,7 +177,7 @@ When a tool call needs permission, the TUI:
 | Key   | Action |
 |-------|--------|
 | `y`   | Allow this call once. |
-| `a`   | Allow this call and add an allow rule for the session (e.g. this command, this file). |
+| `a`   | Allow this call and add an allow rule for the session (e.g. this command, this file); see [`config.md`](config.md), "Session rules". |
 | `n`   | Deny; the model is told the call was denied. |
 | `e`   | Deny and type a short message to the model explaining why or what to do instead. |
 | `Esc` | Deny and cancel the turn. |
@@ -204,6 +204,7 @@ red. Commands are shown exactly as they will run, with the working directory.
 | `/help`    | Show keys and commands. |
 | `/clear`   | Start a new conversation in the same session. |
 | `/model [PROVIDER/MODEL]` | Change the session's provider and model; without an argument, open the model picker. |
+| `/permissions` | Show the permission rules in effect: configuration, project file and session rules, with their source. |
 | `/sessions` | Open the session list. |
 | `/new [NAME]` | Start a new session in the same workspace and attach to it. |
 | `/attach NAME` | Attach to another session. |
@@ -324,8 +325,9 @@ While new output arrives, the view follows the end of the conversation,
 unless the user scrolled up; then it stays put and the status line shows
 "↓ new output". `Ctrl-End` resumes following.
 
-Mouse wheel scrolls the conversation. Mouse capture can be turned off in the
-configuration so the terminal's own text selection works. **(assumption)**
+Mouse wheel scrolls the conversation. Mouse capture can be turned off with
+`tui.mouse = false` so the terminal's own text selection works (see
+[`config.md`](config.md), "TUI").
 
 ## Cancellation and exit
 
@@ -339,10 +341,13 @@ configuration so the terminal's own text selection works. **(assumption)**
 
 ## Appearance
 
-- Colours use the terminal's 16-colour palette by default, so they follow the
-  user's terminal theme. `NO_COLOR` turns colours off. **(assumption)**
+- Colours come from the theme set in `tui.theme`: `terminal` (default, the
+  terminal's 16-colour palette, so it follows the terminal's own theme),
+  the built-in `dark` and `light`, or a custom theme. `NO_COLOR` turns
+  colours off. Themes and all other TUI settings: [`config.md`](config.md),
+  "TUI".
 - Unicode symbols (`✓ ✗ ▸ ▾`) fall back to ASCII (`+ x > v`) when the locale
-  is not UTF-8.
+  is not UTF-8, or always with `tui.symbols = "ascii"`.
 - Resizing the terminal re-wraps all text; no content is lost.
 
 ## Performance
@@ -368,6 +373,6 @@ configuration so the terminal's own text selection works. **(assumption)**
 ## Open questions
 
 1. Is an external editor (`Ctrl-G` opens `$EDITOR` for the input) wanted?
-2. Should "always allow" rules from the prompt be saved to the project
-   configuration, or last only for the session?
-3. Light and dark themes, or only the terminal palette?
+2. Should a `/theme NAME` command switch the theme without editing the
+   configuration?
+3. Should keys be configurable (`[tui.keys]`)?
