@@ -7,8 +7,9 @@
 | File                     | Purpose                                                        |
 |--------------------------|----------------------------------------------------------------|
 | `spec/`                  | Source of truth for behaviour, one file per topic. The user edits it directly. |
-| `spec/readme.md`         | Start of the specification: purpose, goals, terms; it is the source of truth for `sprprot`. |
+| `spec/readme.md`         | Start of the specification: purpose, goals, terms; it is the source of truth for `clai`. |
 | `readme.md`              | User documentation.                                            |
+| `implementation.md`      | Architecture, modules, dependencies and milestone order of the implementation. |
 | `todo.md`                | Tasks and their status.                                        |
 
 ## Workflow
@@ -46,7 +47,8 @@ cargo test
 
 ## Never crash (outranks feature work)
 
-Protection code runs in a real-time loop; a panic stops protection of the substation.
+`clai` runs sessions in a long-lived background server; a panic would end every
+session of the user.
 
 - Non-test code never panics. Forbidden: `unwrap()`, `expect()`, `panic!`,
   `unreachable!`, `todo!`, `unimplemented!`, unchecked indexing that can go out of
@@ -54,7 +56,7 @@ Protection code runs in a real-time loop; a panic stops protection of the substa
 - Return the crate's error type through `Result` and `?`. Use `ok_or(..)?`,
   `let … else`, `if let`, or `.get()` for indexing.
 - Use a fallback (`unwrap_or…`) only where it can't silently corrupt a document
-  or a protection decision.
+  or a permission decision.
 - An unfinished feature returns an "unsupported" error or is disabled.
 - Sole exception: a provably infallible literal, written as
   `#[allow(clippy::expect_used)]` `.expect("why it can't fail")`.

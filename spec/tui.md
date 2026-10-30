@@ -46,9 +46,9 @@ From top to bottom:
 
 | Area           | Content |
 |----------------|---------|
-| Header         | Program name, session name, workspace path, provider and model (`anthropic/sonnet`), position among all sessions (`1/3`), number of other sessions waiting for permission (`●1`), context usage (tokens used / limit). |
+| Header         | Program name, session name, workspace path, provider and model (`anthropic/sonnet`), position among all sessions (`1/3`), number of other sessions waiting for an answer (`●1`), context usage (tokens used / limit). |
 | Conversation   | Scrollable history of the session: user messages, model text, tool calls. |
-| Prompt bar     | Shown only while a permission question is open; replaces nothing else. |
+| Prompt bar     | Shown only while a question (permission or limit) is open; replaces nothing else. |
 | Input          | Multi-line editor for the next user message. |
 | Status line    | Current state (idle, waiting for model, running tool, asking), turn counters, key hints. |
 
@@ -59,8 +59,9 @@ is resized. **(assumption)**
 ## Sessions
 
 The TUI shows exactly one session, the attached one. Other sessions keep
-running on the server; the header counts the ones waiting for a permission
-answer, so the user knows to switch to them.
+running on the server; the header counts the ones waiting for an answer to a
+question (see [`sessions.md`](sessions.md), "Background work"), so the user
+knows to switch to them.
 
 The session list opens with `Ctrl-S`, `/sessions`, or `clai attach` without a
 name:
@@ -184,6 +185,24 @@ When a tool call needs permission, the TUI:
 
 Edits are shown as a unified diff with added lines green and removed lines
 red. Commands are shown exactly as they will run, with the working directory.
+
+## Limit prompt
+
+When a turn reaches its limit of model requests or tool calls, the session
+waits (see [`sessions.md`](sessions.md), "Background work") and the TUI shows
+the prompt bar:
+
+```
+│ Turn limit reached (50 requests, 120 tool calls). Continue?  [y] yes  [n] stop │
+```
+
+| Key   | Action |
+|-------|--------|
+| `y`   | Continue the turn with a new budget of the same size. |
+| `n`   | Stop the turn; a "limit reached" notice is added. |
+| `Esc` | Same as `n`. |
+
+The prompt takes keys only for the prompt bar, as for permission prompts.
 
 ## Input editor
 

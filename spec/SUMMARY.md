@@ -12,7 +12,7 @@
 # Setup
 
 - [Configuration](config.md)
-- [Providers]()
+- [Providers](providers.md)
 
 # Agent
 

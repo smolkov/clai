@@ -1,0 +1,421 @@
+//! Command-line arguments, as specified in `spec/command.md`.
+
+use std::path::PathBuf;
+
+use std::ffi::OsString;
+
+use clap::error::ErrorKind;
+use clap::{Args, CommandFactory, Parser, Subcommand};
+
+/// AI coding agent for the terminal.
+#[derive(Debug, Parser)]
+#[command(name = "clai", version, disable_help_subcommand = true)]
+pub struct Cli {
+    /// Use FILE instead of the user config file.
+    #[arg(long, global = true, value_name = "FILE")]
+    pub config: Option<PathBuf>,
+
+    #[command(subcommand)]
+    pub command: Option<Command>,
+
+    #[command(flatten)]
+    pub top: TopArgs,
+}
+
+/// Arguments of `clai` without a command: a new session, or the short form
+/// `clai TASK...` of `clai run`.
+#[derive(Debug, Args)]
+pub struct TopArgs {
+    /// Model to use, as PROVIDER/MODEL.
+    #[arg(long, value_name = "PROVIDER/MODEL")]
+    pub model: Option<String>,
+
+    /// Session name (only without TASK).
+    #[arg(long, conflicts_with = "task")]
+    pub name: Option<String>,
+
+    /// Allow tool calls that would ask (only with TASK).
+    #[arg(long, requires = "task")]
+    pub yes: bool,
+
+    /// Workspace (only with TASK).
+    #[arg(short = 'C', value_name = "DIR", requires = "task")]
+    pub dir: Option<PathBuf>,
+
+    /// Task to run one-shot; `-` reads it from standard input.
+    #[arg(value_name = "TASK")]
+    pub task: Vec<String>,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum Command {
+    /// Run one task without the TUI and exit.
+    Run(RunArgs),
+    /// Create a session and attach the TUI to it.
+    New(NewArgs),
+    /// Attach the TUI to a running session.
+    Attach {
+        /// Session name.
+        name: Option<String>,
+    },
+    /// List sessions.
+    Ls {
+        /// Print a JSON array instead of the table.
+        #[arg(long)]
+        json: bool,
+    },
+    /// End sessions.
+    Kill {
+        /// Names of the sessions to end.
+        #[arg(required_unless_present = "all", conflicts_with = "all")]
+        names: Vec<String>,
+        /// End all sessions.
+        #[arg(long)]
+        all: bool,
+    },
+    /// Send a message to a session without attaching.
+    Send {
+        /// Session name.
+        name: String,
+        /// Message; `-` reads it from standard input.
+        #[arg(required = true)]
+        message: Vec<String>,
+    },
+    /// List configured providers and models.
+    Models {
+        /// Print a JSON array instead of the table.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Print a commit message for the changes in a directory.
+    Commit(CommitArgs),
+    /// Run, stop or check the background server.
+    Server {
+        #[command(subcommand)]
+        action: Option<ServerAction>,
+    },
+}
+
+#[derive(Debug, Args)]
+pub struct RunArgs {
+    /// Model to use, as PROVIDER/MODEL.
+    #[arg(long, value_name = "PROVIDER/MODEL")]
+    pub model: Option<String>,
+    /// Allow tool calls that would ask; deny rules still apply.
+    #[arg(long)]
+    pub yes: bool,
+    /// Workspace. Default: the current directory.
+    #[arg(short = 'C', value_name = "DIR")]
+    pub dir: Option<PathBuf>,
+    /// Task; `-` reads it from standard input.
+    #[arg(value_name = "TASK", required = true)]
+    pub task: Vec<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct NewArgs {
+    /// Do not attach; print the session name.
+    #[arg(short, long)]
+    pub detach: bool,
+    /// Session name.
+    #[arg(long)]
+    pub name: Option<String>,
+    /// Model of the session, as PROVIDER/MODEL.
+    #[arg(long, value_name = "PROVIDER/MODEL")]
+    pub model: Option<String>,
+    /// Workspace. Default: the current directory.
+    pub dir: Option<PathBuf>,
+}
+
+#[derive(Debug, Args)]
+pub struct CommitArgs {
+    /// Describe only the staged changes.
+    #[arg(long)]
+    pub staged: bool,
+    /// Model to use, as PROVIDER/MODEL.
+    #[arg(long, value_name = "PROVIDER/MODEL")]
+    pub model: Option<String>,
+    /// Extra instruction for the model.
+    #[arg(long, value_name = "TEXT")]
+    pub hint: Option<String>,
+    /// Directory. Default: the current directory.
+    pub dir: Option<PathBuf>,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ServerAction {
+    /// Stop the running server and end all its sessions.
+    Stop {
+        /// Do not ask for confirmation.
+        #[arg(long)]
+        force: bool,
+    },
+    /// Print whether a server runs, its PID and session count.
+    Status,
+}
+
+impl Cli {
+    /// Parses the arguments, including the checks clap cannot express.
+    /// Help and version also come back as an error, with exit code 0.
+    pub fn parse_args<I, T>(args: I) -> Result<Cli, clap::Error>
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<OsString> + Clone,
+    {
+        let cli = Cli::try_parse_from(args)?;
+        let top = &cli.top;
+        let top_used = top.model.is_some()
+            || top.name.is_some()
+            || top.yes
+            || top.dir.is_some()
+            || !top.task.is_empty();
+        if cli.command.is_some() && top_used {
+            return Err(Cli::command().error(
+                ErrorKind::ArgumentConflict,
+                "options of `clai` without a command and a task cannot be used with a command; \
+                 put command options after the command name",
+            ));
+        }
+        Ok(cli)
+    }
+
+    /// Name of the command, as used in messages.
+    pub fn command_name(&self) -> &'static str {
+        match &self.command {
+            None if self.top.task.is_empty() => "clai",
+            None | Some(Command::Run(_)) => "run",
+            Some(Command::New(_)) => "new",
+            Some(Command::Attach { .. }) => "attach",
+            Some(Command::Ls { .. }) => "ls",
+            Some(Command::Kill { .. }) => "kill",
+            Some(Command::Send { .. }) => "send",
+            Some(Command::Models { .. }) => "models",
+            Some(Command::Commit(_)) => "commit",
+            Some(Command::Server { action: None }) => "server",
+            Some(Command::Server {
+                action: Some(ServerAction::Stop { .. }),
+            }) => "server stop",
+            Some(Command::Server {
+                action: Some(ServerAction::Status),
+            }) => "server status",
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(args: &[&str]) -> Cli {
+        Cli::parse_args(std::iter::once("clai").chain(args.iter().copied()))
+            .unwrap_or_else(|e| panic!("{args:?}: {e}"))
+    }
+
+    fn parse_err(args: &[&str]) -> clap::Error {
+        match Cli::parse_args(std::iter::once("clai").chain(args.iter().copied())) {
+            Ok(cli) => panic!("{args:?} parsed as {cli:?}"),
+            Err(e) => e,
+        }
+    }
+
+    #[test]
+    fn definition_is_valid() {
+        Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn no_arguments_is_new_session() {
+        let cli = parse(&[]);
+        assert!(cli.command.is_none());
+        assert!(cli.top.task.is_empty());
+        assert_eq!(cli.command_name(), "clai");
+    }
+
+    #[test]
+    fn top_level_model_and_name() {
+        let cli = parse(&["--model", "anthropic/opus", "--name", "x"]);
+        assert_eq!(cli.top.model.as_deref(), Some("anthropic/opus"));
+        assert_eq!(cli.top.name.as_deref(), Some("x"));
+    }
+
+    #[test]
+    fn short_form_is_run() {
+        let cli = parse(&["--yes", "-C", "/tmp", "fix", "the", "test"]);
+        assert!(cli.command.is_none());
+        assert_eq!(cli.top.task, ["fix", "the", "test"]);
+        assert!(cli.top.yes);
+        assert_eq!(cli.top.dir, Some(PathBuf::from("/tmp")));
+        assert_eq!(cli.command_name(), "run");
+    }
+
+    #[test]
+    fn short_form_with_command_name_later() {
+        let cli = parse(&["fix", "ls"]);
+        assert_eq!(cli.top.task, ["fix", "ls"]);
+    }
+
+    #[test]
+    fn help_is_a_task() {
+        let cli = parse(&["help"]);
+        assert_eq!(cli.top.task, ["help"]);
+    }
+
+    #[test]
+    fn task_from_stdin() {
+        let cli = parse(&["-"]);
+        assert_eq!(cli.top.task, ["-"]);
+    }
+
+    #[test]
+    fn run_command() {
+        let cli = parse(&["run", "--model", "local/qwen", "--yes", "commit", "docs"]);
+        let Some(Command::Run(args)) = cli.command else {
+            panic!("not run");
+        };
+        assert_eq!(args.task, ["commit", "docs"]);
+        assert_eq!(args.model.as_deref(), Some("local/qwen"));
+        assert!(args.yes);
+    }
+
+    #[test]
+    fn run_needs_task() {
+        assert_eq!(
+            parse_err(&["run"]).kind(),
+            ErrorKind::MissingRequiredArgument
+        );
+    }
+
+    #[test]
+    fn name_with_task_is_error() {
+        assert_eq!(
+            parse_err(&["--name", "x", "fix"]).kind(),
+            ErrorKind::ArgumentConflict
+        );
+    }
+
+    #[test]
+    fn yes_and_dir_without_task_are_errors() {
+        assert_eq!(
+            parse_err(&["--yes"]).kind(),
+            ErrorKind::MissingRequiredArgument
+        );
+        assert_eq!(
+            parse_err(&["-C", "/tmp"]).kind(),
+            ErrorKind::MissingRequiredArgument
+        );
+    }
+
+    #[test]
+    fn new_command() {
+        let cli = parse(&["new", "-d", "--name", "a", "--model", "m", "/w"]);
+        let Some(Command::New(args)) = cli.command else {
+            panic!("not new");
+        };
+        assert!(args.detach);
+        assert_eq!(args.name.as_deref(), Some("a"));
+        assert_eq!(args.model.as_deref(), Some("m"));
+        assert_eq!(args.dir, Some(PathBuf::from("/w")));
+    }
+
+    #[test]
+    fn attach_ls_models() {
+        assert!(matches!(
+            parse(&["attach"]).command,
+            Some(Command::Attach { name: None })
+        ));
+        assert!(matches!(
+            parse(&["attach", "docs"]).command,
+            Some(Command::Attach { name: Some(n) }) if n == "docs"
+        ));
+        assert!(matches!(
+            parse(&["ls", "--json"]).command,
+            Some(Command::Ls { json: true })
+        ));
+        assert!(matches!(
+            parse(&["models"]).command,
+            Some(Command::Models { json: false })
+        ));
+    }
+
+    #[test]
+    fn kill_names_or_all() {
+        assert!(matches!(
+            parse(&["kill", "a", "b"]).command,
+            Some(Command::Kill { names, all: false }) if names == ["a", "b"]
+        ));
+        assert!(matches!(
+            parse(&["kill", "--all"]).command,
+            Some(Command::Kill { all: true, .. })
+        ));
+        assert_eq!(
+            parse_err(&["kill"]).kind(),
+            ErrorKind::MissingRequiredArgument
+        );
+        assert_eq!(
+            parse_err(&["kill", "a", "--all"]).kind(),
+            ErrorKind::ArgumentConflict
+        );
+    }
+
+    #[test]
+    fn send_command() {
+        assert!(matches!(
+            parse(&["send", "docs", "hello", "there"]).command,
+            Some(Command::Send { name, message }) if name == "docs" && message == ["hello", "there"]
+        ));
+        assert_eq!(
+            parse_err(&["send", "docs"]).kind(),
+            ErrorKind::MissingRequiredArgument
+        );
+    }
+
+    #[test]
+    fn commit_command() {
+        let cli = parse(&["commit", "--staged", "--hint", "fixes #12", "src"]);
+        let Some(Command::Commit(args)) = cli.command else {
+            panic!("not commit");
+        };
+        assert!(args.staged);
+        assert_eq!(args.hint.as_deref(), Some("fixes #12"));
+        assert_eq!(args.dir, Some(PathBuf::from("src")));
+    }
+
+    #[test]
+    fn server_commands() {
+        assert_eq!(parse(&["server"]).command_name(), "server");
+        assert_eq!(
+            parse(&["server", "stop", "--force"]).command_name(),
+            "server stop"
+        );
+        assert_eq!(parse(&["server", "status"]).command_name(), "server status");
+    }
+
+    #[test]
+    fn config_before_and_after_command() {
+        let before = parse(&["--config", "c.toml", "ls"]);
+        let after = parse(&["ls", "--config", "c.toml"]);
+        assert_eq!(before.config, Some(PathBuf::from("c.toml")));
+        assert_eq!(after.config, Some(PathBuf::from("c.toml")));
+        assert!(matches!(before.command, Some(Command::Ls { .. })));
+    }
+
+    #[test]
+    fn config_with_short_form() {
+        let cli = parse(&["--config", "c.toml", "fix", "it"]);
+        assert_eq!(cli.config, Some(PathBuf::from("c.toml")));
+        assert_eq!(cli.top.task, ["fix", "it"]);
+    }
+
+    #[test]
+    fn top_level_option_before_command_is_error() {
+        let err = parse_err(&["--model", "m", "ls"]);
+        assert_eq!(err.kind(), ErrorKind::ArgumentConflict);
+        assert_eq!(err.exit_code(), 2);
+    }
+
+    #[test]
+    fn unknown_option_is_error() {
+        assert_eq!(parse_err(&["--nope"]).kind(), ErrorKind::UnknownArgument);
+        assert_eq!(parse_err(&["--nope"]).exit_code(), 2);
+    }
+}

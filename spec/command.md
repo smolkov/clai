@@ -37,6 +37,13 @@ Statements marked **(assumption)** need a decision from the user.
   "Server"). `models`, `commit` and `run` work without the server.
   **(assumption)**
 
+- Options of `clai` itself (`--model`, `--name`, `--yes`, `-C`) and a task
+  cannot be combined with a command: `clai --model m ls` is an error (exit
+  `2`); options of a command come after its name. Global options are the
+  exception.
+- There is no `help` command; `clai help` runs the task "help". Help is
+  `-h` / `--help`.
+
 ## Global options
 
 Accepted by every command, before or after the command name.
@@ -88,6 +95,9 @@ Runs one task without the TUI and exits when it is done.
   is denied and the model is told so. `--yes` allows it instead; `deny`
   rules and the workspace boundary still apply (see
   [`config.md`](config.md), "Permissions").
+- Limits: when the turn reaches its limit, it stops with "limit reached" on
+  standard error and exit code `1`; `--yes` does not change this (see
+  [`sessions.md`](sessions.md), "Background work"). **(assumption)**
 
 | Option | Meaning |
 |--------|---------|

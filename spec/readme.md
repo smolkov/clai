@@ -20,6 +20,9 @@ is wrong until the user decides otherwise.
   change it, run its build and tests.
 - Keep the user in control: show every change and command, and ask before
   anything that writes or executes, unless the user allowed it beforehand.
+- Work in the background: sessions keep working without a TUI and wait for
+  the user only when a decision is needed (see [`sessions.md`](sessions.md),
+  "Background work").
 - Never crash: errors are reported and the session continues (see
   [`agent.md`](../agent.md), "Never crash").
 - Start fast and ship as a single static binary with no runtime dependencies.
@@ -43,6 +46,7 @@ is wrong until the user decides otherwise.
 | Attach / detach | Connect a TUI to a session, or disconnect it without stopping the session. |
 | Turn          | One user message and everything `clai` does until it waits for the user again. |
 | Provider      | A service that hosts LLMs and exposes an API, e.g. Anthropic or a local Ollama. Defined in the configuration. |
+| Adapter       | The code for one provider API type (`api` in the configuration). It turns the shared request and event types into the API's own format and back. See [`providers.md`](providers.md). |
 | Model         | An LLM of a provider, defined in the configuration and referred to as `<provider>/<model>`. Each session uses one model, which can be changed in the TUI. |
 | TUI           | The full-screen terminal interface of an interactive session. |
 | Tool          | An action the model may ask `clai` to run, e.g. `read_file`, `edit_file`, `run_command`. |
@@ -76,9 +80,13 @@ mode, and output that is not a terminal, use plain text instead.
 
 - **Agent loop:** send context to the model, stream the answer to the
   attached TUIs, run any tool calls, append their results, repeat until the model
-  answers without tool calls or a limit is reached.
-- **Limits:** a turn stops after a configurable number of model requests
-  and tool calls, so a confused model cannot loop forever.
+  answers without tool calls or the user stops it at a limit.
+- **Background work:** a session keeps working whether a TUI is attached or
+  not. It waits for the user only for a decision: a permission question or a
+  limit question. Details: [`sessions.md`](sessions.md).
+- **Limits:** after a configurable number of model requests and tool calls
+  the turn pauses and asks the user whether to continue, so a confused model
+  cannot loop forever.
 - **Tools:** read file, list or search files, edit file (exact-text replace),
   write new file, run shell command with a timeout. Every tool returns
   either a result or an error message to the model; a tool error never ends
@@ -121,7 +129,7 @@ When a spec file is added, renamed or removed, update this table and
 | [`config.md`](config.md) | draft | Config files, precedence, providers and models, tool permissions, TUI settings and themes, validation, reloading. |
 | `agent-loop.md` | planned | Request/response cycle, streaming, limits, cancellation. |
 | `tools.md` | planned | Each tool: arguments, results, errors, limits. |
-| `providers.md` | planned | API types, request format, streaming, retries. |
+| [`providers.md`](providers.md) | draft | Agent–provider interface: shared request, message, event and error types; adapters per API type that encode and decode the provider's format; retries. |
 | `context.md` | planned | System prompt, project instructions, history size and truncation. |
 
 Related files outside `spec/`: [`agent.md`](../agent.md) (rules for the
@@ -129,15 +137,12 @@ coding agent working on this repository).
 
 ## Open questions
 
-1. **Product scope:** `agent.md` describes `clai` as an AI coding agent but
-   also mentions protection code for a substation and a project called
-   `sprprot`. Are these leftovers from another project, or part of `clai`?
-2. **Provider APIs:** are `anthropic` and `openai-compatible` the right API
+1. **Provider APIs:** are `anthropic` and `openai-compatible` the right API
    types to support first ([`config.md`](config.md))?
-3. **First version:** which of interactive mode (TUI) and one-shot mode come
+2. **First version:** which of interactive mode (TUI) and one-shot mode come
    first?
-4. **Permissions:** should "always allow" answers from the TUI be saveable
+3. **Permissions:** should "always allow" answers from the TUI be saveable
    to the user configuration?
-5. **Platforms:** Linux only, or also macOS and Windows?
-6. **Sandbox:** should commands run in a sandbox, or only behind the
+4. **Platforms:** Linux only, or also macOS and Windows?
+5. **Sandbox:** should commands run in a sandbox, or only behind the
    permission prompt?

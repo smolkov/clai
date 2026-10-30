@@ -258,7 +258,7 @@ context_window = 32768
 
 | Key            | Required | Meaning |
 |----------------|----------|---------|
-| `api`          | yes      | API type: `anthropic` or `openai-compatible`. Decides how requests are built. **(assumption: these two first)** |
+| `api`          | yes      | API type: `anthropic` or `openai-compatible`. Decides which adapter encodes requests and decodes answers, see [`providers.md`](providers.md). **(assumption: these two first)** |
 | `base_url`     | no       | API address. Default: the official address of the API type. Required for `openai-compatible`. |
 | `api_key_env`  | no       | Name of the environment variable that holds the API key. |
 | `api_key_cmd`  | no       | Command whose output is the API key, e.g. `pass show anthropic`. Run once when the provider is first used. **(assumption)** |
@@ -305,6 +305,19 @@ other providers still work.
 
 If there is no user config file at all, `clai` explains where to create it
 and prints an example, then exits with code `2`.
+
+## Logging
+
+`clai` writes a log to `$XDG_STATE_HOME/clai/clai.log` (default
+`~/.local/state/clai/clai.log`), appending to it. It never logs to the
+terminal. **(assumption)**
+
+- The environment variable `CLAI_LOG` sets the level filter, e.g. `debug`
+  or `clai=trace` (syntax of `tracing`'s `EnvFilter`). Default `info`; an
+  invalid value falls back to `info`.
+- If the log file cannot be opened, `clai` prints one warning on standard
+  error and runs without a log.
+- API keys and other secrets are never written to the log.
 
 ## Reloading
 

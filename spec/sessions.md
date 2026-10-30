@@ -44,7 +44,7 @@ Statements marked **(assumption)** need a decision from the user.
  (none) ───────▶ idle ◀──────────────────▶ attached ────────────────▶ idle / working
                   │  ▲                                                     │
        user msg   ▼  │ turn ends                                           │
-                 working ──▶ waiting (permission question open) ───────────┘
+                 working ──▶ waiting (question open) ───────────────────────┘
                   │
        kill      ▼
                 ended
@@ -55,11 +55,7 @@ Statements marked **(assumption)** need a decision from the user.
   (`default_model` unless given), and a name. The default name is the
   workspace directory name, with `-2`, `-3`, … added if it is taken.
   Names are unique per server.
-- **Working while detached:** a running turn continues after the TUI
-  detaches. Tool calls that are allowed without asking keep running.
-- **Waiting:** a tool call that needs permission stops the turn until an
-  attached TUI answers. A detached session waits; it never decides on its own.
-  `clai ls` and the TUI session list show waiting sessions.
+- **Working and waiting:** see [Background work](#background-work).
 - **Kill:** ends the session. A running turn is cancelled first (same as
   cancelling in the TUI). Attached TUIs show "session ended" and offer the
   session list.
@@ -68,14 +64,45 @@ Statements marked **(assumption)** need a decision from the user.
   (see `spec/tui.md`, "Model picker"). Allow
   rules granted in one session never apply to another.
 
+## Background work
+
+A session works in the background and waits for the user only when a
+decision is needed.
+
+- A session always runs in the server. Model requests, allowed tool calls,
+  retries and errors go on the same way whether a TUI is attached or not,
+  and whether the attached TUI shows this session or not.
+- A session waits for the user only for a **decision**:
+
+  | Decision | When | The session |
+  |----------|------|-------------|
+  | Permission question | A tool call is `ask` (see [`config.md`](config.md), "Permissions"). | Stops at that call until an attached TUI answers. Tool calls after it in the same answer wait too; calls before it have already run. |
+  | Limit question | The turn reached its limit of model requests or tool calls. | Stops before the next model request or tool call until an attached TUI answers "continue" or "stop". **Continue** starts a new budget of the same size; **stop** ends the turn with the notice "limit reached". |
+
+  While a question is open, the session's state is `waiting`. A detached
+  session waits; it never decides on its own. `clai ls` and the TUI session
+  list show waiting sessions.
+- A finished turn is not a question: when the model answers without tool
+  calls (often with a question for the user in its text), the session
+  becomes `idle` and waits for the next message.
+- A session never waits for anything else: not for a TUI to attach, not for
+  a TUI to show its output, not for errors to be confirmed. Everything that
+  happened while no TUI was attached is shown on the next attach (see
+  [`tui.md`](tui.md), "Switching sessions").
+- While a session works, its TUI stays usable: the user can type and queue
+  messages, switch sessions or detach.
+- With no client that can answer (one-shot `clai run`), a permission
+  question counts as denied (allowed with `--yes`) and a limit question
+  always counts as "stop" (see [`command.md`](command.md)). **(assumption)**
+
 ## Several clients on one session
 
 - A TUI is attached to at most one session at a time.
 - More than one TUI may attach to the same session, e.g. from two terminals.
   All of them show the same conversation live. Each has its own scroll
   position and input. **(assumption)**
-- A permission question is shown in all attached TUIs; the first answer
-  counts and the others close the question.
+- A question (permission or limit) is shown in all attached TUIs; the first
+  answer counts and the others close the question.
 - Messages typed in several TUIs are queued in the order the server receives
   them.
 
@@ -96,7 +123,7 @@ end; a later server starts empty. **(assumption, see open questions)**
 
 1. Should sessions be saved to disk, so they survive a server restart or
    reboot and can be resumed?
-2. Should a detached session that waits for permission notify the user
+2. Should a detached session that waits for an answer notify the user
    (desktop notification, terminal bell in other attached TUIs)?
 3. Is a limit on the number of sessions running at the same time wanted, to
    bound API cost?
