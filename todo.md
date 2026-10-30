@@ -11,7 +11,7 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [x] Logging to `$XDG_STATE_HOME/clai/clai.log`, level from `CLAI_LOG`.
 - [x] Unit tests for parsing, integration tests for exit codes and output.
 - [x] `readme.md`, `todo.md`.
-- [ ] Static musl build check (moved to Providers; target not installed).
+- [ ] Static musl build check (moved to Release; target not installed).
 
 ## Configuration
 
@@ -32,9 +32,18 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [x] `--model` completes configured models; paths for `--config`, `-C`, `DIR`.
 - [ ] Session names for `attach`, `kill`, `send` (Server and sessions).
 
+## Providers
+
+- [x] Shared types, `Provider` trait, `from_config`.
+- [x] SSE parser.
+- [x] `anthropic` and `openai-compatible` adapters.
+- [x] Retries with backoff before the first event, timeouts, cancellation.
+- [x] `fake` provider for agent-loop tests.
+- [x] Live tests (`cargo test --test live -- --ignored`).
+- [ ] Static musl build check (moved to Release; target not installed).
+
 ## Next milestones
 
-- [ ] Providers
 - [ ] Tools and permissions (needs `spec/tools.md`)
 - [ ] Agent loop (needs `spec/agent-loop.md`)
 - [ ] One-shot mode

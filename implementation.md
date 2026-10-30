@@ -70,11 +70,11 @@ Chosen for: pure Rust, works with a static musl build, maintained.
 
 | Purpose | Crate |
 |---------|-------|
-| Async runtime | `tokio` (rt-multi-thread, net, process, signal, fs, time) |
+| Async runtime | `tokio` (rt-multi-thread, net, process, signal, fs, time), `tokio-util` (cancellation), `futures-util` (streams) |
 | CLI | `clap` (derive) |
 | Config | `serde`, `toml` (spans for file:line errors) |
 | JSON | `serde_json` |
-| HTTP | `reqwest` with `rustls`, `stream`; no OpenSSL |
+| HTTP | `reqwest` with `rustls` (aws-lc-rs) and `webpki-root-certs`; no OpenSSL |
 | SSE parsing | own small parser over the byte stream (few lines, fully tested) |
 | Errors | `thiserror` |
 | Logging | `tracing`, `tracing-subscriber` (to a file, never to the TUI screen) |
@@ -157,6 +157,12 @@ Tests: recorded wire fixtures per adapter (text, tool calls, interleaved
 calls, missing ids, broken JSON, cut stream, every HTTP error), encoding
 snapshots, retry timing with tokio's paused clock. A manual test against
 the real APIs, behind an ignored test that needs a key.
+
+Status: done, except the musl build check (target not installed; moved to
+Release). HTTP behaviour is tested against a local test server in
+`src/provider/tests_http.rs`; backoff is a pure function, so no paused
+clock is needed. `tests/live.rs` holds the ignored tests against real APIs,
+including a TLS check that needs only network.
 
 ### Tools and permissions
 
@@ -262,6 +268,8 @@ Needs: `spec/context.md`.
 
 ### Release
 
+- Static build check with an HTTPS request (`cargo test --test live
+  tls_reaches_anthropic -- --ignored` on the musl build).
 - Static build for `x86_64-unknown-linux-musl` (and `aarch64` if wanted),
   size and start-time check, version from `Cargo.toml`.
 - `readme.md`: install, configuration example, commands.

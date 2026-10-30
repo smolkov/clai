@@ -93,7 +93,8 @@ An answer arrives as a stream of events, in this order:
 - Arguments that are not valid JSON when the call ends are not a stream
   error: the adapter sends `ToolCallEnd` with the raw text as a JSON string,
   and the agent loop answers the call with a tool error so the model can
-  retry. **(assumption)**
+  retry. **(assumption)** Empty arguments are `{}`; valid JSON that is not
+  an object counts as invalid. **(assumption)**
 - A stream that ends without `Done` ends with an error instead.
 
 ### Errors
@@ -109,7 +110,7 @@ fails.
 | `ContextTooLong` | The request is larger than the model's context window. | no |
 | `InvalidRequest` | The API rejected the request (other HTTP 4xx); carries the API's message. | no |
 | `Network`        | Connection failed or broke. | yes |
-| `Timeout`        | No answer within `timeout_s`. | yes |
+| `Timeout`        | No response headers within `timeout_s`, or a gap of more than `timeout_s` between two parts of the answer. The total length of an answer is not limited. **(assumption)** | yes |
 | `Protocol`       | The answer could not be decoded. | no |
 | `Unsupported`    | The request needs something the API type or model cannot do, e.g. tools on a model without tool support. | no |
 | `Cancelled`      | The agent loop cancelled the request. | no |
@@ -149,13 +150,23 @@ An adapter:
 - maps HTTP statuses and API error bodies to `ProviderError` kinds;
 - retries errors marked "yes" in [Errors](#errors), up to `max_retries`
   times with exponential backoff (1 s, 2 s, 4 s, …, at most 30 s), using
-  `retry_after` when it is given. It retries only before the first event
-  is sent; once the stream has started, an error ends it and the agent loop
-  decides. **(assumption)**
-- ignores fields it does not know and logs them at debug level, so new API
-  fields do not break `clai`;
+  `retry_after` when it is given (at most 60 s). It retries only before the
+  first event is sent; once the stream has started, an error ends it and
+  the agent loop decides. A stream that breaks before its first event is
+  retried as `Network`. **(assumption)**
+- reads the API key on the first request and keeps it; if reading fails,
+  the request ends with `Auth` and the next request tries again;
+- ignores fields it does not know, so new API fields do not break `clai`;
+  unknown event types and block types are logged at debug level.
+  **(assumption)**
 - never panics on any input from the network: anything it cannot decode is
-  a `Protocol` error (see [`agent.md`](../agent.md), "Never crash").
+  a `Protocol` error (see [`agent.md`](../agent.md), "Never crash"). A
+  single event larger than 16 MiB is a `Protocol` error too.
+
+HTTPS uses the system's trusted certificates plus the bundled Mozilla root
+certificates, so it works both behind a company CA and in a minimal
+container without CA files. Proxies are taken from `HTTPS_PROXY` and
+related variables. **(assumption)**
 
 ### anthropic
 
@@ -170,7 +181,8 @@ Default `base_url`: `https://api.anthropic.com`.
 | `ToolResult` | `{"type": "tool_result", "tool_use_id", "content", "is_error"}` block in a user message. |
 | `ToolSpec` | `tools[]` entry with `name`, `description`, `input_schema`. |
 | `max_output_tokens` | `max_tokens` (required by the API; the adapter sends the model's `max_output_tokens`, else 8192). **(assumption)** |
-| Key | Header `x-api-key`, plus `anthropic-version`. |
+| Key | Header `x-api-key`, plus `anthropic-version: 2023-06-01`. |
+| Message order | The API wants `user` and `assistant` to alternate: neighbouring messages with the same role are merged into one. Messages without blocks are left out. **(assumption)** |
 
 | Wire event | Event |
 |------------|-------|
@@ -178,10 +190,10 @@ Default `base_url`: `https://api.anthropic.com`.
 | `content_block_start` with `tool_use` | `ToolCallStart` |
 | `content_block_delta` with `input_json_delta` | `ToolCallArgsDelta` |
 | `content_block_stop` of a `tool_use` block | `ToolCallEnd` |
-| `message_start.usage`, `message_delta.usage` | `Usage` |
+| `message_start.usage`, `message_delta.usage` | `Usage`; `input_tokens` includes cached input (`cache_creation_input_tokens`, `cache_read_input_tokens`). |
 | `message_delta.stop_reason`, then `message_stop` | `Done`: `end_turn` → `EndTurn`, `tool_use` → `ToolUse`, `max_tokens` → `MaxTokens`, else `Other` |
 | `error` event | `ProviderError` (`overloaded_error` → `Overloaded`, …) |
-| `ping` | ignored |
+| `ping`, `thinking` blocks and their deltas | ignored |
 
 ### openai-compatible
 
@@ -202,11 +214,15 @@ Ollama, vLLM, llama.cpp and similar servers. `base_url` is required.
 | Wire data | Event |
 |-----------|-------|
 | `choices[0].delta.content` | `TextDelta` |
-| `choices[0].delta.tool_calls[i]` with a new `index` | `ToolCallStart` (calls are told apart by `index`) |
-| `…tool_calls[i].function.arguments` | `ToolCallArgsDelta` |
-| next call's `index`, or `finish_reason` | `ToolCallEnd` of the open call |
+| `choices[0].delta.tool_calls[i]` | collected per `index` (by position when there is no `index`) |
+| `data: [DONE]`, or the end of the body after a `finish_reason` | for each collected call in index order: `ToolCallStart`, one `ToolCallArgsDelta` with all arguments (if any), `ToolCallEnd`; then `Done` |
 | `usage` (last chunk) | `Usage` |
-| `finish_reason`, then `data: [DONE]` | `Done`: `stop` → `EndTurn`, `tool_calls` → `ToolUse`, `length` → `MaxTokens`, else `Other` |
+| `finish_reason` | `stop_reason` of `Done`: `ToolUse` if the answer has tool calls, else `stop` → `EndTurn`, `length` → `MaxTokens`, else `Other` |
+| chunk with `error` | `ProviderError` (`Overloaded`, or `ContextTooLong` if the message says so) |
+
+Tool calls are collected and sent complete when the answer ends, so calls
+that arrive interleaved need no special handling; text still streams. In
+this API the arguments of a tool call do not stream. **(assumption)**
 
 - Some servers send no tool-call `id` (e.g. older Ollama versions). The
   adapter then makes one up (`call_1`, `call_2`, … per answer), so the
@@ -214,8 +230,12 @@ Ollama, vLLM, llama.cpp and similar servers. `base_url` is required.
 - Some servers end with `finish_reason: "stop"` although the answer has tool
   calls. The adapter reports `ToolUse` whenever the answer contains a tool
   call. **(assumption)**
-- Some servers send a whole tool call in one chunk; the adapter still sends
-  `ToolCallStart`, one `ToolCallArgsDelta` and `ToolCallEnd`.
+- Some servers send a whole tool call in one chunk, several calls without
+  `index`, arguments as a JSON object instead of text, or no `[DONE]`; all
+  of these give the same events.
+- Error bodies `{"error": {"message", "code"}}` (OpenAI) and
+  `{"error": "text"}` (Ollama) are both understood; `code:
+  "context_length_exceeded"` is `ContextTooLong`.
 
 ### Adding an API type
 
