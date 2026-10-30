@@ -28,14 +28,11 @@ is wrong until the user decides otherwise.
 
 ## Non-goals
 
-- No graphical or web interface; terminal only.
+- No graphical or web interface; terminal only in the first version.
 - No IDE plugin in the first version.
-- No hosting or training of models; `clai` only calls provider APIs.
+- No hosting or training of models; `clai` only calls provider APIs in the first version.
 - No multi-user mode and no network server. The local background server that
   holds sessions ([`sessions.md`](sessions.md)) is reachable only by its user.
-- No automatic commits and no pushes. `clai` commits only when the user runs
-  `/commit` in the TUI and confirms the message; `clai commit` only prints a
-  message (see [`commit.md`](commit.md)).
 
 ## Terms
 
