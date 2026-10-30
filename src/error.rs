@@ -1,9 +1,12 @@
 //! Crate error type.
 
 use std::io;
+use std::path::PathBuf;
 
-/// Errors of `clai`. Usage errors are reported by the argument parser and
-/// never reach this type.
+use crate::config::{ConfigErrors, EXAMPLE};
+
+/// Errors of `clai`. Errors in the command-line syntax are reported by the
+/// argument parser and never reach this type.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// A command or feature that is not built yet.
@@ -17,13 +20,34 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
+
+    /// The configuration is invalid; one entry per problem.
+    #[error("{0}")]
+    Config(ConfigErrors),
+
+    /// There is no user config file.
+    #[error(
+        "no configuration file at {}\n\nCreate it with at least one provider and model, for example:\n\n{}",
+        path.display(),
+        EXAMPLE.trim_end()
+    )]
+    NoUserConfig { path: PathBuf },
+
+    /// An argument value is invalid, e.g. an unknown model in `--model`.
+    #[error("{0}")]
+    Usage(String),
+
+    /// The API key of a provider could not be read.
+    #[error("provider {provider}: {message}")]
+    ApiKey { provider: String, message: String },
 }
 
 impl Error {
     /// Process exit code for this error (see `spec/command.md`, "Exit codes").
     pub fn exit_code(&self) -> u8 {
         match self {
-            Error::Unsupported { .. } | Error::Io { .. } => 1,
+            Error::Unsupported { .. } | Error::Io { .. } | Error::ApiKey { .. } => 1,
+            Error::Config(_) | Error::NoUserConfig { .. } | Error::Usage(_) => 2,
         }
     }
 }
@@ -39,5 +63,18 @@ mod tests {
         let err = Error::Unsupported { what: "ls" };
         assert_eq!(err.to_string(), "'ls' is not implemented yet");
         assert_eq!(err.exit_code(), 1);
+    }
+
+    #[test]
+    fn config_errors_exit_2() {
+        assert_eq!(Error::Config(ConfigErrors(Vec::new())).exit_code(), 2);
+        assert_eq!(
+            Error::NoUserConfig {
+                path: PathBuf::from("x")
+            }
+            .exit_code(),
+            2
+        );
+        assert_eq!(Error::Usage(String::new()).exit_code(), 2);
     }
 }

@@ -1,0 +1,21 @@
+# ~/.config/clai/config.toml
+
+# Model used for new sessions, as "<provider>/<model>".
+default_model = "anthropic/sonnet"
+
+[providers.anthropic]
+api         = "anthropic"
+api_key_env = "ANTHROPIC_API_KEY"
+
+[providers.anthropic.models.sonnet]
+id                = "claude-sonnet-5-5"
+context_window    = 200000
+max_output_tokens = 64000
+
+[providers.local]
+api      = "openai-compatible"
+base_url = "http://localhost:11434/v1"
+
+[providers.local.models.qwen]
+id             = "qwen3-coder:30b"
+context_window = 32768

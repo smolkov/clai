@@ -1,16 +1,23 @@
 //! `clai`: AI coding agent for the terminal. Behaviour: `spec/`.
 
-mod cli;
-mod error;
-mod log;
-
 use std::io::Write;
 use std::process::ExitCode;
 
-use crate::cli::Cli;
-use crate::error::{Error, Result};
+use clap::CommandFactory;
+use clap_complete::CompleteEnv;
+
+use clai::cli::Cli;
+use clai::command::completion::COMPLETE_ENV;
+use clai::error::Error;
+use clai::log;
 
 fn main() -> ExitCode {
+    // Answers `COMPLETE=<shell> clai -- <words>` and exits; must run before
+    // anything is written to standard output.
+    CompleteEnv::with_factory(Cli::command)
+        .var(COMPLETE_ENV)
+        .complete();
+
     let cli = match Cli::parse_args(std::env::args_os()) {
         Ok(cli) => cli,
         Err(err) => {
@@ -23,23 +30,33 @@ fn main() -> ExitCode {
     if let Err(err) = log::init() {
         warn(&format!("{err}; logging is off"));
     }
-    tracing::info!(command = cli.command_name(), "start");
+    let config = cli.config.clone();
+    let command = cli.into_command();
+    tracing::info!(command = command.name(), "start");
 
-    match run(&cli) {
+    match command.run(config.as_deref()) {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
-            tracing::error!(command = cli.command_name(), error = %err);
-            let _ = writeln!(std::io::stderr(), "clai: {err}");
+            tracing::error!(command = command.name(), error = %err);
+            report(&err);
             ExitCode::from(err.exit_code())
         }
     }
 }
 
-/// Runs the parsed command. No command is built yet.
-fn run(cli: &Cli) -> Result<()> {
-    Err(Error::Unsupported {
-        what: cli.command_name(),
-    })
+/// Prints an error on standard error; configuration errors one per line.
+fn report(err: &Error) {
+    let mut stderr = std::io::stderr().lock();
+    match err {
+        Error::Config(errors) => {
+            for error in &errors.0 {
+                let _ = writeln!(stderr, "clai: {error}");
+            }
+        }
+        _ => {
+            let _ = writeln!(stderr, "clai: {err}");
+        }
+    }
 }
 
 fn warn(message: &str) {

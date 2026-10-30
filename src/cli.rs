@@ -1,18 +1,30 @@
 //! Command-line arguments, as specified in `spec/command.md`.
 
+use std::ffi::OsString;
 use std::path::PathBuf;
 
-use std::ffi::OsString;
-
 use clap::error::ErrorKind;
-use clap::{Args, CommandFactory, Parser, Subcommand};
+use clap::{Args, CommandFactory, Parser, Subcommand, ValueHint};
+use clap_complete::ArgValueCompleter;
+
+use crate::command::attach::Attach;
+use crate::command::commit::Commit;
+use crate::command::completion::Completion;
+use crate::command::kill::Kill;
+use crate::command::ls::Ls;
+use crate::command::models::Models;
+use crate::command::new::New;
+use crate::command::run::Run;
+use crate::command::send::Send;
+use crate::command::server::Server;
+use crate::complete;
 
 /// AI coding agent for the terminal.
 #[derive(Debug, Parser)]
 #[command(name = "clai", version, disable_help_subcommand = true)]
 pub struct Cli {
     /// Use FILE instead of the user config file.
-    #[arg(long, global = true, value_name = "FILE")]
+    #[arg(long, global = true, value_name = "FILE", value_hint = ValueHint::FilePath)]
     pub config: Option<PathBuf>,
 
     #[command(subcommand)]
@@ -27,7 +39,7 @@ pub struct Cli {
 #[derive(Debug, Args)]
 pub struct TopArgs {
     /// Model to use, as PROVIDER/MODEL.
-    #[arg(long, value_name = "PROVIDER/MODEL")]
+    #[arg(long, value_name = "PROVIDER/MODEL", add = ArgValueCompleter::new(complete::models))]
     pub model: Option<String>,
 
     /// Session name (only without TASK).
@@ -39,7 +51,7 @@ pub struct TopArgs {
     pub yes: bool,
 
     /// Workspace (only with TASK).
-    #[arg(short = 'C', value_name = "DIR", requires = "task")]
+    #[arg(short = 'C', value_name = "DIR", requires = "task", value_hint = ValueHint::DirPath)]
     pub dir: Option<PathBuf>,
 
     /// Task to run one-shot; `-` reads it from standard input.
@@ -47,111 +59,29 @@ pub struct TopArgs {
     pub task: Vec<String>,
 }
 
+/// The commands; each has its own struct and `run` in `src/command/`.
 #[derive(Debug, Subcommand)]
 pub enum Command {
     /// Run one task without the TUI and exit.
-    Run(RunArgs),
+    Run(Run),
     /// Create a session and attach the TUI to it.
-    New(NewArgs),
+    New(New),
     /// Attach the TUI to a running session.
-    Attach {
-        /// Session name.
-        name: Option<String>,
-    },
+    Attach(Attach),
     /// List sessions.
-    Ls {
-        /// Print a JSON array instead of the table.
-        #[arg(long)]
-        json: bool,
-    },
+    Ls(Ls),
     /// End sessions.
-    Kill {
-        /// Names of the sessions to end.
-        #[arg(required_unless_present = "all", conflicts_with = "all")]
-        names: Vec<String>,
-        /// End all sessions.
-        #[arg(long)]
-        all: bool,
-    },
+    Kill(Kill),
     /// Send a message to a session without attaching.
-    Send {
-        /// Session name.
-        name: String,
-        /// Message; `-` reads it from standard input.
-        #[arg(required = true)]
-        message: Vec<String>,
-    },
+    Send(Send),
     /// List configured providers and models.
-    Models {
-        /// Print a JSON array instead of the table.
-        #[arg(long)]
-        json: bool,
-    },
+    Models(Models),
     /// Print a commit message for the changes in a directory.
-    Commit(CommitArgs),
+    Commit(Commit),
     /// Run, stop or check the background server.
-    Server {
-        #[command(subcommand)]
-        action: Option<ServerAction>,
-    },
-}
-
-#[derive(Debug, Args)]
-pub struct RunArgs {
-    /// Model to use, as PROVIDER/MODEL.
-    #[arg(long, value_name = "PROVIDER/MODEL")]
-    pub model: Option<String>,
-    /// Allow tool calls that would ask; deny rules still apply.
-    #[arg(long)]
-    pub yes: bool,
-    /// Workspace. Default: the current directory.
-    #[arg(short = 'C', value_name = "DIR")]
-    pub dir: Option<PathBuf>,
-    /// Task; `-` reads it from standard input.
-    #[arg(value_name = "TASK", required = true)]
-    pub task: Vec<String>,
-}
-
-#[derive(Debug, Args)]
-pub struct NewArgs {
-    /// Do not attach; print the session name.
-    #[arg(short, long)]
-    pub detach: bool,
-    /// Session name.
-    #[arg(long)]
-    pub name: Option<String>,
-    /// Model of the session, as PROVIDER/MODEL.
-    #[arg(long, value_name = "PROVIDER/MODEL")]
-    pub model: Option<String>,
-    /// Workspace. Default: the current directory.
-    pub dir: Option<PathBuf>,
-}
-
-#[derive(Debug, Args)]
-pub struct CommitArgs {
-    /// Describe only the staged changes.
-    #[arg(long)]
-    pub staged: bool,
-    /// Model to use, as PROVIDER/MODEL.
-    #[arg(long, value_name = "PROVIDER/MODEL")]
-    pub model: Option<String>,
-    /// Extra instruction for the model.
-    #[arg(long, value_name = "TEXT")]
-    pub hint: Option<String>,
-    /// Directory. Default: the current directory.
-    pub dir: Option<PathBuf>,
-}
-
-#[derive(Debug, Subcommand)]
-pub enum ServerAction {
-    /// Stop the running server and end all its sessions.
-    Stop {
-        /// Do not ask for confirmation.
-        #[arg(long)]
-        force: bool,
-    },
-    /// Print whether a server runs, its PID and session count.
-    Status,
+    Server(Server),
+    /// Print the shell code for Tab completion.
+    Completion(Completion),
 }
 
 impl Cli {
@@ -179,25 +109,22 @@ impl Cli {
         Ok(cli)
     }
 
-    /// Name of the command, as used in messages.
-    pub fn command_name(&self) -> &'static str {
-        match &self.command {
-            None if self.top.task.is_empty() => "clai",
-            None | Some(Command::Run(_)) => "run",
-            Some(Command::New(_)) => "new",
-            Some(Command::Attach { .. }) => "attach",
-            Some(Command::Ls { .. }) => "ls",
-            Some(Command::Kill { .. }) => "kill",
-            Some(Command::Send { .. }) => "send",
-            Some(Command::Models { .. }) => "models",
-            Some(Command::Commit(_)) => "commit",
-            Some(Command::Server { action: None }) => "server",
-            Some(Command::Server {
-                action: Some(ServerAction::Stop { .. }),
-            }) => "server stop",
-            Some(Command::Server {
-                action: Some(ServerAction::Status),
-            }) => "server status",
+    /// The command to run. `clai` alone is `clai new`, and `clai TASK...`
+    /// is `clai run TASK...`.
+    pub fn into_command(self) -> Command {
+        match self.command {
+            Some(command) => command,
+            None if self.top.task.is_empty() => Command::New(New {
+                model: self.top.model,
+                name: self.top.name,
+                ..New::default()
+            }),
+            None => Command::Run(Run {
+                model: self.top.model,
+                yes: self.top.yes,
+                dir: self.top.dir,
+                task: self.top.task,
+            }),
         }
     }
 }
@@ -225,10 +152,14 @@ mod tests {
 
     #[test]
     fn no_arguments_is_new_session() {
-        let cli = parse(&[]);
+        let cli = parse(&["--model", "m", "--name", "x"]);
         assert!(cli.command.is_none());
-        assert!(cli.top.task.is_empty());
-        assert_eq!(cli.command_name(), "clai");
+        let Command::New(new) = cli.into_command() else {
+            panic!("not new");
+        };
+        assert_eq!(new.model.as_deref(), Some("m"));
+        assert_eq!(new.name.as_deref(), Some("x"));
+        assert!(!new.detach);
     }
 
     #[test]
@@ -245,7 +176,12 @@ mod tests {
         assert_eq!(cli.top.task, ["fix", "the", "test"]);
         assert!(cli.top.yes);
         assert_eq!(cli.top.dir, Some(PathBuf::from("/tmp")));
-        assert_eq!(cli.command_name(), "run");
+        let Command::Run(run) = cli.into_command() else {
+            panic!("not run");
+        };
+        assert_eq!(run.task, ["fix", "the", "test"]);
+        assert!(run.yes);
+        assert_eq!(run.dir, Some(PathBuf::from("/tmp")));
     }
 
     #[test]
@@ -321,19 +257,19 @@ mod tests {
     fn attach_ls_models() {
         assert!(matches!(
             parse(&["attach"]).command,
-            Some(Command::Attach { name: None })
+            Some(Command::Attach(Attach { name: None }))
         ));
         assert!(matches!(
             parse(&["attach", "docs"]).command,
-            Some(Command::Attach { name: Some(n) }) if n == "docs"
+            Some(Command::Attach(Attach { name: Some(n) })) if n == "docs"
         ));
         assert!(matches!(
             parse(&["ls", "--json"]).command,
-            Some(Command::Ls { json: true })
+            Some(Command::Ls(Ls { json: true }))
         ));
         assert!(matches!(
             parse(&["models"]).command,
-            Some(Command::Models { json: false })
+            Some(Command::Models(Models { json: false }))
         ));
     }
 
@@ -341,11 +277,11 @@ mod tests {
     fn kill_names_or_all() {
         assert!(matches!(
             parse(&["kill", "a", "b"]).command,
-            Some(Command::Kill { names, all: false }) if names == ["a", "b"]
+            Some(Command::Kill(Kill { names, all: false })) if names == ["a", "b"]
         ));
         assert!(matches!(
             parse(&["kill", "--all"]).command,
-            Some(Command::Kill { all: true, .. })
+            Some(Command::Kill(Kill { all: true, .. }))
         ));
         assert_eq!(
             parse_err(&["kill"]).kind(),
@@ -361,7 +297,7 @@ mod tests {
     fn send_command() {
         assert!(matches!(
             parse(&["send", "docs", "hello", "there"]).command,
-            Some(Command::Send { name, message }) if name == "docs" && message == ["hello", "there"]
+            Some(Command::Send(Send { name, message })) if name == "docs" && message == ["hello", "there"]
         ));
         assert_eq!(
             parse_err(&["send", "docs"]).kind(),
@@ -382,12 +318,10 @@ mod tests {
 
     #[test]
     fn server_commands() {
-        assert_eq!(parse(&["server"]).command_name(), "server");
-        assert_eq!(
-            parse(&["server", "stop", "--force"]).command_name(),
-            "server stop"
-        );
-        assert_eq!(parse(&["server", "status"]).command_name(), "server status");
+        let name = |args| parse(args).into_command().name();
+        assert_eq!(name(&["server"]), "server");
+        assert_eq!(name(&["server", "stop", "--force"]), "server stop");
+        assert_eq!(name(&["server", "status"]), "server status");
     }
 
     #[test]
@@ -396,7 +330,7 @@ mod tests {
         let after = parse(&["ls", "--config", "c.toml"]);
         assert_eq!(before.config, Some(PathBuf::from("c.toml")));
         assert_eq!(after.config, Some(PathBuf::from("c.toml")));
-        assert!(matches!(before.command, Some(Command::Ls { .. })));
+        assert!(matches!(before.command, Some(Command::Ls(_))));
     }
 
     #[test]

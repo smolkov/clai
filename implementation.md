@@ -59,7 +59,9 @@ approved plan before work starts.
 | `client` | Connect, start the server if needed, request/response and event stream. | `sessions.md` |
 | `tui` | Layout, conversation, input editor, prompts, session list, model picker, commit dialog, themes. | `tui.md`, `config.md` "TUI" |
 | `commit` | Collect git changes, generate message, run git. | `commit.md` |
-| `cli` | Argument parsing, commands, exit codes. | `command.md` |
+| `cli` | `Cli`, the `Command` enum (one struct per variant), parsing, `Cli::into_command`. | `command.md` |
+| `complete` | Value completers for Tab completion (`--model`, later session names). | `command.md`, "clai completion" |
+| `command` | One file per command (`command/models.rs`, …) with its argument struct and `run`; `impl Command { name, run }` in `command/mod.rs`. Commands not built yet return "not implemented". | `command.md` |
 
 ## Dependencies
 
@@ -84,6 +86,7 @@ Chosen for: pure Rust, works with a static musl build, maintained.
 | Syntax highlighting | `syntect` (pure-Rust regex backend) |
 | Config file watching | `notify` |
 | Paths | `dirs` or reading `XDG_*` directly |
+| Shell completion | `clap_complete` with `unstable-dynamic` |
 | Tests | `tempfile`, `insta` (snapshots of encoded requests and TUI frames) |
 
 ## Never-crash rules in code
@@ -137,6 +140,10 @@ installed yet).
 Tests: one fixture per validation error in `config.md`, merge order,
 key redaction in `Debug`, `clai models` output snapshot.
 
+Status: done. Reloading moved to Server and sessions; the glob check of rule
+patterns to Tools and permissions. The crate is now a library (`src/lib.rs`)
+with a thin `main.rs`.
+
 ### Providers
 
 - Shared types and `Provider` trait as in `providers.md`.
@@ -156,6 +163,7 @@ the real APIs, behind an ignored test that needs a key.
 - The six tools, with workspace boundary and `extra_dirs`; `run_command`
   with timeout, process group, `SIGTERM` then `SIGKILL`.
 - `edit_file` as exact-text replacement; diff for display.
+- Glob syntax check of rule patterns at load time.
 - Permission checking in the order of `config.md`: boundary, deny, ask,
   allow, default; session rules.
 - Command splitting for `;`, `&&`, `||`, `|`, `$( )`, backticks,
@@ -208,6 +216,7 @@ After this milestone `clai` is usable from scripts.
   questions shown to all clients with first answer winning, message queue,
   event log so attach replays the full history.
 - Commands `clai new -d`, `ls`, `kill`, `send`.
+- Tab completion of session names for `attach`, `kill`, `send`.
 - Configuration reload on file change.
 
 Tests: server in a temp runtime dir; several sessions in parallel with the

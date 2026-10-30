@@ -1,0 +1,527 @@
+use super::*;
+
+const BASE: &str = r#"
+default_model = "anthropic/sonnet"
+
+[providers.anthropic]
+api = "anthropic"
+api_key_env = "ANTHROPIC_API_KEY"
+
+[providers.anthropic.models.sonnet]
+id = "claude-sonnet-5-5"
+context_window = 200000
+max_output_tokens = 64000
+
+[providers.anthropic.models.opus]
+id = "claude-opus-5-5"
+context_window = 200000
+
+[providers.local]
+api = "openai-compatible"
+base_url = "http://localhost:11434/v1"
+
+[providers.local.models.qwen]
+id = "qwen3-coder:30b"
+context_window = 32768
+"#;
+
+fn load_with(user: &str, project: Option<&str>, env: &Environment) -> Result<Config, ConfigErrors> {
+    let user = FileCtx {
+        path: Path::new("user.toml"),
+        text: user,
+    };
+    let project = project.map(|text| FileCtx {
+        path: Path::new("project.toml"),
+        text,
+    });
+    build(user, project, env)
+}
+
+fn ok(user: &str) -> Config {
+    load_with(user, None, &Environment::default()).unwrap_or_else(|e| panic!("{e}"))
+}
+
+/// The error messages, one string per error.
+fn errs(user: &str, project: Option<&str>) -> Vec<String> {
+    errs_env(user, project, &Environment::default())
+}
+
+fn errs_env(user: &str, project: Option<&str>, env: &Environment) -> Vec<String> {
+    match load_with(user, project, env) {
+        Ok(_) => panic!("loaded without errors"),
+        Err(e) => e.0.iter().map(ToString::to_string).collect(),
+    }
+}
+
+fn with(extra: &str) -> String {
+    format!("{BASE}\n{extra}")
+}
+
+#[test]
+fn example_is_valid() {
+    let config = ok(EXAMPLE);
+    assert_eq!(config.default_model.to_string(), "anthropic/sonnet");
+}
+
+#[test]
+fn base_config() {
+    let config = ok(BASE);
+    assert_eq!(
+        config.providers.keys().collect::<Vec<_>>(),
+        ["anthropic", "local"]
+    );
+    let anthropic = &config.providers["anthropic"];
+    assert_eq!(anthropic.api, Api::Anthropic);
+    assert_eq!(anthropic.base_url, "https://api.anthropic.com");
+    assert_eq!(anthropic.key, KeySource::Env("ANTHROPIC_API_KEY".into()));
+    assert_eq!(anthropic.timeout, Duration::from_secs(300));
+    assert_eq!(anthropic.max_retries, 3);
+    assert_eq!(
+        anthropic.models.keys().collect::<Vec<_>>(),
+        ["sonnet", "opus"]
+    );
+    let sonnet = &anthropic.models["sonnet"];
+    assert_eq!(sonnet.id, "claude-sonnet-5-5");
+    assert_eq!(sonnet.display_name, "sonnet");
+    assert_eq!(sonnet.max_output_tokens, Some(64000));
+    assert_eq!(config.providers["local"].key, KeySource::None);
+    assert_eq!(config.tui, Tui::default());
+    assert_eq!(config.permissions, Permissions::default());
+}
+
+#[test]
+fn model_references() {
+    let config = ok(BASE);
+    let r = |s| config.resolve_model(s);
+    assert_eq!(r("local/qwen").unwrap().to_string(), "local/qwen");
+    assert_eq!(r("opus").unwrap().to_string(), "anthropic/opus");
+    assert!(
+        r("gpt")
+            .unwrap_err()
+            .contains("configured: anthropic/sonnet")
+    );
+    assert!(r("local/opus").unwrap_err().contains("unknown model"));
+    let (provider, model) = config.model(&r("qwen").unwrap()).unwrap();
+    assert_eq!(
+        (provider.name.as_str(), model.id.as_str()),
+        ("local", "qwen3-coder:30b")
+    );
+}
+
+#[test]
+fn ambiguous_short_form() {
+    let config = ok(&with(
+        "[providers.other]\napi = \"anthropic\"\n[providers.other.models.opus]\nid = \"x\"\ncontext_window = 1\n",
+    ));
+    let err = config.resolve_model("opus").unwrap_err();
+    assert!(err.contains("anthropic/opus, other/opus"), "{err}");
+}
+
+#[test]
+fn syntax_error_has_line() {
+    let e = errs("default_model = \n", None);
+    assert_eq!(e.len(), 1);
+    assert!(e[0].starts_with("user.toml:1: "), "{e:?}");
+}
+
+#[test]
+fn unknown_key_is_error() {
+    let e = errs(
+        &with("[providers.local.models.qwen2]\nid = \"q\"\ncontext_window = 1\ncontxt = 3\n"),
+        None,
+    );
+    assert!(e[0].contains("unknown field `contxt`"), "{e:?}");
+    assert!(e[0].starts_with("user.toml:28: "), "{e:?}");
+}
+
+#[test]
+fn missing_context_window() {
+    let e = errs(&with("[providers.local.models.big]\nid = \"b\"\n"), None);
+    assert_eq!(
+        e,
+        ["user.toml:25: providers.local.models.big: missing context_window"]
+    );
+}
+
+#[test]
+fn no_provider_and_no_model() {
+    assert_eq!(
+        errs("default_model = \"a/b\"\n", None)[0],
+        "user.toml: no provider is defined"
+    );
+    let e = errs(
+        "default_model = \"a/b\"\n[providers.a]\napi = \"anthropic\"\n",
+        None,
+    );
+    assert_eq!(e[0], "user.toml: no model is defined");
+}
+
+#[test]
+fn default_model_missing_or_unknown() {
+    let without = BASE.replace("default_model = \"anthropic/sonnet\"", "");
+    assert_eq!(errs(&without, None), ["user.toml: missing default_model"]);
+    let unknown = BASE.replace("anthropic/sonnet", "anthropic/haiku");
+    let e = errs(&unknown, None);
+    assert_eq!(e.len(), 1);
+    assert!(
+        e[0].starts_with("user.toml:2: default_model: unknown model `anthropic/haiku`"),
+        "{e:?}"
+    );
+}
+
+#[test]
+fn provider_errors() {
+    let e = errs(
+        &with(
+            r#"
+[providers.bad]
+api = "gemini"
+
+[providers.both]
+api = "anthropic"
+api_key_env = "A"
+api_key_cmd = "b"
+
+[providers.open]
+api = "openai-compatible"
+
+[providers.url]
+api = "anthropic"
+base_url = "localhost"
+timeout_s = 0
+
+[providers.noapi]
+"#,
+        ),
+        None,
+    );
+    let expect = [
+        "providers.bad.api: unknown api `gemini`",
+        "providers.both: set only one of api_key_env and api_key_cmd",
+        "providers.open: missing base_url (required for openai-compatible)",
+        "providers.url.base_url: `localhost` must start with http:// or https://",
+        "providers.url.timeout_s: 0 is not in 1–86400",
+        "providers.noapi: missing api",
+    ];
+    assert_eq!(e.len(), expect.len(), "{e:?}");
+    for (got, want) in e.iter().zip(expect) {
+        assert!(got.contains(want), "{got} does not contain {want}");
+    }
+}
+
+#[test]
+fn name_with_slash() {
+    let e = errs(&with("[providers.\"a/b\"]\napi = \"anthropic\"\n"), None);
+    assert!(e[0].contains("must not be empty or contain `/`"), "{e:?}");
+}
+
+#[test]
+fn model_errors() {
+    let e = errs(
+        &with(
+            "[providers.local.models.m]\ncontext_window = 0\ntemperature = 3.5\nmax_output_tokens = 0\n",
+        ),
+        None,
+    );
+    let joined = e.join("\n");
+    for want in [
+        "providers.local.models.m: missing id",
+        "providers.local.models.m.context_window: 0 is not in",
+        "providers.local.models.m.max_output_tokens: 0 is not in",
+        "providers.local.models.m.temperature: 3.5 is not in 0–2",
+    ] {
+        assert!(joined.contains(want), "{joined}\nmissing: {want}");
+    }
+}
+
+#[test]
+fn invalid_model_does_not_cascade() {
+    // `local/qwen` is invalid, but default_model naming it is not a second error.
+    let text = BASE
+        .replace(
+            "default_model = \"anthropic/sonnet\"",
+            "default_model = \"local/qwen\"",
+        )
+        .replace("context_window = 32768", "");
+    let e = errs(&text, None);
+    assert_eq!(e.len(), 1, "{e:?}");
+}
+
+#[test]
+fn key_cmd() {
+    let config = ok(&BASE.replace(
+        "api_key_env = \"ANTHROPIC_API_KEY\"",
+        "api_key_cmd = \"pass show anthropic\"",
+    ));
+    assert_eq!(
+        config.providers["anthropic"].key,
+        KeySource::Cmd("pass show anthropic".into())
+    );
+}
+
+#[test]
+fn project_overrides_default_model_and_commit() {
+    let config = load_with(
+        &with("[commit]\nmodel = \"opus\"\ntrailer = \"T\"\n"),
+        Some("default_model = \"local/qwen\"\n[commit]\nmodel = \"local/qwen\"\n"),
+        &Environment::default(),
+    )
+    .unwrap();
+    assert_eq!(config.default_model.to_string(), "local/qwen");
+    assert_eq!(config.commit.model.unwrap().to_string(), "local/qwen");
+    assert_eq!(config.commit.trailer.as_deref(), Some("T"));
+    assert_eq!(config.project_file, Some(PathBuf::from("project.toml")));
+}
+
+#[test]
+fn project_may_not_define_user_tables() {
+    let e = errs(
+        BASE,
+        Some(
+            "[providers.evil]\napi = \"anthropic\"\n[tui]\nmouse = false\n[themes.x]\nbase = \"dark\"\n",
+        ),
+    );
+    assert_eq!(e.len(), 3, "{e:?}");
+    assert!(
+        e[0].starts_with("project.toml:1: providers: only allowed in the user file (user.toml)"),
+        "{e:?}"
+    );
+    assert!(e[1].contains("tui: only allowed"), "{e:?}");
+    assert!(e[2].contains("themes: only allowed"), "{e:?}");
+}
+
+#[test]
+fn project_unknown_key() {
+    let e = errs(BASE, Some("[limits]\nmax = 3\n"));
+    assert!(
+        e[0].starts_with("project.toml:1: unknown field `limits`"),
+        "{e:?}"
+    );
+}
+
+#[test]
+fn env_overrides() {
+    let env = Environment {
+        model: Some("qwen".into()),
+        theme: Some("light".into()),
+        ..Environment::default()
+    };
+    let config = load_with(BASE, Some("default_model = \"opus\"\n"), &env).unwrap();
+    assert_eq!(config.default_model.to_string(), "local/qwen");
+    assert_eq!(config.tui.theme, "light");
+}
+
+#[test]
+fn env_errors() {
+    let env = Environment {
+        model: Some("nope".into()),
+        theme: Some("neon".into()),
+        ..Environment::default()
+    };
+    let e = errs_env(BASE, None, &env);
+    assert!(
+        e[0].starts_with("CLAI_MODEL: unknown model `nope`"),
+        "{e:?}"
+    );
+    assert_eq!(e[1], "CLAI_THEME: unknown theme `neon`");
+}
+
+#[test]
+fn permissions_user_file() {
+    let env = Environment {
+        home: Some(PathBuf::from("/home/u")),
+        ..Environment::default()
+    };
+    let config = load_with(
+        &with(
+            r#"
+[permissions]
+read_file = "ask"
+run_command = "deny"
+allow = ["run_command(cargo test *)", "edit_file(src/**)"]
+ask = ["read_file(.env*)"]
+deny = ["run_command(git push *)"]
+extra_dirs = ["~/ws/shared-lib", "/opt/lib"]
+"#,
+        ),
+        None,
+        &env,
+    )
+    .unwrap();
+    let p = &config.permissions;
+    assert_eq!(p.action(Tool::ReadFile), Action::Ask);
+    assert_eq!(p.action(Tool::RunCommand), Action::Deny);
+    assert_eq!(p.action(Tool::EditFile), Action::Ask);
+    assert_eq!(p.action(Tool::ListFiles), Action::Allow);
+    assert_eq!(p.allow.len(), 2);
+    assert_eq!(p.ask[0].to_string(), "read_file(.env*)");
+    assert_eq!(p.deny[0].to_string(), "run_command(git push *)");
+    assert_eq!(
+        p.extra_dirs,
+        [
+            PathBuf::from("/home/u/ws/shared-lib"),
+            PathBuf::from("/opt/lib")
+        ]
+    );
+}
+
+#[test]
+fn permissions_errors() {
+    let e = errs(
+        &with("[permissions]\nallow = [\"rm(x)\"]\nextra_dirs = [\"rel\"]\n"),
+        None,
+    );
+    assert!(
+        e[0].contains("permissions.allow: rule `rm(x)`: unknown tool `rm`"),
+        "{e:?}"
+    );
+    assert!(
+        e[1].contains("permissions.extra_dirs: `rel` must be an absolute path"),
+        "{e:?}"
+    );
+    let e = errs(&with("[permissions]\nshell = \"allow\"\n"), None);
+    assert!(e[0].contains("unknown field `shell`"), "{e:?}");
+    let e = errs(&with("[permissions]\nread_file = \"maybe\"\n"), None);
+    assert!(e[0].contains("unknown variant `maybe`"), "{e:?}");
+}
+
+#[test]
+fn project_permissions_only_stricter() {
+    let config = load_with(
+        &with("[permissions]\nedit_file = \"allow\"\nask = [\"read_file(a)\"]\n"),
+        Some("[permissions]\nedit_file = \"ask\"\nread_file = \"deny\"\nask = [\"read_file(b)\"]\ndeny = [\"write_file\"]\n"),
+        &Environment::default(),
+    )
+    .unwrap();
+    let p = &config.permissions;
+    assert_eq!(p.action(Tool::EditFile), Action::Ask);
+    assert_eq!(p.action(Tool::ReadFile), Action::Deny);
+    assert_eq!(p.ask.len(), 2);
+    assert_eq!(p.deny[0].to_string(), "write_file");
+
+    // A stricter user value stays: project "ask" does not loosen user "deny".
+    let config = load_with(
+        &with("[permissions]\nrun_command = \"deny\"\n"),
+        Some("[permissions]\nrun_command = \"ask\"\n"),
+        &Environment::default(),
+    )
+    .unwrap();
+    assert_eq!(config.permissions.action(Tool::RunCommand), Action::Deny);
+}
+
+#[test]
+fn project_permissions_may_not_loosen() {
+    let e = errs(
+        BASE,
+        Some(
+            "[permissions]\nrun_command = \"allow\"\nallow = [\"read_file\"]\nextra_dirs = [\"/x\"]\n",
+        ),
+    );
+    assert_eq!(e.len(), 3, "{e:?}");
+    assert_eq!(
+        e[0],
+        "project.toml:2: permissions.run_command: a project file may not set a tool to allow"
+    );
+    assert_eq!(
+        e[1],
+        "project.toml:3: permissions.allow: a project file may not add allow rules"
+    );
+    assert_eq!(
+        e[2],
+        "project.toml:4: permissions.extra_dirs: a project file may not set extra_dirs"
+    );
+}
+
+#[test]
+fn tui_and_themes() {
+    let config = ok(&with(
+        r##"
+[tui]
+theme = "solar"
+symbols = "ascii"
+mouse = false
+max_fps = 60
+
+[themes.solar]
+base = "dark"
+user = "cyan"
+accent = "#e5a50a"
+border = 240
+code = "Solarized (dark)"
+"##,
+    ));
+    assert_eq!(config.tui.theme, "solar");
+    assert_eq!(config.tui.symbols, Symbols::Ascii);
+    assert!(!config.tui.mouse);
+    assert_eq!(config.tui.max_fps, 60);
+    assert_eq!(config.tui.scroll_lines, 3);
+    let solar = &config.themes["solar"];
+    assert_eq!(solar.base, BuiltinTheme::Dark);
+    assert_eq!(
+        solar.colours,
+        [
+            ("user", Colour::Named("cyan")),
+            ("accent", Colour::Rgb(0xe5, 0xa5, 0x0a)),
+            ("border", Colour::Index(240)),
+        ]
+    );
+    assert_eq!(solar.code.as_deref(), Some("Solarized (dark)"));
+}
+
+#[test]
+fn tui_errors() {
+    let e = errs(
+        &with(
+            r#"
+[tui]
+theme = "neon"
+max_fps = 500
+
+[themes.dark]
+base = "light"
+
+[themes.a]
+base = "b"
+
+[themes.c]
+text = "purple"
+"#,
+        ),
+        None,
+    );
+    let joined = e.join("\n");
+    for want in [
+        "themes.dark: a custom theme may not use the name of a built-in theme",
+        "themes.a.base: base `b` is not a built-in theme",
+        "themes.c.text: unknown colour `purple`",
+        "tui.theme: unknown theme `neon`",
+        "tui.max_fps: 500 is not in 1–120",
+    ] {
+        assert!(joined.contains(want), "{joined}\nmissing: {want}");
+    }
+    let e = errs(&with("[themes.x]\nshadow = \"red\"\n"), None);
+    assert!(e[0].contains("unknown field `shadow`"), "{e:?}");
+}
+
+#[test]
+fn user_path() {
+    let env = Environment {
+        xdg_config_home: Some(PathBuf::from("/x")),
+        home: Some(PathBuf::from("/home/u")),
+        ..Environment::default()
+    };
+    assert_eq!(
+        user_config_path(&env),
+        Some(PathBuf::from("/x/clai/config.toml"))
+    );
+    let env = Environment {
+        xdg_config_home: Some(PathBuf::from("relative")),
+        home: Some(PathBuf::from("/home/u")),
+        ..Environment::default()
+    };
+    assert_eq!(
+        user_config_path(&env),
+        Some(PathBuf::from("/home/u/.config/clai/config.toml"))
+    );
+    assert_eq!(user_config_path(&Environment::default()), None);
+}

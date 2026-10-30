@@ -20,6 +20,7 @@ Statements marked **(assumption)** need a decision from the user.
 | [`clai models`](#clai-models) | List configured providers and models. | [`config.md`](config.md) |
 | [`clai commit`](#clai-commit) | Print a commit message for the changes in a directory. | [`commit.md`](commit.md) |
 | [`clai server`](#clai-server) | Run, stop or check the background server. | [`sessions.md`](sessions.md) |
+| [`clai completion`](#clai-completion) | Print the shell code for Tab completion. | this file |
 
 ## Conventions
 
@@ -172,10 +173,21 @@ If a turn is running, the message is queued. **(assumption)**
 clai models [--json]
 ```
 
-Lists all configured providers and models, one model per line:
-`PROVIDER/MODEL`, model id, context window, and marks for `default_model`
-and a provider whose API key is missing. Fails with `2` if the configuration
-is invalid.
+Lists all configured providers and models, one model per line, in config
+order: `PROVIDER/MODEL`, model id, context window (rounded down, `32k`,
+`1M`), and the marks `default` for `default_model` and `no key` for a
+provider whose `api_key_env` variable is not set. `api_key_cmd` is not run,
+so such providers are never marked. Fails with `2` if the configuration is
+invalid.
+
+```
+anthropic/sonnet  claude-sonnet-5-5  200k  default, no key
+local/qwen        qwen3-coder:30b     32k
+```
+
+`--json` prints an array of objects with `model`, `provider`, `name`, `id`,
+`context_window`, `max_output_tokens` (or `null`), `default` and `key`
+(`env`, `missing`, `command` or `none`). **(assumption)**
 
 | Option | Meaning |
 |--------|---------|
@@ -217,3 +229,36 @@ clai server status      # print whether a server runs, its PID and session count
 `clai server` fails with `1` if a server is already running. `stop` asks for
 confirmation on a terminal when sessions are running; `--force` skips it.
 `status` exits `0` if a server runs and `1` if not. **(assumption)**
+
+## clai completion
+
+```sh
+clai completion [bash | zsh | fish | elvish | powershell]
+```
+
+Prints the shell code that turns on Tab completion for `clai`. Without a
+shell name, the shell is taken from the file name in `$SHELL`; if that is not
+one of the shells above, the command fails with `2`.
+
+Install it by loading the code on every shell start, so it always matches
+the installed `clai`:
+
+```sh
+echo 'source <(clai completion bash)' >> ~/.bashrc
+echo 'source <(clai completion zsh)'  >> ~/.zshrc
+echo 'clai completion fish | source'  >> ~/.config/fish/config.fish
+```
+
+The code does not contain a fixed list. On every Tab the shell runs
+`COMPLETE=<shell> clai -- <words>`, and `clai` prints the candidates and
+exits before doing anything else. So completion knows:
+
+- commands, options and fixed values (e.g. shell names);
+- `--model`: every configured `PROVIDER/MODEL`, with its model id. It reads
+  the default user and project files; a `--config` on the same command line
+  is not used. If the configuration cannot be loaded, there are no
+  candidates and no error. **(assumption)**
+- files for `--config`, directories for `-C` and `DIR`;
+- session names for `attach`, `kill` and `send` once sessions exist.
+
+`COMPLETE` empty or `0` is the same as not set.

@@ -12,7 +12,7 @@ Statements marked **(assumption)** need a decision from the user.
 | File                          | Scope   | May define |
 |-------------------------------|---------|------------|
 | `~/.config/clai/config.toml`  | User    | Everything: providers, models, defaults, `[permissions]`, `[commit]`, `[tui]`, `[themes]`. |
-| `<workspace>/.clai/config.toml` | Project | Defaults and limits only: `default_model`, limits, `[permissions]` (restricted, see [Permissions](#permissions)), `[commit]`. Not providers, models, `[tui]` or `[themes]`. |
+| `<workspace>/.clai/config.toml` | Project | Defaults and limits only: `default_model`, limits (keys not defined yet, see `agent-loop.md`), `[permissions]` (restricted, see [Permissions](#permissions)), `[commit]`. Not providers, models, `[tui]` or `[themes]`. |
 
 `$XDG_CONFIG_HOME` replaces `~/.config` when it is set.
 
@@ -26,6 +26,25 @@ file too; a project file with `[tui]` or `[themes]` is rejected the same way.
 
 Precedence, later wins: user file, project file, environment variables,
 command-line options.
+
+`--config FILE` replaces the user file. If `FILE` does not exist, that is a
+load error (exit `2`), not the "no user config file" message.
+
+The project file is `.clai/config.toml` in the workspace directory itself;
+parent directories are not searched.
+
+### Environment variables
+
+| Variable | Overrides | Meaning |
+|----------|-----------|---------|
+| `CLAI_MODEL` | `default_model` | Model for new sessions, as a model reference. **(assumption)** |
+| `CLAI_THEME` | `tui.theme` | Theme for this run. |
+| `NO_COLOR` | — | Any value turns all colours off. |
+| `CLAI_LOG` | — | Log level, see [Logging](#logging). |
+| `XDG_CONFIG_HOME`, `HOME` | — | Where the user file is. A relative `XDG_CONFIG_HOME` is ignored. |
+
+An empty value counts as not set. An invalid value is a load error that
+names the variable, e.g. `CLAI_MODEL: unknown model `gpt``.
 
 Format: TOML. Unknown keys are an error, not ignored, so typos are found.
 **(assumption)**
@@ -64,7 +83,7 @@ deny = [
 ]
 
 # Directories outside the workspace the file tools may use, with the same
-# rules as the workspace. Default: none.
+# rules as the workspace. Absolute, or starting with ~/. Default: none.
 extra_dirs = ["~/ws/shared-lib"]
 ```
 
@@ -214,8 +233,9 @@ default foreground or background). In a terminal without true-colour support
 (`COLORTERM` is not `truecolor` or `24bit`), `#rrggbb` is shown as the
 nearest 256-colour value. **(assumption)**
 
-A theme may not set `base` to itself or to another custom theme; an unknown
-colour key or value is a load error.
+A theme may not set `base` to itself or to another custom theme; without
+`base` it starts from `terminal`. A custom theme may not use the name of a
+built-in theme. An unknown colour key or value is a load error.
 
 The environment variable `NO_COLOR` (any value) turns all colours off,
 whatever the theme. `CLAI_THEME` overrides `tui.theme` for one run.
@@ -261,7 +281,7 @@ context_window = 32768
 | `api`          | yes      | API type: `anthropic` or `openai-compatible`. Decides which adapter encodes requests and decodes answers, see [`providers.md`](providers.md). **(assumption: these two first)** |
 | `base_url`     | no       | API address. Default: the official address of the API type. Required for `openai-compatible`. |
 | `api_key_env`  | no       | Name of the environment variable that holds the API key. |
-| `api_key_cmd`  | no       | Command whose output is the API key, e.g. `pass show anthropic`. Run once when the provider is first used. **(assumption)** |
+| `api_key_cmd`  | no       | Command whose output is the API key, e.g. `pass show anthropic`. Run with `sh -c` once when the provider is first used; it must finish within 30 s. The trailing newline is removed. Empty output or a non-zero exit is an error that shows the command's standard error. **(assumption)** |
 | `timeout_s`    | no       | Request timeout in seconds. Default 300. |
 | `max_retries`  | no       | Retries for network errors and rate limits. Default 3. |
 
@@ -297,7 +317,17 @@ It is an error when:
 - no provider or no model is defined;
 - `default_model` is missing or does not name a defined model;
 - a provider has an unknown `api`, or both `api_key_env` and `api_key_cmd`;
-- an `openai-compatible` provider has no `base_url`.
+- an `openai-compatible` provider has no `base_url`;
+- `base_url` does not start with `http://` or `https://`;
+- a provider or model name is empty or contains `/`;
+- a model has no `id` or `context_window`, or a number is out of range:
+  `context_window` and `max_output_tokens` at least 1, `timeout_s` 1–86400,
+  `max_retries` 0–100, `temperature` 0–2, `tui.max_fps` 1–120;
+- `commit.model`, `tui.theme`, `CLAI_MODEL` or `CLAI_THEME` names something
+  that is not defined.
+
+All errors found are reported, one per line; a TOML syntax error stops at
+the first one.
 
 A missing API key (variable not set, command fails) is not a load error; it
 is reported when the provider is first used, in the session that uses it, so
