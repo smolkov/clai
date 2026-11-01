@@ -1,0 +1,9 @@
+# default_model names a model that is not defined.
+default_model = "anthropic/opus"
+
+[providers.anthropic]
+api = "anthropic"
+
+[providers.anthropic.models.sonnet]
+id = "claude-sonnet-5-5"
+context_window = 200000

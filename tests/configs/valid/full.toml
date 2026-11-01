@@ -1,0 +1,109 @@
+# Every section and key of the user file (see spec/config.md).
+default_model = "anthropic/sonnet"
+
+[providers.anthropic]
+api         = "anthropic"
+api_key_env = "ANTHROPIC_API_KEY"
+timeout_s   = 300
+max_retries = 3
+
+[providers.anthropic.models.sonnet]
+id                = "claude-sonnet-5-5"
+display_name      = "Sonnet 5.5"
+context_window    = 200000
+max_output_tokens = 64000
+
+[providers.anthropic.models.opus]
+id                = "claude-opus-5-5"
+context_window    = 200000
+max_output_tokens = 64000
+temperature       = 1.0
+
+[providers.openai]
+api         = "openai-compatible"
+base_url    = "https://api.openai.com/v1"
+api_key_cmd = "pass show openai"
+
+[providers.openai.models.gpt]
+id             = "gpt-5"
+context_window = 400000
+
+[providers.local]
+api      = "openai-compatible"
+base_url = "http://localhost:11434/v1"
+
+[providers.local.models.qwen]
+id             = "qwen3-coder:30b"
+context_window = 32768
+
+[limits]
+max_requests   = 50
+max_tool_calls = 120
+
+[permissions]
+read_file    = "allow"
+list_files   = "allow"
+search_files = "allow"
+edit_file    = "ask"
+write_file   = "ask"
+run_command  = "ask"
+extra_dirs = [
+  "~/ws/shared-lib",
+  { path = "~/ws/docs", access = "read" },
+]
+
+[permissions.allow]
+run_command = [
+  "ls", "cat", "head", "wc", "grep", "rg",
+  "cargo build", "cargo test", "cargo clippy", "cargo fmt",
+  "git status", "git diff", "git log", "git show",
+]
+edit = ["src/**", "tests/**"]
+
+[permissions.ask]
+run_command = ["git push", "git commit", "cargo publish"]
+edit        = ["Cargo.toml", ".github/**"]
+
+[permissions.deny]
+run_command = [
+  "rm", "sudo", "curl ** | sh",
+  "git push --force", "git push -f", "git reset --hard", "git clean",
+]
+edit = [".git/**"]
+read = [".env*", "secrets/**", "~/.ssh/**"]
+
+[[permissions.rules]]
+action  = "deny"
+tools   = ["read"]
+paths   = [".env*"]
+except  = [".env.example"]
+message = "Secrets are not shown to the model. Ask the user for the value you need."
+
+[[permissions.rules]]
+action   = "allow"
+tools    = ["run_command"]
+commands = ["cargo"]
+except   = ["cargo publish", "cargo install", "cargo login"]
+
+[commit]
+model   = "local/qwen"
+trailer = "Co-Authored-By: clai <clai@localhost>"
+
+[tui]
+theme             = "solar"
+symbols           = "auto"
+mouse             = true
+tool_output_lines = 20
+expand_tool_calls = false
+syntax_highlight  = true
+timestamps        = false
+scroll_lines      = 3
+max_fps           = 30
+
+[themes.solar]
+base        = "dark"
+user        = "cyan"
+accent      = "#e5a50a"
+diff_add    = "#26a269"
+diff_remove = "#c01c28"
+code        = "Solarized (dark)"

@@ -1,0 +1,9 @@
+# openai-compatible needs base_url.
+default_model = "local/qwen"
+
+[providers.local]
+api = "openai-compatible"
+
+[providers.local.models.qwen]
+id = "qwen"
+context_window = 1000

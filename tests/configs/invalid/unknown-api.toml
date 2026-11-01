@@ -1,0 +1,9 @@
+# An api type clai does not know.
+default_model = "x/m"
+
+[providers.x]
+api = "gemini"
+
+[providers.x.models.m]
+id = "m"
+context_window = 1000

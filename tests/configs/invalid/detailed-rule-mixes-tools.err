@@ -1,0 +1,2 @@
+clai: CONFIG:11: permissions.rules: tools mixes file tools and run_command; use one rule for each
+clai: CONFIG:14: permissions.rules: `paths` is for file tools; use `commands` for run_command

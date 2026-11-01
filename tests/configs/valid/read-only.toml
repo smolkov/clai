@@ -1,0 +1,22 @@
+# A model that may only read: nothing is changed or run, nothing is asked.
+default_model = "anthropic/sonnet"
+
+[providers.anthropic]
+api         = "anthropic"
+api_key_env = "ANTHROPIC_API_KEY"
+
+[providers.anthropic.models.sonnet]
+id             = "claude-sonnet-5-5"
+context_window = 200000
+
+[limits]
+max_requests   = 20
+max_tool_calls = 40
+
+[permissions]
+edit_file   = "deny"
+write_file  = "deny"
+run_command = "deny"
+
+[permissions.deny]
+read = [".env*", "secrets/**"]

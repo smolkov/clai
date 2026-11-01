@@ -1,0 +1,1 @@
+clai: CONFIG:2: unknown field `model`, expected one of `default_model`, `providers`, `limits`, `permissions`, `commit`, `tui`, `themes`

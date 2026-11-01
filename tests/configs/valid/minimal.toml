@@ -1,0 +1,10 @@
+# The smallest useful configuration: one provider, one model.
+default_model = "anthropic/sonnet"
+
+[providers.anthropic]
+api         = "anthropic"
+api_key_env = "ANTHROPIC_API_KEY"
+
+[providers.anthropic.models.sonnet]
+id             = "claude-sonnet-5-5"
+context_window = 200000

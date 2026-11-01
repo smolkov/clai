@@ -1,0 +1,25 @@
+# A project file: <workspace>/.clai/config.toml. It may only make things
+# stricter: lower limits, ask and deny rules, no providers or allow rules.
+# default_model = "anthropic/sonnet"   # only if every user defines it
+
+[limits]
+max_requests = 30
+
+[permissions]
+run_command = "ask"
+
+[permissions.ask]
+edit = ["Cargo.toml"]
+
+[permissions.deny]
+run_command = ["cargo publish"]
+read        = ["fixtures/secret/**"]
+
+[[permissions.rules]]
+action  = "deny"
+tools   = ["edit"]
+paths   = ["generated/**"]
+message = "Generated code; change the generator in tools/gen instead."
+
+[commit]
+trailer = "Signed-off-by: Project Bot <bot@example.com>"

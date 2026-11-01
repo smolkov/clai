@@ -1,0 +1,1 @@
+clai: CONFIG:12: permissions.allow.run_command: pattern `cat ** | grep`: `|` is only allowed in deny and ask rules

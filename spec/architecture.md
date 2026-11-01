@@ -178,6 +178,9 @@ clai/
 └── tests/                      tests of the binary and live tests
     ├── cli.rs, completion.rs, models.rs
     ├── live.rs                 against real APIs, ignored by default
+    ├── run.rs                  clai run against a local server
+    ├── configs.rs              the sample configurations load or fail as expected
+    ├── configs/                sample configurations: valid/, invalid/ (with .err), project/
     └── fixtures/               recorded SSE streams per adapter
         ├── anthropic/
         └── openai/

@@ -1,0 +1,9 @@
+# A key clai does not know (`model` instead of `default_model`).
+model = "anthropic/sonnet"
+
+[providers.anthropic]
+api = "anthropic"
+
+[providers.anthropic.models.sonnet]
+id = "claude-sonnet-5-5"
+context_window = 200000

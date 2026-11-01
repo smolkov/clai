@@ -693,3 +693,40 @@ fn limits() {
         ["project.toml:2: unknown field `max_turns`, expected `max_requests` or `max_tool_calls`"]
     );
 }
+
+#[test]
+fn sample_configs() {
+    let full = include_str!("../../tests/configs/valid/full.toml");
+    let project = include_str!("../../tests/configs/project/config.toml");
+    let env = Environment {
+        home: Some(PathBuf::from("/home/u")),
+        ..Environment::default()
+    };
+    let config = load_with(full, None, &env).unwrap();
+    assert_eq!(config.providers.len(), 3);
+    assert_eq!(config.limits, Limits::default());
+    assert_eq!(config.tui.theme, "solar");
+    assert_eq!(config.permissions.extra_dirs.len(), 2);
+    let rules = rule_texts(&config);
+    assert!(
+        rules.contains(&"allow run_command(cargo test)".to_owned()),
+        "{rules:?}"
+    );
+    assert!(
+        rules.contains(&"deny run_command(curl ** | sh)".to_owned()),
+        "{rules:?}"
+    );
+
+    let config = load_with(full, Some(project), &env).unwrap();
+    assert_eq!(config.limits.max_requests, 30);
+    assert_eq!(config.limits.max_tool_calls, 120);
+    assert_eq!(
+        config.commit.trailer.as_deref(),
+        Some("Signed-off-by: Project Bot <bot@example.com>")
+    );
+    let rules = rule_texts(&config);
+    assert!(
+        rules.contains(&"deny run_command(cargo publish)".to_owned()),
+        "{rules:?}"
+    );
+}

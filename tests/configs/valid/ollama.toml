@@ -1,0 +1,14 @@
+# A local model through Ollama; no API key. Try it with
+#   clai --config tests/configs/valid/ollama.toml run "list the files"
+default_model = "local/qwen"
+
+[providers.local]
+api         = "openai-compatible"
+base_url    = "http://localhost:11434/v1"
+timeout_s   = 600
+max_retries = 1
+
+[providers.local.models.qwen]
+id             = "qwen3-coder:30b"
+context_window = 32768
+temperature    = 0.2

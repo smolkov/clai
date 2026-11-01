@@ -1,0 +1,13 @@
+# A colour value clai does not know.
+default_model = "anthropic/sonnet"
+
+[providers.anthropic]
+api = "anthropic"
+
+[providers.anthropic.models.sonnet]
+id = "claude-sonnet-5-5"
+context_window = 200000
+
+[themes.mine]
+base = "dark"
+user = "sky"

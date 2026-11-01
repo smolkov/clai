@@ -1,0 +1,2 @@
+clai: CONFIG: no provider is defined
+clai: CONFIG:2: default_model: unknown model `anthropic/sonnet`; no models are configured

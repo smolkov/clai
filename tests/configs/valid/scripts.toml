@@ -1,0 +1,20 @@
+# For `clai run` in scripts and CI: common build and test commands run
+# without asking, everything dangerous is denied, the rest is denied
+# because no one can answer.
+default_model = "anthropic/sonnet"
+
+[providers.anthropic]
+api         = "anthropic"
+api_key_env = "ANTHROPIC_API_KEY"
+
+[providers.anthropic.models.sonnet]
+id             = "claude-sonnet-5-5"
+context_window = 200000
+
+[permissions.allow]
+run_command = ["cargo build", "cargo test", "cargo clippy", "cargo fmt", "git status", "git diff"]
+edit        = ["src/**", "tests/**"]
+
+[permissions.deny]
+run_command = ["rm", "sudo", "git push", "git reset", "curl ** | sh"]
+read        = [".env*"]

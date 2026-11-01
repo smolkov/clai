@@ -1,0 +1,14 @@
+# A detailed rule may not mix file tools and run_command.
+default_model = "anthropic/sonnet"
+
+[providers.anthropic]
+api = "anthropic"
+
+[providers.anthropic.models.sonnet]
+id = "claude-sonnet-5-5"
+context_window = 200000
+
+[[permissions.rules]]
+action = "deny"
+tools = ["read_file", "run_command"]
+paths = ["x"]

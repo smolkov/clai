@@ -1,0 +1,4 @@
+clai: PROJECT:3: providers: only allowed in the user file (USER)
+clai: PROJECT:8: permissions.run_command: a project file may not set a tool to allow
+clai: PROJECT:11: permissions.allow: a project file may not add allow rules
+clai: PROJECT:9: permissions.extra_dirs: a project file may not set extra_dirs

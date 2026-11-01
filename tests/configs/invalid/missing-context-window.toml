@@ -1,0 +1,8 @@
+# A model without context_window.
+default_model = "anthropic/sonnet"
+
+[providers.anthropic]
+api = "anthropic"
+
+[providers.anthropic.models.sonnet]
+id = "claude-sonnet-5-5"

@@ -83,7 +83,9 @@ the default and providers whose key variable is not set.
 
 A project can add `.clai/config.toml` to set `default_model`, `[commit]`, lower `[limits]` and
 stricter `[permissions]`. `CLAI_MODEL` overrides `default_model` and
-`CLAI_THEME` overrides the theme. All keys: [`spec/config.md`](spec/config.md).
+`CLAI_THEME` overrides the theme. All keys: [`spec/config.md`](spec/config.md). Sample files to start from
+(minimal, Ollama, every key, read-only, for scripts) are in
+[`tests/configs/`](tests/configs/readme.md).
 
 ## Permissions
 
