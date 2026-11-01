@@ -17,7 +17,7 @@ Statements marked **(assumption)** need a decision from the user.
 | [`clai ls`](#clai-ls) | List sessions. | [`sessions.md`](sessions.md) |
 | [`clai kill`](#clai-kill) | End a session. | [`sessions.md`](sessions.md) |
 | [`clai send`](#clai-send) | Send a message to a session without attaching. | [`sessions.md`](sessions.md) |
-| [`clai answer`](#clai-answer) | Answer permission and limit questions in the terminal, without the TUI. | [`sessions.md`](sessions.md), "Questions" |
+| [`clai chat`](#clai-chat) | Answer permission and limit questions in the terminal, without the TUI. | [`sessions.md`](sessions.md), "Questions" |
 | [`clai models`](#clai-models) | List configured providers and models. | [`config.md`](config.md) |
 | [`clai commit`](#clai-commit) | Print a commit message for the changes in a directory. | [`commit.md`](commit.md) |
 | [`clai server`](#clai-server) | Run, stop or check the background server. | [`sessions.md`](sessions.md) |
@@ -34,7 +34,7 @@ Statements marked **(assumption)** need a decision from the user.
   when standard error is a terminal.
 - Commands that open the TUI need a terminal on standard input and output;
   otherwise they fail with exit code `2`.
-- Commands that use sessions (`attach`, `ls`, `kill`, `send`, `answer`, `new`) start
+- Commands that use sessions (`attach`, `ls`, `kill`, `send`, `chat`, `new`) start
   the server if it is not running (see [`sessions.md`](sessions.md),
   "Server"). `models`, `commit` and `run` work without the server.
   **(assumption)**
@@ -94,7 +94,7 @@ Runs one task without the TUI and exits when it is done.
 - Standard output: the model's final answer as plain text (Markdown source).
   Standard error: tool calls and their results, one line each.
 - Questions: when standard input is a terminal and the task is not read
-  from it (`-`), `clai run` asks like [`clai answer`](#clai-answer): the
+  from it (`-`), `clai run` asks like [`clai chat`](#clai-chat): the
   question on standard error, the answer as a line on standard input.
   **(assumption)**
 - Otherwise there is no one to ask: a tool call whose action is `ask` is
@@ -175,19 +175,19 @@ Sends `MESSAGE` to session `NAME` as if typed in the TUI and returns at once;
 it does not wait for the answer. `-` reads the message from standard input.
 If a turn is running, the message is queued. **(assumption)**
 
-## clai answer
+## clai chat
 
 ```sh
-clai answer [NAME...]
-clai answer --list [--json] [NAME...]
-clai answer NAME CHOICE [--id ID]
+clai chat [NAME...]
+clai chat --list [--json] [NAME...]
+clai chat NAME CHOICE [--id ID]
 ```
 
 Answers questions of sessions in the terminal, without the TUI (see
 [`sessions.md`](sessions.md), "Questions"). Useful over a plain SSH
 connection, in a second terminal, or from a script.
 
-**Interactive** (`clai answer [NAME...]`): attaches as an answering client
+**Interactive** (`clai chat [NAME...]`): attaches as an answering client
 to the named sessions, or to all sessions. It prints each open question and
 each new one as it opens, reads the answer as a line on standard input, and
 keeps running until `Ctrl-C` or end of input. It does not show the
@@ -212,7 +212,7 @@ rule [1]>
   all`. `v` shows everything through `$PAGER` (default `less`).
   **(assumption)**
 - With several sessions, questions are shown one at a time, oldest first.
-- A question answered elsewhere (TUI, other `clai answer`) while shown is
+- A question answered elsewhere (TUI, other `clai chat`) while shown is
   replaced by `answered in tui pts/3: allow`.
 - With no open question, it prints `waiting for questions (Ctrl-C to stop)`
   on standard error.
@@ -221,7 +221,7 @@ rule [1]>
 age, summary. `--json` prints the full questions, with all fields of
 [`sessions.md`](sessions.md), "Content". Exit `0`, also when there are none.
 
-**Script** (`clai answer NAME CHOICE`): answers the open question of
+**Script** (`clai chat NAME CHOICE`): answers the open question of
 session `NAME` and exits.
 
 | `CHOICE` | Answer |
@@ -334,6 +334,6 @@ exits before doing anything else. So completion knows:
   is not used. If the configuration cannot be loaded, there are no
   candidates and no error. **(assumption)**
 - files for `--config`, directories for `-C` and `DIR`;
-- session names for `attach`, `kill`, `send` and `answer` once sessions exist.
+- session names for `attach`, `kill`, `send` and `chat` once sessions exist.
 
 `COMPLETE` empty or `0` is the same as not set.

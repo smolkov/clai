@@ -13,7 +13,7 @@ Statements marked **(assumption)** need a decision from the user.
 | Term        | Meaning |
 |-------------|---------|
 | Server      | Background `clai` process of one user that owns all sessions and runs their agent loops and tools. |
-| Client      | A process that talks to the server: a TUI, a terminal command such as `clai ls` or `clai answer`, or later a web UI (see [Questions](#questions)). |
+| Client      | A process that talks to the server: a TUI, a terminal command such as `clai ls` or `clai chat`, or later a web UI (see [Questions](#questions)). |
 | Session     | One conversation with the model in one workspace, with its history, settings and permission rules. It lives in the server, not in a client. |
 | Attach      | Connect a client to a session: it receives the session's events (conversation, questions) and may send user input and answers. |
 | Question    | A decision the session waits for: a permission question for a tool call, or a limit question. Sent to every attached client that can answer. |
@@ -116,7 +116,7 @@ decision is needed.
 A question is a message from the session to its clients. It carries
 everything needed to decide without looking anywhere else, so every kind of
 client can show it and answer it the same way: the TUI as a prompt bar, the
-terminal client `clai answer` as lines of text (see
+terminal client `clai chat` as lines of text (see
 [`command.md`](command.md)), and a later web UI as a page. Clients only show
 questions and send answers; the decision is checked and applied by the
 server.
@@ -136,7 +136,7 @@ server.
   `clai run` (see [Background work](#background-work)).
 - The first valid answer counts. The server then sends `question closed`,
   with the answer and the client that gave it (e.g. `tui pts/3`,
-  `clai answer`), to all clients; they remove the prompt and show the
+  `clai chat`), to all clients; they remove the prompt and show the
   outcome in the conversation. A later answer to the same question is
   rejected with `already answered by tui pts/3`.
 
@@ -197,7 +197,7 @@ call fails (see [`tools.md`](tools.md), "edit_file").
 | Client | Shows a question as | Answers with |
 |--------|---------------------|--------------|
 | TUI | Expanded tool call and prompt bar (see [`tui.md`](tui.md), "Permission prompts"). | Keys `y`, `a`, `n`, `e`, `Esc`. |
-| Terminal: `clai answer` | The fields as text, the diff or command, and a numbered list of choices (see [`command.md`](command.md)). | A line on standard input, or options for scripts. |
+| Terminal: `clai chat` | The fields as text, the diff or command, and a numbered list of choices (see [`command.md`](command.md)). | A line on standard input, or options for scripts. |
 | Terminal: `clai run` | The same text on standard error, when standard input is a terminal. | A line on standard input. |
 | Web UI (later) | A page with the same fields. | The same answers. |
 
@@ -210,7 +210,7 @@ never listens on a network port. **(assumption)**
 ## Commands
 
 Sessions are managed with `clai`, `clai new`, `clai attach`, `clai ls`,
-`clai kill`, `clai send`, `clai answer` and `clai server`; syntax and options are in
+`clai kill`, `clai send`, `clai chat` and `clai server`; syntax and options are in
 [`command.md`](command.md). In the TUI, the session list and the `/sessions`,
 `/new`, `/attach`, `/rename`, `/kill` commands do the same (see
 [`tui.md`](tui.md)).

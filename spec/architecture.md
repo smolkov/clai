@@ -14,14 +14,14 @@ Statements marked **(assumption)** need a decision from the user.
 
 | Role | Started by | Lives | Does |
 |------|------------|-------|------|
-| Client | `clai`, `clai attach`, `clai answer`, `clai ls`, … | As long as the command | Talks to the server; shows sessions and questions; sends user input and answers. |
+| Client | `clai`, `clai attach`, `clai chat`, `clai ls`, … | As long as the command | Talks to the server; shows sessions and questions; sends user input and answers. |
 | Server | The first client that needs one, or `clai server` | Until idle for 60 s | Owns all sessions and runs their agent loops and tools. |
 | One-shot | `clai run`, `clai TASK...` | One task | Runs one temporary session in its own process, without a server. |
 
 ```
   clients (one process each)                      server (one per user)
  ┌──────────────────────────┐                  ┌──────────────────────────────────────┐
- │ TUI          clai answer │                  │ session registry                     │
+ │ TUI            clai chat │                  │ session registry                     │
  │ clai ls/send/kill/new    │   Unix socket    │   ┌─ session "clai" ───────────────┐ │
  │ web UI bridge (later)    │◀────────────────▶│   │ state, history, session rules  │ │
  └──────────────────────────┘  versioned JSON  │   │ agent loop                     │ │
@@ -62,7 +62,7 @@ Statements marked **(assumption)** need a decision from the user.
 Each component uses only components below it; nothing calls upwards.
 
 ```
- commands · TUI · clai answer           (clients: show and send)
+ commands · TUI · clai chat             (clients: show and send)
  client · protocol                      (transport)
  server · session                       (state and lifetime)
  agent loop                             (one turn)
@@ -116,7 +116,7 @@ clai/
 │   │   └── run.rs, new.rs, attach.rs, ls.rs, kill.rs, send.rs,
 │   │       models.rs, commit.rs, server.rs, completion.rs
     │       commit.rs            git changes, commit message   planned
-│   │       answer.rs                                          planned
+│   │       chat.rs                                            planned
 │   ├── config/                 Config (config.md)
 │   │   ├── mod.rs              files, precedence, validation
 │   │   ├── file.rs             TOML files as written
@@ -192,7 +192,7 @@ Message kinds:
 
 | Direction | Kind | Content |
 |-----------|------|---------|
-| client → server | `hello` | Protocol version; client kind (`tui`, `answer`, `cli`, `bridge`) and name (e.g. `tui pts/3`); whether it answers questions. |
+| client → server | `hello` | Protocol version; client kind (`tui`, `chat`, `cli`, `bridge`) and name (e.g. `tui pts/3`); whether it answers questions. |
 | client → server | `request` | Session commands: `new`, `list`, `kill`, `rename`, `attach`, `detach`, `send` (message), `set_model`, `cancel`. Each has an id and gets one `response`. |
 | client → server | `answer` | Question id, choice, and the rule or text the choice needs (see [`sessions.md`](sessions.md), "Answers"). |
 | server → client | `response` | Result or error of one request, with the request's id. |

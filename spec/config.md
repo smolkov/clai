@@ -330,7 +330,7 @@ lift a rule of the user file.
 
 A call that asks opens a question in the session, with everything needed to
 decide; any attached client that can answer may answer it: the TUI,
-`clai answer` in a terminal, or later a web UI (see
+`clai chat` in a terminal, or later a web UI (see
 [`sessions.md`](sessions.md), "Questions"). A session without such a client
 waits.
 

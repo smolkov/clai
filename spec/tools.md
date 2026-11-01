@@ -101,7 +101,7 @@ A call that asks opens a permission question in the session (see below).
 
 When a call asks, the tool prepares the `details` of the permission question
 (see [`sessions.md`](sessions.md), "Questions") before anything is changed or
-run. The details are the same for every client: the TUI, `clai answer`,
+run. The details are the same for every client: the TUI, `clai chat`,
 `clai run` on a terminal, or a web UI.
 
 Every question about a file tool has, for each path: the path as the model

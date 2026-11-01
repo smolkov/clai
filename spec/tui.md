@@ -173,7 +173,7 @@ When a tool call needs permission, the session sends a permission question
 with the call's details, the reason and the proposed rules (see
 [`sessions.md`](sessions.md), "Questions", and [`tools.md`](tools.md),
 "Questions"). The same question may be answered in another TUI or with
-`clai answer`; the TUI then closes its prompt and shows who answered.
+`clai chat`; the TUI then closes its prompt and shows who answered.
 
 The TUI:
 

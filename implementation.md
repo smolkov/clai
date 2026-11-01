@@ -41,7 +41,7 @@ maps to the code.
   "Background work").
 - **Questions are data, not UI.** A question carries its full details
   (diff, command parts, reason, proposals) as a protocol message; the TUI,
-  `clai answer` and a later web UI only render it and send an answer that
+  `clai chat` and a later web UI only render it and send an answer that
   the server checks (see `spec/sessions.md`, "Questions").
 - **A session is an actor:** one tokio task owns the session state (history,
   model, session rules, state `idle`/`working`/`waiting`). Clients send it
@@ -232,7 +232,7 @@ basics).
   output (answer on stdout, tool lines on stderr), `--yes`, `--no-ask`,
   `-C`, exit codes, `Ctrl-C` exit `130`.
 - Questions on the terminal when standard input is one, with the text
-  renderer shared with `clai answer`.
+  renderer shared with `clai chat`.
 
 Tests: end-to-end with the `fake` provider selected by a test-only config
 `api` value **(proposal)**, checking stdout, stderr and exit codes.
@@ -249,16 +249,16 @@ After this milestone `clai` is usable from scripts.
 - `session` actor: state machine of `sessions.md`, background work,
   questions shown to all clients with first answer winning, message queue,
   event log so attach replays the full history.
-- Commands `clai new -d`, `ls`, `kill`, `send`, `answer` (interactive,
+- Commands `clai new -d`, `ls`, `kill`, `send`, `chat` (interactive,
   `--list`, script form).
 - Clients declare on attach whether they answer questions; open questions
   are sent on attach; `question closed` names the answering client.
-- Tab completion of session names for `attach`, `kill`, `send`, `answer`.
+- Tab completion of session names for `attach`, `kill`, `send`, `chat`.
 - Configuration reload on file change.
 
 Tests: server in a temp runtime dir; several sessions in parallel with the
 `fake` provider; detach during a turn; question answered by one of two
-clients; `clai answer` in script form with a stale `--id`; an `always` rule
+clients; `clai chat` in script form with a stale `--id`; an `always` rule
 that does not match the call is rejected; a session task that fails does
 not affect another; version mismatch error.
 
