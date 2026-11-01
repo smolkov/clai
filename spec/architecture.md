@@ -81,6 +81,86 @@ Consequences:
 - **Adapters know no tools.** Tools reach them only as `ToolSpec` values
   and tool calls in the shared types (see [`providers.md`](providers.md)).
 
+## Project tree
+
+Where the components live in the repository. Entries marked *planned* do not
+exist yet; they are added by the milestones in
+[`implementation.md`](../implementation.md), which also lists each module's
+content. When files are added, moved or removed, this tree is updated in the
+same change.
+
+```
+clai/
+├── Cargo.toml, Cargo.lock      one crate, one binary `clai`
+├── clippy.toml                 lint settings (never-crash rules)
+├── readme.md                   user-facing overview and status
+├── agent.md                    rules for the coding agent on this repository
+├── implementation.md           modules, dependencies, milestones
+├── todo.md                     progress per milestone
+│
+├── spec/                       the specification (this book)
+│   ├── book.toml, SUMMARY.md   mdBook configuration and table of contents
+│   ├── readme.md               introduction, terms, index, open questions
+│   ├── architecture.md         this file
+│   ├── command.md, tui.md, sessions.md
+│   ├── config.md, providers.md, tools.md
+│   └── agent-loop.md, context.md, commit.md             planned
+│
+├── src/
+│   ├── main.rs                 entry point: parse, run, exit code
+│   ├── lib.rs                  crate root; the modules below
+│   ├── cli.rs                  command-line arguments (command.md)
+│   ├── complete.rs             values for shell completion
+│   ├── command/                one file per command, with its arguments and `run`
+│   │   ├── mod.rs              `Command`: name, run
+│   │   └── run.rs, new.rs, attach.rs, ls.rs, kill.rs, send.rs,
+│   │       models.rs, commit.rs, server.rs, completion.rs
+    │       commit.rs            git changes, commit message   planned
+│   │       answer.rs                                          planned
+│   ├── config/                 Config (config.md)
+│   │   ├── mod.rs              files, precedence, validation
+│   │   ├── file.rs             TOML files as written
+│   │   ├── errors.rs           errors with file:line
+│   │   ├── permissions.rs      loading and merging `[permissions]`
+│   │   ├── secret.rs           API keys, never shown
+│   │   ├── tui.rs              `[tui]` and `[themes]`
+│   │   └── example.toml        example printed when no config exists
+│   ├── provider/               Provider and adapters (providers.md)
+│   │   ├── mod.rs              `Provider` trait
+│   │   ├── types.rs            shared request, message, event types
+│   │   ├── error.rs            `ProviderError`
+│   │   ├── remote.rs           key, retries, streaming, cancellation
+│   │   ├── http.rs             HTTP client, timeouts, status codes
+│   │   ├── sse.rs              server-sent events parser
+│   │   ├── anthropic.rs        adapter `anthropic`
+│   │   ├── openai.rs           adapter `openai-compatible`
+│   │   └── fake.rs             scripted provider for tests
+│   ├── permissions/            rule matching, paths, command splitting   planned
+│   ├── tools/                  the six tools, question details           planned
+│   ├── context/                system prompt, history, truncation        planned
+│   ├── agent/                  agent loop                                planned
+│   ├── session/                session actor, event log, questions       planned
+│   ├── protocol/               messages, framing, handshake              planned
+│   ├── server/                 socket, registry, idle exit               planned
+│   ├── client/                 connect, start server, event stream       planned
+│   ├── tui/                    full-screen interface                     planned
+│   ├── output.rs               writing command results to standard output
+│   ├── log.rs                  logging to a file
+│   └── error.rs                crate error type
+│
+└── tests/                      tests of the binary and live tests
+    ├── cli.rs, completion.rs, models.rs
+    ├── live.rs                 against real APIs, ignored by default
+    └── fixtures/               recorded SSE streams per adapter
+        ├── anthropic/
+        └── openai/
+```
+
+Unit tests live next to their code (`#[cfg(test)]`, `config/tests.rs`,
+`provider/tests_http.rs`); `tests/` holds tests that run the `clai` binary or
+need the network. Build output goes to `target/`, the spec book to
+`target/spec-book/`.
+
 ## State and ownership
 
 | State | Owner | Others see |

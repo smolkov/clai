@@ -133,7 +133,7 @@ When a spec file is added, renamed or removed, update this table and
 | [`readme.md`](readme.md) | draft | This file: purpose, goals, terms, index, open questions. |
 | [`SUMMARY.md`](SUMMARY.md) | — | Table of contents for mdBook. |
 | [`book.toml`](book.toml) | — | mdBook configuration. |
-| [`architecture.md`](architecture.md) | draft | Roles (client, server, one-shot), components and layers, state ownership, protocol messages and events, data flow of a turn, concurrency, trust boundaries, errors. |
+| [`architecture.md`](architecture.md) | draft | Roles (client, server, one-shot), components and layers, project tree, state ownership, protocol messages and events, data flow of a turn, concurrency, trust boundaries, errors. |
 | [`command.md`](command.md) | draft | All command-line commands: syntax, options, output, exit codes. |
 | [`tui.md`](tui.md) | draft | Full-screen interface: layout, session list, model picker, keys, permission prompts, input editor. |
 | [`sessions.md`](sessions.md) | draft | Server, several sessions, attach/detach, session commands. |
