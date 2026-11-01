@@ -1,0 +1,14 @@
+[book]
+title = "clai specification"
+authors = ["Aleksandr Smolkov"]
+language = "en"
+src = "."
+
+[build]
+build-dir = "../target/spec-book"
+# Draft chapters (empty links in SUMMARY.md) stay drafts; no files are created.
+create-missing = false
+
+[output.html]
+default-theme = "light"
+preferred-dark-theme = "navy"

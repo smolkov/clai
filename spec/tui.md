@@ -169,16 +169,25 @@ available in the expanded entry. See [`config.md`](config.md), "TUI".
 
 ## Permission prompts
 
-When a tool call needs permission, the TUI:
+When a tool call needs permission, the session sends a permission question
+with the call's details, the reason and the proposed rules (see
+[`sessions.md`](sessions.md), "Questions", and [`tools.md`](tools.md),
+"Questions"). The same question may be answered in another TUI or with
+`clai answer`; the TUI then closes its prompt and shows who answered.
 
-1. Expands the tool call and scrolls it into view.
-2. Shows the prompt bar with the question and the choices.
+The TUI:
+
+1. Expands the tool call and scrolls it into view, showing the question's
+   details: diff or content, command parts with their decisions, working
+   directory.
+2. Shows the prompt bar with the reason (`asks: default for edit_file`) and
+   the choices.
 3. Takes keys for the prompt bar only, until the user answers or cancels.
 
 | Key   | Action |
 |-------|--------|
 | `y`   | Allow this call once. |
-| `a`   | Allow this call and add an allow rule for the session (e.g. this command, this file); see [`config.md`](config.md), "Session rules". |
+| `a`   | Allow this call and add an allow rule for the session. The prompt bar shows the proposed rule (this command, this file); `Tab` widens it step by step (e.g. `cargo test *`, `src/**`), `Enter` confirms, `Esc` goes back. See [`config.md`](config.md), "Session rules". |
 | `n`   | Deny; the model is told the call was denied. |
 | `e`   | Deny and type a short message to the model explaining why or what to do instead. |
 | `Esc` | Deny and cancel the turn. |

@@ -13,9 +13,10 @@ Statements marked **(assumption)** need a decision from the user.
 | Term        | Meaning |
 |-------------|---------|
 | Server      | Background `clai` process of one user that owns all sessions and runs their agent loops and tools. |
-| Client      | A process that talks to the server: a TUI, or a CLI command such as `clai ls`. |
+| Client      | A process that talks to the server: a TUI, a terminal command such as `clai ls` or `clai answer`, or later a web UI (see [Questions](#questions)). |
 | Session     | One conversation with the model in one workspace, with its history, settings and permission rules. It lives in the server, not in a client. |
-| Attach      | Connect a TUI to a session: the TUI shows its conversation and sends user input to it. |
+| Attach      | Connect a client to a session: it receives the session's events (conversation, questions) and may send user input and answers. |
+| Question    | A decision the session waits for: a permission question for a tool call, or a limit question. Sent to every attached client that can answer. |
 | Detach      | Disconnect a TUI from its session; the session keeps running. |
 
 ## Server
@@ -76,8 +77,10 @@ decision is needed.
 
   | Decision | When | The session |
   |----------|------|-------------|
-  | Permission question | A tool call is `ask` (see [`config.md`](config.md), "Permissions"). | Stops at that call until an attached TUI answers. Tool calls after it in the same answer wait too; calls before it have already run. |
-  | Limit question | The turn reached its limit of model requests or tool calls. | Stops before the next model request or tool call until an attached TUI answers "continue" or "stop". **Continue** starts a new budget of the same size; **stop** ends the turn with the notice "limit reached". |
+  | Permission question | A tool call is `ask` (see [`config.md`](config.md), "Permissions"). | Stops at that call until a client answers. Tool calls after it in the same answer wait too; calls before it have already run. |
+  | Limit question | The turn reached its limit of model requests or tool calls. | Stops before the next model request or tool call until a client answers "continue" or "stop". **Continue** starts a new budget of the same size; **stop** ends the turn with the notice "limit reached". |
+
+  What a question contains and how it is answered: [Questions](#questions).
 
   While a question is open, the session's state is `waiting`. A detached
   session waits; it never decides on its own. `clai ls` and the TUI session
@@ -91,9 +94,10 @@ decision is needed.
   [`tui.md`](tui.md), "Switching sessions").
 - While a session works, its TUI stays usable: the user can type and queue
   messages, switch sessions or detach.
-- With no client that can answer (one-shot `clai run`), a permission
-  question counts as denied (allowed with `--yes`) and a limit question
-  always counts as "stop" (see [`command.md`](command.md)). **(assumption)**
+- A one-shot `clai run` asks on the terminal when standard input is one.
+  Otherwise no one can answer: a permission question counts as denied
+  (allowed with `--yes`) and a limit question counts as "stop" (see
+  [`command.md`](command.md)). **(assumption)**
 
 ## Several clients on one session
 
@@ -101,15 +105,112 @@ decision is needed.
 - More than one TUI may attach to the same session, e.g. from two terminals.
   All of them show the same conversation live. Each has its own scroll
   position and input. **(assumption)**
-- A question (permission or limit) is shown in all attached TUIs; the first
-  answer counts and the others close the question.
+- A question (permission or limit) is sent to all attached clients that can
+  answer; the first answer counts and the others close the question (see
+  [Questions](#questions)).
 - Messages typed in several TUIs are queued in the order the server receives
   them.
+
+## Questions
+
+A question is a message from the session to its clients. It carries
+everything needed to decide without looking anywhere else, so every kind of
+client can show it and answer it the same way: the TUI as a prompt bar, the
+terminal client `clai answer` as lines of text (see
+[`command.md`](command.md)), and a later web UI as a page. Clients only show
+questions and send answers; the decision is checked and applied by the
+server.
+
+### Open questions and clients
+
+- A session has at most one open question at a time, because tool calls run
+  one after another.
+- When a question opens, it is sent to every attached client that declared,
+  when attaching, that it can answer. Clients that only watch (e.g. a
+  second TUI in read-only mode, or `clai ls`) see that the session is
+  `waiting` and why, but get no choices. **(assumption)**
+- A client that attaches while a question is open receives it at once, as
+  part of the session's state.
+- A question stays open until it is answered or the turn is cancelled. It
+  never times out and is never answered by the server itself, except in
+  `clai run` (see [Background work](#background-work)).
+- The first valid answer counts. The server then sends `question closed`,
+  with the answer and the client that gave it (e.g. `tui pts/3`,
+  `clai answer`), to all clients; they remove the prompt and show the
+  outcome in the conversation. A later answer to the same question is
+  rejected with `already answered by tui pts/3`.
+
+### Content
+
+Every question has:
+
+| Field | Meaning |
+|-------|---------|
+| `id` | Unique on the server; an answer names it. |
+| `session` | Session name and workspace. |
+| `kind` | `permission` or `limit`. |
+| `opened` | Time the question opened. |
+| `turn` | Number of the turn, and how many model requests and tool calls it has used. |
+| `summary` | One line for lists and notifications, e.g. `run_command: cargo test parse` or `edit_file: src/parse.rs (lines 12–14)`. |
+| `choices` | The answers this question accepts (see below). |
+
+A permission question also has:
+
+| Field | Meaning |
+|-------|---------|
+| `call` | Tool name, the call's id from the model, and its arguments exactly as the model sent them (JSON). |
+| `details` | What the tool will do, prepared by the tool: resolved paths, the diff or new content, the command with its parts and working directory. Per tool in [`tools.md`](tools.md), "Questions". |
+| `reason` | Why it asks: the deciding rule and its source (`config.toml:24`, `.clai/config.toml:3`) or `default for edit_file`, and the rule's `message` if it has one (see [`config.md`](config.md), "Checking order"). |
+| `proposals` | Allow rules for "always", narrowest first (see [`tools.md`](tools.md), "Permissions"). |
+| `text` | The model's text in the same answer before the tool call, if any, so the user sees what the model said it was about to do. |
+
+A limit question has the limit and the counts reached instead of `call`,
+`details` and `proposals`.
+
+Texts in a question are plain UTF-8; diffs are unified diffs; a client adds
+colour and layout itself. Large parts (file content, long diffs) are sent in
+full up to 1 MiB, with a mark when cut, so a client can show a short view
+first and the whole on request. **(assumption)**
+
+### Answers
+
+| Choice | For | Effect |
+|--------|-----|--------|
+| `allow` | permission | Run this call once. |
+| `allow_always` | permission | Run this call and add an allow rule to the session. The answer names the rule: one of `proposals`, or a rule the user typed for the same tool that matches this call. Any other rule is rejected and the question stays open. |
+| `deny` | permission | Do not run the call; the model gets `denied by the user`. |
+| `deny_message` | permission | As `deny`, with a text for the model: `denied by the user: <text>`. |
+| `cancel` | both | Deny, and cancel the turn. |
+| `continue` | limit | Start a new budget of the same size. |
+| `stop` | limit | End the turn with "limit reached". |
+
+An answer names the question `id` and the choice, plus the rule or text the
+choice needs. The server checks it against the open question; a wrong id,
+choice or rule is rejected with a message, and the question stays open.
+
+Before running an `edit_file` or `write_file` call that was allowed, the
+server checks the file again; if it changed since the question opened, the
+call fails (see [`tools.md`](tools.md), "edit_file").
+
+### Clients
+
+| Client | Shows a question as | Answers with |
+|--------|---------------------|--------------|
+| TUI | Expanded tool call and prompt bar (see [`tui.md`](tui.md), "Permission prompts"). | Keys `y`, `a`, `n`, `e`, `Esc`. |
+| Terminal: `clai answer` | The fields as text, the diff or command, and a numbered list of choices (see [`command.md`](command.md)). | A line on standard input, or options for scripts. |
+| Terminal: `clai run` | The same text on standard error, when standard input is a terminal. | A line on standard input. |
+| Web UI (later) | A page with the same fields. | The same answers. |
+
+The web UI is not part of the first version (see [`readme.md`](readme.md),
+"Non-goals"). The question and answer messages are designed so it needs
+nothing else from the server; it would reach the server through a local
+bridge that the user starts and authenticates, because the server itself
+never listens on a network port. **(assumption)**
 
 ## Commands
 
 Sessions are managed with `clai`, `clai new`, `clai attach`, `clai ls`,
-`clai kill`, `clai send` and `clai server`; syntax and options are in
+`clai kill`, `clai send`, `clai answer` and `clai server`; syntax and options are in
 [`command.md`](command.md). In the TUI, the session list and the `/sessions`,
 `/new`, `/attach`, `/rename`, `/kill` commands do the same (see
 [`tui.md`](tui.md)).

@@ -61,7 +61,7 @@ A message has a `role`, `user` or `assistant`, and a list of blocks.
 | `description`  | Text for the model about what the tool does. |
 | `input_schema` | JSON Schema (an `object` schema) of the tool's arguments. |
 
-Tool specs come from `tools.md` (planned) and are the same for every
+Tool specs come from [`tools.md`](tools.md) and are the same for every
 provider.
 
 ### Events

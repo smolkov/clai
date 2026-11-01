@@ -31,7 +31,9 @@ is wrong until the user decides otherwise.
 
 ## Non-goals
 
-- No graphical or web interface; terminal only in the first version.
+- No graphical or web interface; terminal only in the first version. The
+  session protocol is meant to allow one later: questions carry all their
+  details (see [`sessions.md`](sessions.md), "Questions").
 - No IDE plugin in the first version.
 - No hosting or training of models; `clai` only calls provider APIs in the first version.
 - No multi-user mode and no network server. The local background server that
@@ -107,6 +109,9 @@ mode, and output that is not a terminal, use plain text instead.
   model, chosen when it is created and changeable in the TUI.
 - **Errors:** network and API errors are retried with backoff a few times,
   then shown to the user; the session stays open.
+- **Architecture:** one binary as client, server or one-shot; sessions live
+  in the server and talk to clients only through events and questions.
+  Details: [`architecture.md`](architecture.md).
 
 ## Topic files
 
@@ -115,6 +120,11 @@ created when work on the topic starts. [`SUMMARY.md`](SUMMARY.md) is the table
 of contents in [mdBook](https://rust-lang.github.io/mdBook/) format; planned
 files appear there as draft chapters (empty links).
 
+The book is configured in [`book.toml`](book.toml). Build it with
+`mdbook build spec` (output in `target/spec-book/`), or read it with live
+reload with `mdbook serve spec --open`. Links to files outside `spec/`
+(`agent.md`, `implementation.md`) work in the repository, not in the book.
+
 When a spec file is added, renamed or removed, update this table and
 `SUMMARY.md` in the same change.
 
@@ -122,13 +132,15 @@ When a spec file is added, renamed or removed, update this table and
 |------|--------|-------|
 | [`readme.md`](readme.md) | draft | This file: purpose, goals, terms, index, open questions. |
 | [`SUMMARY.md`](SUMMARY.md) | — | Table of contents for mdBook. |
+| [`book.toml`](book.toml) | — | mdBook configuration. |
+| [`architecture.md`](architecture.md) | draft | Roles (client, server, one-shot), components and layers, state ownership, protocol messages and events, data flow of a turn, concurrency, trust boundaries, errors. |
 | [`command.md`](command.md) | draft | All command-line commands: syntax, options, output, exit codes. |
 | [`tui.md`](tui.md) | draft | Full-screen interface: layout, session list, model picker, keys, permission prompts, input editor. |
 | [`sessions.md`](sessions.md) | draft | Server, several sessions, attach/detach, session commands. |
 | [`commit.md`](commit.md) | draft | Commit messages: `clai commit` (prints to stdout) and the TUI `/commit`. |
 | [`config.md`](config.md) | draft | Config files, precedence, providers and models, tool permissions, TUI settings and themes, validation, reloading. |
 | `agent-loop.md` | planned | Request/response cycle, streaming, limits, cancellation. |
-| `tools.md` | planned | Each tool: arguments, results, errors, limits. |
+| [`tools.md`](tools.md) | draft | Each tool: arguments, results, errors, limits; paths, text files, result size, denied calls. |
 | [`providers.md`](providers.md) | draft | Agent–provider interface: shared request, message, event and error types; adapters per API type that encode and decode the provider's format; retries. |
 | `context.md` | planned | System prompt, project instructions, history size and truncation. |
 

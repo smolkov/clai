@@ -44,7 +44,7 @@ Milestones and their order: [`implementation.md`](implementation.md).
 
 ## Next milestones
 
-- [ ] Tools and permissions (needs `spec/tools.md`)
+- [ ] Tools and permissions (spec: `spec/tools.md`)
 - [ ] Agent loop (needs `spec/agent-loop.md`)
 - [ ] One-shot mode
 - [ ] Server and sessions

@@ -54,6 +54,8 @@ Format: TOML. Unknown keys are an error, not ignored, so typos are found.
 Permissions decide, for every tool call of the model, whether it runs
 without asking (`allow`), needs the user's answer (`ask`), or is refused
 (`deny`). A refused call is reported to the model as denied; it never runs.
+What each tool checks (which path, which parts of a command) is described in
+[`tools.md`](tools.md), "Permissions".
 
 ```toml
 [permissions]
@@ -65,8 +67,7 @@ edit_file      = "ask"
 write_file     = "ask"
 run_command    = "ask"
 
-# Rules: "TOOL" or "TOOL(PATTERN)". First the deny rules are checked, then
-# ask, then allow; the first matching list decides.
+# Short rules: "TOOL" or "TOOL(PATTERN)". TOOL may be a group (read, edit).
 allow = [
   "run_command(cargo build)",
   "run_command(cargo test *)",
@@ -74,17 +75,34 @@ allow = [
   "edit_file(src/**)",
 ]
 ask = [
-  "read_file(.env*)",
+  "edit(Cargo.toml)",
 ]
 deny = [
   "run_command(git push *)",
   "run_command(rm -rf *)",
-  "edit_file(.git/**)",
+  "edit(.git/**)",
 ]
 
-# Directories outside the workspace the file tools may use, with the same
-# rules as the workspace. Absolute, or starting with ~/. Default: none.
-extra_dirs = ["~/ws/shared-lib"]
+# Directories outside the workspace the file tools may use. Absolute, or
+# starting with ~/. Default: none.
+extra_dirs = [
+  "~/ws/shared-lib",                              # read and write
+  { path = "~/ws/docs", access = "read" },        # read only
+]
+
+# Detailed rules: several patterns, exceptions, a message for the model.
+[[permissions.rules]]
+action  = "deny"
+tools   = ["read"]
+paths   = [".env*", "secrets/**", "~/.ssh/**"]
+except  = [".env.example"]
+message = "Secrets are not shown to the model. Ask the user for the value you need."
+
+[[permissions.rules]]
+action   = "allow"
+tools    = ["run_command"]
+commands = ["cargo *", "git diff *", "git log *", "git show *"]
+except   = ["cargo publish *", "cargo install *"]
 ```
 
 ### Tool defaults
@@ -92,57 +110,175 @@ extra_dirs = ["~/ws/shared-lib"]
 The values above are the defaults: reading is allowed, changing files and
 running commands asks. A tool key may be `allow`, `ask` or `deny`. A tool not
 named in `[permissions]` keeps its default. Unknown tool names are a load
-error. The tools themselves are described in `tools.md` (planned).
+error. The tools themselves are described in [`tools.md`](tools.md).
+
+### Tool groups
+
+A rule may name a group instead of a tool; it then applies to every tool of
+the group. Groups are only allowed in rules, not as tool keys.
+
+| Group | Tools |
+|-------|-------|
+| `read` | `read_file`, `list_files`, `search_files` |
+| `edit` | `edit_file`, `write_file` |
+
+So `deny = ["read(secrets/**)"]` keeps files below `secrets/` out of reading,
+listing and searching alike.
 
 ### Rules
 
-A rule is `TOOL` (every call of that tool) or `TOOL(PATTERN)`.
+A short rule is `TOOL` (every call of that tool) or `TOOL(PATTERN)`, written
+in the `allow`, `ask` or `deny` list. A detailed rule is a
+`[[permissions.rules]]` table:
 
-| Tool | Pattern matches | Example |
-|------|-----------------|---------|
-| `read_file`, `list_files`, `search_files`, `edit_file`, `write_file` | The path, relative to the workspace, as a glob: `*` within one directory, `**` across directories. | `edit_file(src/**)`, `read_file(*.md)` |
-| `run_command` | The command line, as a glob over the whole text: `*` matches any characters. | `run_command(cargo test *)` |
+| Key | Required | Meaning |
+|-----|----------|---------|
+| `action` | yes | `allow`, `ask` or `deny`. |
+| `tools` | yes | Tool names and groups, at least one. Either only file tools, or only `run_command`. |
+| `paths` | no | Path patterns, for file tools. Omitted: every path. |
+| `commands` | no | Command patterns, for `run_command`. Omitted: every command. |
+| `except` | no | Patterns of the same kind; when one of them matches, the rule does not apply. |
+| `message` | no | For `deny`: sent to the model with the denial. For `ask`: shown in the prompt and sent to the model if the user denies. Not allowed for `allow`. |
 
-Checking order for a call:
+A rule matches a call when its tool is one of `tools`, one of its patterns
+matches (or it has none), and none of `except` matches. The short rule
+`deny = ["edit_file(src/**)"]` is the same as a detailed rule with
+`action = "deny"`, `tools = ["edit_file"]`, `paths = ["src/**"]`.
+
+#### Path patterns
+
+For `read_file`, `list_files`, `search_files`, `edit_file`, `write_file`.
+Patterns match the resolved path (see [`tools.md`](tools.md), "Paths").
+
+| Pattern | Matches |
+|---------|---------|
+| Without `/`, e.g. `.env*`, `*.pem` | The file or directory name, in any directory (like `.gitignore`). |
+| With `/`, e.g. `src/**`, `docs/*.md` | The path relative to the workspace. Never matches a path outside it. |
+| Starting with `/` or `~/`, e.g. `~/.ssh/**` | The absolute path; this is how paths in `extra_dirs` are matched. `~` is expanded in patterns. |
+
+Glob syntax: `*` any characters within one path segment, `**` any number of
+segments, `?` one character, `[abc]` one of the characters, `{a,b}`
+alternatives. `DIR/**` also matches `DIR` itself. Matching is
+case-sensitive. A trailing `/` is not allowed. **(assumption)**
+
+#### Command patterns
+
+For `run_command`. A command line is first split into its parts (see
+[Commands with several parts](#commands-with-several-parts)); each part is
+matched on its own.
+
+- A pattern matches the whole text of a part, with leading and trailing
+  space removed and runs of unquoted space taken as one space. Quotes are
+  kept as written: `git commit -m "x"` is matched with its quotes.
+- `*` matches any characters, including spaces. A pattern that ends in
+  ` *` also matches the command without arguments: `cargo test *` matches
+  `cargo test` and `cargo test parse --release`. **(assumption)**
+- Variable assignments before a command are part of its text:
+  `cargo test *` does not match `RUST_LOG=debug cargo test`.
+- `git *` matches `git push --force` too; name the subcommands you mean
+  (`git diff *`, `git log *`) or add `except` patterns.
+
+#### Commands with several parts
+
+Commands that contain several commands (`;`, `&&`, `||`, `|`, `&`, newline,
+`$( )`, backticks, subshells in `( )`) are split into their parts, also
+inside the substitutions. Every part is checked on its own, and the call gets
+the strictest result of its parts: one denied part denies the whole call, one
+part that asks makes it ask. So `cargo test && rm -rf /` is not allowed by
+`run_command(cargo test *)`.
+
+Redirections are taken off the part before matching. Redirection to a file
+(`> out.txt`, `>> log`, `2> err`) is checked as a `write_file` call on that
+path, with the same boundary and rules; `/dev/null` and redirections between
+file descriptors (`2>&1`) are always allowed. Redirection from a file
+(`< in.txt`) is checked as a `read_file` call.
+
+If a command cannot be split safely (unsupported syntax such as here
+documents, `eval`, unbalanced quotes), it asks, and the prompt says why; a
+`deny` rule that matches the whole text still denies. **(assumption)**
+
+### Checking order
+
+For a call:
 
 1. Paths outside the workspace and `extra_dirs` are denied, whatever the
    rules say. Paths are resolved first (`..`, symbolic links), so a rule
-   cannot be passed by spelling the path differently.
+   cannot be passed by spelling the path differently. `edit_file`,
+   `write_file` and redirections into an `extra_dirs` entry with
+   `access = "read"` are denied the same way.
 2. If any `deny` rule matches: deny.
 3. If any `ask` rule matches: ask.
 4. If any `allow` rule matches, including rules the user added in the session
    (see below): allow.
 5. Otherwise the tool's default action.
 
-Commands that contain several commands (`;`, `&&`, `||`, `|`, `$( )`,
-backticks, redirection to a file) are split into their parts, and every part
-must be allowed on its own; one part that needs asking makes the whole
-command ask. So `cargo test && rm -rf /` is not allowed by
-`run_command(cargo test *)`. If a command cannot be split safely, it asks.
-**(assumption)**
+Short and detailed rules, and the rules of the user and the project file, are
+all checked together; their order in the files does not matter. To make an
+exception to a `deny` or `ask` rule, use `except`: an `allow` rule never
+overrides them.
+
+The rule that decided is kept with the decision, with its source (file and
+line, or "session"). The permission prompt shows why it asks, e.g.
+`asks: rule edit(Cargo.toml) (config.toml:24)` or `asks: default for
+edit_file`; a denial tells the model which rule denied (see
+[`tools.md`](tools.md), "Denied and cancelled calls"). `/permissions` lists
+all rules with their source.
+
+### Extra directories
+
+Each entry of `extra_dirs` is a path or a table:
+
+| Key | Required | Meaning |
+|-----|----------|---------|
+| `path` | yes | Directory, absolute or starting with `~/`. Resolved like tool paths when the configuration is loaded. |
+| `access` | no | `write` (default): all file tools, with the same rules as the workspace. `read`: only `read_file`, `list_files`, `search_files`. **(assumption)** |
+
+A plain string is the same as `{ path = "...", access = "write" }`. A
+directory that does not exist is skipped with a warning in the log, so one
+configuration can be used on several machines. **(assumption)**
+
+`run_command` always starts in the workspace; `extra_dirs` and `access` do
+not limit what a command may touch once it runs, only its redirections.
+Limiting commands needs a sandbox (open question 5 in
+[`readme.md`](readme.md)).
 
 ### Session rules
 
 Pressing `a` ("always") in a TUI permission prompt adds an allow rule to the
-session, in the same syntax, e.g. `run_command(cargo test)` or
-`edit_file(src/parse.rs)`. Session rules are shown with `/permissions` and
-end with the session; they are not written to a file. **(assumption)**
-`deny` rules from the configuration still win over session rules.
+session. The prompt proposes the narrowest rule, e.g. `run_command(cargo test
+parse)` or `edit_file(src/parse.rs)`, and the user may widen it before
+confirming, e.g. to `run_command(cargo test *)` or `edit_file(src/**)`. What
+each tool proposes is described in [`tools.md`](tools.md), "Permissions".
+
+Session rules are shown with `/permissions` and end with the session; they
+are not written to a file. **(assumption)** `deny` and `ask` rules from the
+configuration still win over session rules.
 
 ### Project files
 
 A project file may only make permissions stricter, because it comes with the
 repository:
 
-- It may set tool keys to `ask` or `deny`, and add `ask` and `deny` rules.
+- It may set tool keys to `ask` or `deny`, and add `ask` and `deny` rules,
+  short or detailed, with `except` and `message`.
 - It may not set a tool key to `allow`, add `allow` rules, or set
   `extra_dirs`. Such a file is rejected with an error naming the file and key.
 - Its rules are added to the user file's rules; for a tool key, the stricter
   value wins (`deny` over `ask` over `allow`).
 
-### No one to ask
+An `except` in a project file only narrows that file's own rule; it cannot
+lift a rule of the user file.
 
-In `clai run` (one-shot) there is no TUI to answer, so `ask` is treated as
+### Who answers
+
+A call that asks opens a question in the session, with everything needed to
+decide; any attached client that can answer may answer it: the TUI,
+`clai answer` in a terminal, or later a web UI (see
+[`sessions.md`](sessions.md), "Questions"). A session without such a client
+waits.
+
+In `clai run` (one-shot) the question is asked on the terminal when standard
+input is one. Without a terminal, or with `--no-ask`, `ask` is treated as
 `deny`. `--yes` turns `ask` into `allow` for that run; `deny` rules and the
 workspace boundary still apply. See [`command.md`](command.md).
 
@@ -324,7 +460,14 @@ It is an error when:
   `context_window` and `max_output_tokens` at least 1, `timeout_s` 1–86400,
   `max_retries` 0–100, `temperature` 0–2, `tui.max_fps` 1–120;
 - `commit.model`, `tui.theme`, `CLAI_MODEL` or `CLAI_THEME` names something
-  that is not defined.
+  that is not defined;
+- a permission rule names an unknown tool or group, is not of the form
+  `TOOL` or `TOOL(PATTERN)`, or has an empty or invalid pattern;
+- a detailed rule has no `action` or `tools`, mixes file tools and
+  `run_command`, has `paths` for `run_command` or `commands` for file tools,
+  or has a `message` with `action = "allow"`;
+- a path pattern ends in `/`;
+- an `extra_dirs` entry is not absolute or `~/`, or has an unknown `access`.
 
 All errors found are reported, one per line; a TOML syntax error stops at
 the first one.

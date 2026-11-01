@@ -2,6 +2,8 @@
 
 [Introduction](readme.md)
 
+- [Architecture](architecture.md)
+
 # User interface
 
 - [Commands](command.md)
@@ -17,5 +19,5 @@
 # Agent
 
 - [Agent loop]()
-- [Tools]()
+- [Tools](tools.md)
 - [Context]()

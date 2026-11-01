@@ -12,6 +12,10 @@ approved plan before work starts.
 
 ## Architecture
 
+The architecture (roles, components, layers, protocol, data flow) is
+specified in [`spec/architecture.md`](spec/architecture.md). Below: how it
+maps to the code.
+
 ```
  ┌───────────── clai binary ──────────────────────────────────────────────┐
  │                                                                        │
@@ -33,7 +37,12 @@ approved plan before work starts.
 - **The agent loop knows no transport.** It takes user messages and
   decisions as input and emits session events as output. The server and
   the one-shot mode both drive the same loop; one-shot answers questions
-  with the "no client" rules (see `spec/sessions.md`, "Background work").
+  on the terminal, or with the "no client" rules (see `spec/sessions.md`,
+  "Background work").
+- **Questions are data, not UI.** A question carries its full details
+  (diff, command parts, reason, proposals) as a protocol message; the TUI,
+  `clai answer` and a later web UI only render it and send an answer that
+  the server checks (see `spec/sessions.md`, "Questions").
 - **A session is an actor:** one tokio task owns the session state (history,
   model, session rules, state `idle`/`working`/`waiting`). Clients send it
   commands over a channel; it publishes events to all attached clients. An
@@ -49,7 +58,7 @@ approved plan before work starts.
 | `config` | Loading, merging user/project/env/CLI, validation with file:line, reloading, model references. | `config.md` |
 | `provider` | Shared types, `Provider` trait, retries, `fake` provider for tests. | `providers.md` |
 | `provider::anthropic`, `provider::openai` | Adapters: encode requests, decode SSE streams, map errors. | `providers.md` |
-| `tools` | `read_file`, `list_files`, `search_files`, `edit_file`, `write_file`, `run_command`; tool specs. | `tools.md` (planned) |
+| `tools` | `read_file`, `list_files`, `search_files`, `edit_file`, `write_file`, `run_command`; tool specs. | `tools.md` |
 | `permissions` | Tool defaults, rules, glob matching, path resolution, command splitting, session rules. | `config.md`, "Permissions" |
 | `agent` | Agent loop: requests, streaming, tool calls, limits, cancellation, questions. | `agent-loop.md` (planned), `sessions.md` |
 | `context` | System prompt, history size, truncation. | `context.md` (planned) |
@@ -170,16 +179,24 @@ including a TLS check that needs only network.
   with timeout, process group, `SIGTERM` then `SIGKILL`.
 - `edit_file` as exact-text replacement; diff for display.
 - Glob syntax check of rule patterns at load time.
-- Permission checking in the order of `config.md`: boundary, deny, ask,
-  allow, default; session rules.
-- Command splitting for `;`, `&&`, `||`, `|`, `$( )`, backticks,
-  redirection; anything not split safely asks.
+- Detailed rules (`[[permissions.rules]]`: `paths`, `commands`, `except`,
+  `message`), tool groups `read` and `edit`, `extra_dirs` with `access`.
+- Permission checking in the order of `config.md`: boundary (including
+  read-only extra dirs), deny, ask, allow, default; session rules; the
+  deciding rule and its source kept with the decision.
+- Command splitting for `;`, `&&`, `||`, `|`, `&`, `$( )`, backticks,
+  subshells; redirection targets checked as `write_file` / `read_file`;
+  anything not split safely asks.
+- Per-entry checks in `list_files` and `search_files`; proposed session
+  rules and their wider steps.
 
 Tests: each tool in a temp dir; path escapes (`..`, symlinks) denied; rule
-order; project-file merge; a table of command lines and their split parts,
-including the `cargo test && rm -rf /` case.
+order; `except`; name-only, relative and absolute path patterns; project-file
+merge; a table of command lines and their split parts, including the
+`cargo test && rm -rf /` and `echo x > ~/.bashrc` cases; `search_files`
+skipping denied files.
 
-Needs: `spec/tools.md` (arguments, results, output limits).
+Spec: [`spec/tools.md`](spec/tools.md).
 
 ### Agent loop
 
@@ -188,8 +205,9 @@ Needs: `spec/tools.md` (arguments, results, output limits).
 - Every `ToolCall` gets exactly one `ToolResult` (also denied, cancelled).
 - Limits per turn; limit question with continue/stop.
 - Cancellation at any point.
-- Emits session events: text deltas, tool call states, questions, notices,
-  errors, usage, turn end.
+- Emits session events: text deltas, tool call states, questions (with the
+  details each tool prepares), notices, errors, usage, turn end.
+- Validates answers against the open question (id, choice, `always` rule).
 - Minimal context: system prompt and full history; `ContextTooLong` is
   reported as an error until truncation exists.
 
@@ -203,8 +221,10 @@ basics).
 ### One-shot mode
 
 - `clai run` and `clai TASK...`: temporary in-process session, plain-text
-  output (answer on stdout, tool lines on stderr), `--yes`, `-C`, exit codes,
-  `Ctrl-C` exit `130`.
+  output (answer on stdout, tool lines on stderr), `--yes`, `--no-ask`,
+  `-C`, exit codes, `Ctrl-C` exit `130`.
+- Questions on the terminal when standard input is one, with the text
+  renderer shared with `clai answer`.
 
 Tests: end-to-end with the `fake` provider selected by a test-only config
 `api` value **(proposal)**, checking stdout, stderr and exit codes.
@@ -221,14 +241,18 @@ After this milestone `clai` is usable from scripts.
 - `session` actor: state machine of `sessions.md`, background work,
   questions shown to all clients with first answer winning, message queue,
   event log so attach replays the full history.
-- Commands `clai new -d`, `ls`, `kill`, `send`.
-- Tab completion of session names for `attach`, `kill`, `send`.
+- Commands `clai new -d`, `ls`, `kill`, `send`, `answer` (interactive,
+  `--list`, script form).
+- Clients declare on attach whether they answer questions; open questions
+  are sent on attach; `question closed` names the answering client.
+- Tab completion of session names for `attach`, `kill`, `send`, `answer`.
 - Configuration reload on file change.
 
 Tests: server in a temp runtime dir; several sessions in parallel with the
 `fake` provider; detach during a turn; question answered by one of two
-clients; a session task that fails does not affect another; version
-mismatch error.
+clients; `clai answer` in script form with a stale `--id`; an `always` rule
+that does not match the call is rejected; a session task that fails does
+not affect another; version mismatch error.
 
 ### TUI core
 
@@ -278,7 +302,7 @@ Needs: `spec/context.md`.
 
 | Before milestone | Spec to write or decide |
 |------------------|-------------------------|
-| Tools and permissions | `spec/tools.md`; open question 5 (sandbox). |
+| Tools and permissions | Open question 5 in `spec/readme.md` (sandbox); open questions in `spec/tools.md`. |
 | Agent loop | `spec/agent-loop.md`: limit keys and defaults, streaming and cancellation details. |
 | One-shot mode | Open question 2 (one-shot first, as proposed here). |
 | Server and sessions | Open questions in `spec/sessions.md`, at least persistence (1) and several sessions in one workspace (4). |
