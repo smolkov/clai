@@ -64,7 +64,7 @@ context_window = 200000
 Check it with `clai models`, which lists every configured model and marks
 the default and providers whose key variable is not set.
 
-A project can add `.clai/config.toml` to set `default_model`, `[commit]` and
+A project can add `.clai/config.toml` to set `default_model`, `[commit]`, lower `[limits]` and
 stricter `[permissions]`. `CLAI_MODEL` overrides `default_model` and
 `CLAI_THEME` overrides the theme. All keys: [`spec/config.md`](spec/config.md).
 
@@ -95,6 +95,20 @@ matches `git push origin main`, and `rm` denies every `rm`, also through
 as writes. Nothing outside the workspace (and `extra_dirs`) is ever read or
 written. Details, exceptions (`except`) and messages for the model:
 [`spec/config.md`](spec/config.md), "Permissions".
+
+## Limits
+
+A turn pauses and asks whether to continue after 50 model requests or 120
+tool calls, so a confused model cannot loop forever. Change it with:
+
+```toml
+[limits]
+max_requests   = 50
+max_tool_calls = 120
+```
+
+A project file may only lower these values. Details:
+[`spec/agent-loop.md`](spec/agent-loop.md), "Limits".
 
 ## Logging
 

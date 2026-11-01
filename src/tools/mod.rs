@@ -32,6 +32,10 @@ use crate::provider::ToolSpec;
 pub use output::{ToolOutput, cut_for_model, group};
 pub use question::{Details, PathDetails};
 
+/// Receives the output of a running command as it arrives, at most every
+/// 100 ms.
+pub type Progress = tokio::sync::mpsc::UnboundedSender<String>;
+
 /// What a tool call is checked and run with: a snapshot of the session's
 /// permissions. Cheap to clone.
 #[derive(Debug, Clone)]
@@ -94,6 +98,17 @@ impl PreparedCall {
 
     /// Runs the call. Cancelling `cancel` stops it as soon as possible.
     pub async fn run(self, env: &Env, cancel: CancellationToken) -> ToolOutput {
+        self.run_with_progress(env, cancel, None).await
+    }
+
+    /// As [`PreparedCall::run`]; `run_command` also sends its output to
+    /// `progress` while it runs.
+    pub async fn run_with_progress(
+        self,
+        env: &Env,
+        cancel: CancellationToken,
+        progress: Option<Progress>,
+    ) -> ToolOutput {
         match self.op {
             Op::Read(op) => blocking(move || op.run()).await,
             Op::List(op) => {
@@ -106,7 +121,7 @@ impl PreparedCall {
             }
             Op::Edit(op) => blocking(move || op.run()).await,
             Op::Write(op) => blocking(move || op.run()).await,
-            Op::Run(op) => op.run(env, cancel).await,
+            Op::Run(op) => op.run(env, cancel, progress).await,
         }
     }
 

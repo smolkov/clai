@@ -38,25 +38,43 @@ provider and model, the permissions, the session rules and the workspace.
 Session rules added by an "always" answer during the turn apply to the
 following calls of the same turn.
 
-In Rust terms (names may change when it is built):
+In Rust (`src/agent/`):
 
 ```rust
-/// Runs one turn and returns how it ended. Events go to `events`;
-/// questions are answered through `asker`.
-async fn run_turn(
-    session: &mut TurnState,     // history, model, session rules, workspace
-    message: String,
-    events: &EventSink,
-    asker: &dyn Asker,           // session: a question for the clients; clai run: the terminal or a policy
-    cancel: CancellationToken,
-) -> TurnEnd;
+impl Agent {
+    /// History, model, limits, permissions with session rules, workspace.
+    pub fn new(setup: Setup) -> Agent;
+
+    /// Runs one turn and returns how it ended. Events go to `events`;
+    /// questions are answered through `asker`.
+    pub async fn run_turn(
+        &mut self,
+        message: String,
+        events: &EventSink,
+        asker: &dyn Asker,
+        cancel: CancellationToken,
+    ) -> TurnEnd;
+}
+
+pub trait Asker: Send + Sync {
+    /// An answer and who gave it, or `NoOne` when no one can answer.
+    fn ask<'a>(&'a self, question: &'a Question) -> BoxFuture<'a, Reply>;
+    /// The answer was not accepted; the question stays open.
+    fn reject(&self, question: &Question, by: &str, message: &str);
+}
 ```
 
 `Asker` is how the loop gets a decision. The session opens a question for
 its clients and waits; `clai run` asks on the terminal, or answers by its
-policy without asking: `ask` is denied (no terminal, `--no-ask`) or allowed
-(`--yes`), and a limit question is answered `stop` (see
-[`command.md`](command.md), "clai run").
+policy without asking (`PolicyAsker`): `ask` is denied (no terminal,
+`--no-ask`) or allowed (`--yes`), and a limit question gets `NoOne`, which
+counts as `stop` (see [`command.md`](command.md), "clai run").
+
+The loop checks every answer itself: the choice must be one of the
+question's `choices`, a `deny_message` needs a text, and the rules of an
+`allow_always` must pass `accept_rules` (see [`sessions.md`](sessions.md),
+"Answers"). A wrong answer goes back to the asker with `reject` and the
+same question is asked again, with the same id.
 
 ## A turn
 
@@ -160,7 +178,7 @@ How the answer ends decides what follows:
 | `EndTurn` | Ends the turn with `done`, unless the answer has tool calls; then they run, as for `ToolUse`. |
 | `ToolUse` | Runs the tool calls. An answer with `ToolUse` and no tool calls ends the turn with `done`. |
 | `MaxTokens` | The answer was cut. Complete tool calls run; a call that was started but not ended is left out of the answer. If nothing is left to run, the turn ends with `done` and the notice `answer cut at max_output_tokens`. **(assumption)** |
-| `Other` | As `EndTurn`, with the notice `the model stopped: <reason>` when there are no tool calls. **(assumption)** |
+| `Other` | As `EndTurn`, with the notice `the model stopped: other reason` when there are no tool calls; the adapter logs the provider's own reason. **(assumption)** |
 
 An empty answer (no text, no tool calls) is kept out of the history and
 ends the turn with `done` and the notice `the model gave an empty answer`.
@@ -263,7 +281,8 @@ it is doing at once and keeps the history valid:
 | Waiting on a limit question | Closes the question. |
 
 Calls of the current answer that have not run yet get `cancelled by the
-user`. Calls already done keep their results. The turn ends with
+user`. A limit question offers `cancel` too, as in
+[`sessions.md`](sessions.md), "Answers". Calls already done keep their results. The turn ends with
 `cancelled` and the notice `turn cancelled`.
 
 The cancelled turn stays in the history, so the model sees in the next turn
@@ -306,8 +325,8 @@ The loop emits these session events (see [`architecture.md`](architecture.md),
 | `state` | `working` at the start, `waiting` while a question is open, `working` again after the answer, `idle` at the end. |
 | `user_message` | The message that started the turn. |
 | `text_delta`, `text_done` | Streamed answer text; `text_done` ends a text block. |
-| `tool_call` | Each change of a call: `pending` (streamed), `waiting` (question open), `running` (with output as it arrives), then `done`, `error`, `denied` or `cancelled`, with the result. Each event has the call's id, tool name, summary and arguments. |
-| `question`, `question_closed` | A permission or limit question and its answer. |
+| `tool_call` | Each change of a call: `pending` (when it starts, and again with its arguments when it ends), `waiting` (question open), `running` (with output as it arrives), then `done`, `error`, `denied` or `cancelled`, with the result. Each event has the call's id, tool name and arguments; `waiting` and `running` also the summary. A call left out of a broken, cancelled or cut answer gets a final `error` or `cancelled` event too, so no client shows it as pending. |
+| `question`, `question_closed` | A permission or limit question, and how it was closed: `answered` (with the answer and who gave it), `no_one` or `cancelled`. |
 | `notice` | `rules added: allow run_command(cargo test)`, `answer cut at max_output_tokens`, `limit reached`, `turn cancelled`, … |
 | `usage` | After each request: its input and output tokens, and the context size (input plus output tokens of the last request). |
 | `error` | A provider or session error that ended a request. |

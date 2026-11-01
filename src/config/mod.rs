@@ -23,7 +23,7 @@ use toml::Spanned;
 
 use crate::error::Error;
 use errors::FileCtx;
-use file::{ModelFile, ProjectFile, ProviderFile, UserFile};
+use file::{LimitsFile, ModelFile, ProjectFile, ProviderFile, UserFile};
 
 pub use errors::{ConfigError, ConfigErrors, Origin};
 pub use permissions::{Access, Action, ExtraDir, Pattern, Permissions, Rule, Source, Tool};
@@ -107,6 +107,62 @@ impl fmt::Display for ModelRef {
     }
 }
 
+/// Budget of a turn (see `spec/agent-loop.md`, "Limits").
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Limits {
+    pub max_requests: u32,
+    pub max_tool_calls: u32,
+}
+
+impl Default for Limits {
+    fn default() -> Limits {
+        Limits {
+            max_requests: 50,
+            max_tool_calls: 120,
+        }
+    }
+}
+
+impl Limits {
+    /// Reads `[limits]` of one file; with `lower_only`, a value only
+    /// replaces the current one when it is lower.
+    fn apply(
+        &mut self,
+        ctx: FileCtx<'_>,
+        file: &LimitsFile,
+        lower_only: bool,
+        errors: &mut Vec<ConfigError>,
+    ) {
+        for (key, value, slot) in [
+            (
+                "limits.max_requests",
+                &file.max_requests,
+                &mut self.max_requests,
+            ),
+            (
+                "limits.max_tool_calls",
+                &file.max_tool_calls,
+                &mut self.max_tool_calls,
+            ),
+        ] {
+            let n = int_key(
+                ctx,
+                value,
+                key.to_owned(),
+                1..=10_000,
+                i64::from(*slot),
+                errors,
+            );
+            if let Ok(n) = u32::try_from(n)
+                && (1..=10_000).contains(&n)
+                && (!lower_only || n < *slot)
+            {
+                *slot = n;
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Commit {
     pub model: Option<ModelRef>,
@@ -122,6 +178,7 @@ pub struct Config {
     pub default_model: ModelRef,
     /// In config order.
     pub providers: IndexMap<String, Provider>,
+    pub limits: Limits,
     pub permissions: Permissions,
     pub commit: Commit,
     pub tui: Tui,
@@ -337,6 +394,11 @@ fn build(
         &mut errors,
     );
 
+    let mut limits = Limits::default();
+    if let Some(file) = &user_file.limits {
+        limits.apply(user, file, false, &mut errors);
+    }
+
     let mut default_given = false;
     let mut default_model = None;
     if let Some(value) = &user_file.default_model {
@@ -370,6 +432,9 @@ fn build(
             if let Some(model) = resolve_at(ctx, value, "default_model", &mut errors) {
                 default_model = Some(model);
             }
+        }
+        if let Some(limits_file) = &file.limits {
+            limits.apply(ctx, limits_file, true, &mut errors);
         }
         if let Some(perms) = file.permissions {
             permissions.apply_project(ctx, perms, env.home.as_deref(), &mut errors);
@@ -410,6 +475,7 @@ fn build(
             project_file: project.map(|p| p.path.to_owned()),
             default_model,
             providers,
+            limits,
             permissions,
             commit,
             tui,

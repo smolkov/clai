@@ -21,7 +21,7 @@ use crate::permissions::command_proposals;
 
 use super::output::{FULL_BYTES, ToolOutput, group};
 use super::question::Details;
-use super::{Call, Env, Failure, Op as AnyOp, cancelled, in_range};
+use super::{Call, Env, Failure, Op as AnyOp, Progress, cancelled, in_range};
 
 /// Added to the environment so that nothing waits for input.
 pub const ENV: [(&str, &str); 4] = [
@@ -39,6 +39,8 @@ const KILL_AFTER: Duration = Duration::from_secs(2);
 const AFTER_EXIT: Duration = Duration::from_millis(500);
 /// Output kept from the end when the output is too long.
 const TAIL_BYTES: usize = 64 << 10;
+/// Least time between two progress messages.
+const PROGRESS_EVERY: Duration = Duration::from_millis(100);
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -131,14 +133,28 @@ enum End {
 }
 
 impl Op {
-    pub async fn run(self, _env: &Env, cancel: CancellationToken) -> ToolOutput {
-        match self.execute(cancel).await {
+    pub async fn run(
+        self,
+        _env: &Env,
+        cancel: CancellationToken,
+        progress: Option<Progress>,
+    ) -> ToolOutput {
+        let mut progress = progress.map(Sender::new);
+        let output = self.execute(cancel, progress.as_mut()).await;
+        if let Some(sender) = &mut progress {
+            sender.flush();
+        }
+        match output {
             Ok(output) => output,
             Err(e) => ToolOutput::error(format!("cannot run the command: {e}")),
         }
     }
 
-    async fn execute(&self, cancel: CancellationToken) -> io::Result<ToolOutput> {
+    async fn execute(
+        &self,
+        cancel: CancellationToken,
+        mut progress: Option<&mut Sender>,
+    ) -> io::Result<ToolOutput> {
         let (reader, writer) = io::pipe()?;
         let mut command = Command::new("sh");
         command
@@ -174,8 +190,21 @@ impl Op {
                 () = sleep_until(deadline) => break End::Timeout,
                 read = output.read(&mut buf), if !eof => match read {
                     Ok(0) | Err(_) => eof = true,
-                    Ok(n) => capture.push(buf.get(..n).unwrap_or(&[])),
+                    Ok(n) => {
+                        let bytes = buf.get(..n).unwrap_or(&[]);
+                        capture.push(bytes);
+                        if let Some(sender) = progress.as_deref_mut() {
+                            sender.push(bytes);
+                        }
+                    }
                 },
+                () = sleep_until(progress.as_deref().map_or(deadline, Sender::due)),
+                    if progress.as_deref().is_some_and(Sender::waiting) =>
+                {
+                    if let Some(sender) = progress.as_deref_mut() {
+                        sender.flush();
+                    }
+                }
                 waited = child.wait(), if status.is_none() => {
                     status = Some(waited?);
                     after_exit = Instant::now() + AFTER_EXIT;
@@ -228,6 +257,60 @@ impl Op {
                 cancelled(capture.text().trim_end_matches('\n'))
             }
         })
+    }
+}
+
+/// Sends output to a [`Progress`] channel, at most every 100 ms, in whole
+/// UTF-8 characters.
+struct Sender {
+    channel: Progress,
+    pending: Vec<u8>,
+    last: Instant,
+}
+
+impl Sender {
+    fn new(channel: Progress) -> Sender {
+        Sender {
+            channel,
+            pending: Vec::new(),
+            last: Instant::now(),
+        }
+    }
+
+    fn push(&mut self, bytes: &[u8]) {
+        self.pending.extend_from_slice(bytes);
+        // Kept short: the full output is in the result.
+        if self.pending.len() > FULL_BYTES {
+            self.pending.clear();
+        }
+        if self.last.elapsed() >= PROGRESS_EVERY {
+            self.flush();
+        }
+    }
+
+    fn waiting(&self) -> bool {
+        !self.pending.is_empty()
+    }
+
+    fn due(&self) -> Instant {
+        self.last + PROGRESS_EVERY
+    }
+
+    /// Sends what is pending, except an unfinished character at the end.
+    fn flush(&mut self) {
+        let keep = match std::str::from_utf8(&self.pending) {
+            Ok(_) => 0,
+            Err(e) if e.error_len().is_none() => self.pending.len() - e.valid_up_to(),
+            Err(_) => 0,
+        };
+        let rest = self.pending.split_off(self.pending.len() - keep);
+        let text = String::from_utf8_lossy(&self.pending).into_owned();
+        self.pending = rest;
+        self.last = Instant::now();
+        if !text.is_empty() {
+            // The receiver may be gone; the output is still in the result.
+            let _ = self.channel.send(text);
+        }
     }
 }
 

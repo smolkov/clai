@@ -26,7 +26,7 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [x] Glob syntax check of rule patterns (done in Tools and permissions).
 - [x] `[permissions.allow|ask|deny]` tables, `[[permissions.rules]]`,
       `extra_dirs` tables (done in Tools and permissions).
-- [ ] Limit keys `[limits]` (moved to Agent loop).
+- [x] Limit keys `[limits]` (done in Agent loop).
 
 ## Shell completion
 
@@ -56,11 +56,26 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [x] The six tools with question details, result size limits.
 - [x] `run_command`: process group, timeout, cancellation, background
       processes stopped.
-- [ ] Questions on the wire and the TUI prompt (Agent loop, Server, TUI).
+- [x] Questions and answers as data, checked by the loop (Agent loop).
+- [ ] Questions on the wire and the TUI prompt (Server, TUI).
+
+## Agent loop
+
+- [x] `[limits]`: `max_requests`, `max_tool_calls`; project file only lowers.
+- [x] `Agent::run_turn`: requests, streaming, tool calls in order, results
+      in one message, every call with one result.
+- [x] Permission and limit questions through `Asker`; answers checked,
+      wrong ones rejected; `PolicyAsker` for `clai run`.
+- [x] Stop reasons, empty answers, cut tool calls.
+- [x] Cancellation while streaming, waiting, running; provider errors,
+      `ContextTooLong`.
+- [x] Session events (serde), live `run_command` output.
+- [x] System prompt with workspace, extra dirs, platform, date.
+- [ ] Model change during a turn (Server and sessions).
+- [ ] Deserializing questions and events in clients (Server and sessions).
 
 ## Next milestones
 
-- [ ] Agent loop (spec: `spec/agent-loop.md`)
 - [ ] One-shot mode
 - [ ] Server and sessions
 - [ ] TUI core

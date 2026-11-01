@@ -292,9 +292,9 @@ fn project_may_not_define_user_tables() {
 
 #[test]
 fn project_unknown_key() {
-    let e = errs(BASE, Some("[limits]\nmax = 3\n"));
+    let e = errs(BASE, Some("[agent]\nmax = 3\n"));
     assert!(
-        e[0].starts_with("project.toml:1: unknown field `limits`"),
+        e[0].starts_with("project.toml:1: unknown field `agent`"),
         "{e:?}"
     );
 }
@@ -662,4 +662,34 @@ fn user_path() {
         Some(PathBuf::from("/home/u/.config/clai/config.toml"))
     );
     assert_eq!(user_config_path(&Environment::default()), None);
+}
+
+#[test]
+fn limits() {
+    assert_eq!(ok(BASE).limits, Limits::default());
+    let user = with("[limits]\nmax_requests = 20\nmax_tool_calls = 300\n");
+    let config = ok(&user);
+    assert_eq!(config.limits.max_requests, 20);
+    assert_eq!(config.limits.max_tool_calls, 300);
+
+    // A project file only lowers them.
+    let project = "[limits]\nmax_requests = 40\nmax_tool_calls = 100\n";
+    let config = load_with(&user, Some(project), &Environment::default()).unwrap();
+    assert_eq!(config.limits.max_requests, 20);
+    assert_eq!(config.limits.max_tool_calls, 100);
+
+    assert_eq!(
+        errs(
+            &with("[limits]\nmax_requests = 0\nmax_tool_calls = 10001\n"),
+            None
+        ),
+        [
+            "user.toml:26: limits.max_requests: 0 is not in 1–10000",
+            "user.toml:27: limits.max_tool_calls: 10001 is not in 1–10000",
+        ]
+    );
+    assert_eq!(
+        errs(BASE, Some("[limits]\nmax_turns = 3\n")),
+        ["project.toml:2: unknown field `max_turns`, expected `max_requests` or `max_tool_calls`"]
+    );
 }

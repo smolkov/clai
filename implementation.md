@@ -234,6 +234,11 @@ error mid-stream, malformed tool arguments.
 
 Spec: [`spec/agent-loop.md`](spec/agent-loop.md).
 
+Status: done. `src/agent/` is a library API (`Agent::run_turn`, `Asker`,
+`PolicyAsker`, `SessionEvent`) that `clai run` and the session actor will
+drive. A turn has a fixed model for now; changing it at the next request
+comes with Server and sessions.
+
 ### One-shot mode
 
 - `clai run` and `clai TASK...`: temporary in-process session, plain-text

@@ -16,6 +16,7 @@ pub struct UserFile {
     pub default_model: Option<Spanned<String>>,
     #[serde(default)]
     pub providers: IndexMap<String, Spanned<ProviderFile>>,
+    pub limits: Option<LimitsFile>,
     pub permissions: Option<PermissionsFile>,
     pub commit: Option<CommitFile>,
     pub tui: Option<TuiFile>,
@@ -29,6 +30,7 @@ pub struct UserFile {
 #[serde(deny_unknown_fields)]
 pub struct ProjectFile {
     pub default_model: Option<Spanned<String>>,
+    pub limits: Option<LimitsFile>,
     pub permissions: Option<PermissionsFile>,
     pub commit: Option<CommitFile>,
     pub providers: Option<Spanned<toml::Value>>,
@@ -90,6 +92,13 @@ pub struct DetailedRuleFile {
     #[serde(default)]
     pub except: Vec<Spanned<String>>,
     pub message: Option<Spanned<String>>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LimitsFile {
+    pub max_requests: Option<Spanned<i64>>,
+    pub max_tool_calls: Option<Spanned<i64>>,
 }
 
 #[derive(Debug, Default, Deserialize)]

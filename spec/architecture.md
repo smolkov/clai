@@ -152,7 +152,15 @@ clai/
 │   │   ├── text.rs             binary files, safe writing, similar names
 │   │   └── output.rs           results and their size limits
 │   ├── context/                system prompt, history, truncation        planned
-│   ├── agent/                  agent loop                                planned
+│   ├── agent/                  Agent loop (agent-loop.md)
+│   │   ├── mod.rs              `Agent::run_turn`: requests, tool calls, limits
+│   │   ├── stream.rs           collecting a streamed answer
+│   │   ├── question.rs         questions, answers, `Asker`, `PolicyAsker`
+│   │   ├── events.rs           session events, `EventSink`
+│   │   ├── history.rs          messages and full tool outputs
+│   │   ├── prompt.rs           system prompt, today's date
+│   │   ├── system_prompt.md    system prompt text
+│   │   └── tests.rs            turns against a scripted provider
 │   ├── session/                session actor, event log, questions       planned
 │   ├── protocol/               messages, framing, handshake              planned
 │   ├── server/                 socket, registry, idle exit               planned

@@ -108,6 +108,11 @@ impl Workspace {
         &self.root
     }
 
+    /// The extra directories that exist, resolved.
+    pub fn extra_dirs(&self) -> &[ExtraDir] {
+        &self.extra
+    }
+
     pub fn home(&self) -> Option<&Path> {
         self.home.as_deref()
     }
