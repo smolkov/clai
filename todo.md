@@ -74,9 +74,20 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [ ] Model change during a turn (Server and sessions).
 - [ ] Deserializing questions and events in clients (Server and sessions).
 
+## One-shot mode
+
+- [x] `clai run`, `clai TASK...`: task words or `-` from stdin, `-C`,
+      `--model`, `--yes`, `--no-ask`.
+- [x] Final answer on stdout; tool lines, model text, notices and errors
+      on stderr; `tui.symbols`.
+- [x] Questions on the terminal (`LineAsker`); policies without one.
+- [x] Exit codes; `Ctrl-C` (130), `SIGTERM` and `SIGHUP` cancel the turn.
+- [x] End-to-end tests against a local `openai-compatible` server.
+- [ ] Colour and the `v` pager in question text (with `clai chat`).
+- [ ] An end-to-end test of terminal questions through a pseudo-terminal.
+
 ## Next milestones
 
-- [ ] One-shot mode
 - [ ] Server and sessions
 - [ ] TUI core
 - [ ] TUI sessions and settings

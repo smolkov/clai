@@ -48,6 +48,7 @@ fn main() -> ExitCode {
 fn report(err: &Error) {
     let mut stderr = std::io::stderr().lock();
     match err {
+        Error::Exit(_) => {}
         Error::Config(errors) => {
             for error in &errors.0 {
                 let _ = writeln!(stderr, "clai: {error}");

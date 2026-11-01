@@ -91,11 +91,37 @@ Runs one task without the TUI and exits when it is done.
 - `TASK...` words are joined with spaces. `-` reads the task from standard
   input.
 - Runs in a temporary session that is not listed and ends with the task.
-- Standard output: the model's final answer as plain text (Markdown source).
-  Standard error: tool calls and their results, one line each.
+- Standard output: the model's final answer as plain text (Markdown
+  source): the text of the last answer of the turn, written when the turn
+  ends with `done`. Nothing is written to it when the turn fails, is
+  cancelled or stops at its limit.
+- Standard error: one line per tool call when it has finished, the text the
+  model wrote before its tool calls, notices and errors:
+
+  ```
+  Let me look at the test first.
+  ✓ read_file tests/parse.rs (lines 1–80) — 80 lines
+  ✗ run_command cargo test parse — exit code 101
+  ⊘ edit_file src/parse.rs (line 12) — denied: needs permission, and no one can answer
+  clai: limit reached
+  ```
+
+  A tool line has the state (`✓` done, `✗` error, `⊘` denied or
+  cancelled), the tool, its summary and a short result: the number of lines
+  for `read_file`, `list_files` and `search_files`, the last line for
+  `run_command`, else the first line; each cut to 120 characters. With
+  `tui.symbols = "ascii"`, or `auto` and a locale that is not UTF-8, the
+  marks are `+`, `x` and `-`. Notices and errors start with `clai: `.
+  There is no colour and no summary line. **(assumption)**
 - Questions: when standard input is a terminal and the task is not read
   from it (`-`), `clai run` asks like [`clai chat`](#clai-chat): the
-  question on standard error, the answer as a line on standard input.
+  question on standard error, the answer as a line on standard input:
+  `y`, `a` (then a proposal's number, `Enter` for the first, or a typed
+  rule), `n`, `e` (then the message) or `c`; `y`, `n` or `c` for a limit
+  question. An answer the server does not accept is shown as
+  `not accepted: …` and the question is asked again. The end of standard
+  input counts as "no one can answer". New file content is shown up to 40
+  lines, then `… N more lines`; `v` (the pager) is not offered here.
   **(assumption)**
 - Otherwise there is no one to ask: a tool call whose action is `ask` is
   denied and the model is told so, and a limit question stops the turn with
@@ -113,6 +139,18 @@ Runs one task without the TUI and exits when it is done.
 | `-C DIR` | Workspace. Default: the current directory. |
 
 `--yes` and `--no-ask` cannot be combined (exit `2`).
+
+| Exit | When |
+|------|------|
+| `0` | The turn ended with `done`. |
+| `1` | The turn failed (provider error), stopped at its limit, or was cancelled with the `c` answer; or `SIGTERM` / `SIGHUP`. |
+| `2` | Invalid options or configuration, an unknown `--model`, a `-C` that is not a directory, an empty task. |
+| `130` | `Ctrl-C`. |
+
+`Ctrl-C`, `SIGTERM` and `SIGHUP` cancel the turn as in the TUI (see
+[`agent-loop.md`](agent-loop.md), "Cancellation"): a running command is
+stopped, then `clai run` exits. Further signals while it stops are
+ignored, so no command is left running. **(assumption)**
 
 ## clai new
 

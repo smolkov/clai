@@ -1,6 +1,9 @@
 //! Session events the agent loop emits (see `spec/agent-loop.md`,
 //! "Events").
 
+use std::fmt;
+use std::sync::Arc;
+
 use serde::Serialize;
 use serde_json::Value;
 use tokio::sync::mpsc;
@@ -126,19 +129,43 @@ pub enum SessionEvent {
     TurnEnd(TurnEnd),
 }
 
-/// Where the loop sends its events. Sending never blocks; events for a
-/// receiver that is gone are dropped.
-#[derive(Debug, Clone)]
-pub struct EventSink(mpsc::UnboundedSender<SessionEvent>);
+/// Where the loop sends its events. Sending never blocks for long; events
+/// for a receiver that is gone are dropped.
+#[derive(Clone)]
+pub struct EventSink(Target);
+
+#[derive(Clone)]
+enum Target {
+    Channel(mpsc::UnboundedSender<SessionEvent>),
+    /// Called at once, in the loop's task: for output that must stay in
+    /// order with what an asker writes (`clai run`).
+    Call(Arc<dyn Fn(SessionEvent) + Send + Sync>),
+}
+
+impl fmt::Debug for EventSink {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("EventSink")
+    }
+}
 
 impl EventSink {
     pub fn channel() -> (EventSink, mpsc::UnboundedReceiver<SessionEvent>) {
         let (tx, rx) = mpsc::unbounded_channel();
-        (EventSink(tx), rx)
+        (EventSink(Target::Channel(tx)), rx)
+    }
+
+    /// Calls `f` for each event, as it is emitted. `f` must be quick.
+    pub fn call(f: impl Fn(SessionEvent) + Send + Sync + 'static) -> EventSink {
+        EventSink(Target::Call(Arc::new(f)))
     }
 
     pub fn emit(&self, event: SessionEvent) {
-        let _ = self.0.send(event);
+        match &self.0 {
+            Target::Channel(tx) => {
+                let _ = tx.send(event);
+            }
+            Target::Call(f) => f(event),
+        }
     }
 
     pub fn notice(&self, text: impl Into<String>) {

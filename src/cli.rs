@@ -50,6 +50,10 @@ pub struct TopArgs {
     #[arg(long, requires = "task")]
     pub yes: bool,
 
+    /// Never ask; deny tool calls that would ask (only with TASK).
+    #[arg(long, requires = "task", conflicts_with = "yes")]
+    pub no_ask: bool,
+
     /// Workspace (only with TASK).
     #[arg(short = 'C', value_name = "DIR", requires = "task", value_hint = ValueHint::DirPath)]
     pub dir: Option<PathBuf>,
@@ -122,6 +126,7 @@ impl Cli {
             None => Command::Run(Run {
                 model: self.top.model,
                 yes: self.top.yes,
+                no_ask: self.top.no_ask,
                 dir: self.top.dir,
                 task: self.top.task,
             }),
@@ -211,6 +216,29 @@ mod tests {
         assert_eq!(args.task, ["commit", "docs"]);
         assert_eq!(args.model.as_deref(), Some("local/qwen"));
         assert!(args.yes);
+    }
+
+    #[test]
+    fn no_ask() {
+        let cli = parse(&["--no-ask", "fix"]);
+        let Command::Run(run) = cli.into_command() else {
+            panic!("not run");
+        };
+        assert!(run.no_ask && !run.yes);
+        let Some(Command::Run(run)) = parse(&["run", "--no-ask", "fix"]).command else {
+            panic!("not run");
+        };
+        assert!(run.no_ask);
+        for args in [
+            &["--yes", "--no-ask", "x"][..],
+            &["run", "--yes", "--no-ask", "x"][..],
+        ] {
+            assert_eq!(parse_err(args).kind(), ErrorKind::ArgumentConflict);
+        }
+        assert_eq!(
+            parse_err(&["--no-ask"]).kind(),
+            ErrorKind::MissingRequiredArgument
+        );
     }
 
     #[test]

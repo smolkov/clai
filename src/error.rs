@@ -37,6 +37,15 @@ pub enum Error {
     #[error("{0}")]
     Usage(String),
 
+    /// A task or request failed; the message says why.
+    #[error("{0}")]
+    Failed(String),
+
+    /// The command failed and has already said why on standard error; only
+    /// the exit code is left.
+    #[error("exit code {0}")]
+    Exit(u8),
+
     /// The API key of a provider could not be read.
     #[error("provider {provider}: {message}")]
     ApiKey { provider: String, message: String },
@@ -46,7 +55,11 @@ impl Error {
     /// Process exit code for this error (see `spec/command.md`, "Exit codes").
     pub fn exit_code(&self) -> u8 {
         match self {
-            Error::Unsupported { .. } | Error::Io { .. } | Error::ApiKey { .. } => 1,
+            Error::Unsupported { .. }
+            | Error::Io { .. }
+            | Error::ApiKey { .. }
+            | Error::Failed(_) => 1,
+            Error::Exit(code) => *code,
             Error::Config(_) | Error::NoUserConfig { .. } | Error::Usage(_) => 2,
         }
     }

@@ -60,8 +60,6 @@ mod tests {
     fn unbuilt_commands_are_unsupported() {
         let cases: &[(&[&str], &str)] = &[
             (&[], "new"),
-            (&["fix", "it"], "run"),
-            (&["run", "fix"], "run"),
             (&["new"], "new"),
             (&["attach"], "attach"),
             (&["ls"], "ls"),

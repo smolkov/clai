@@ -10,4 +10,5 @@ pub mod log;
 pub mod output;
 pub mod permissions;
 pub mod provider;
+pub mod text;
 pub mod tools;

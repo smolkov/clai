@@ -247,10 +247,14 @@ comes with Server and sessions.
 - Questions on the terminal when standard input is one, with the text
   renderer shared with `clai chat`.
 
-Tests: end-to-end with the `fake` provider selected by a test-only config
-`api` value **(proposal)**, checking stdout, stderr and exit codes.
+Tests: end-to-end against a local HTTP server in the test that speaks the
+`openai-compatible` format, checking stdout, stderr and exit codes; the
+binary has no test hooks.
 
 After this milestone `clai` is usable from scripts.
+
+Status: done. `src/command/run.rs` drives the agent loop; `src/text/`
+(tool lines, question text, `LineAsker`) is ready for `clai chat`.
 
 ### Server and sessions
 

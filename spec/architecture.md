@@ -166,6 +166,11 @@ clai/
 │   ├── server/                 socket, registry, idle exit               planned
 │   ├── client/                 connect, start server, event stream       planned
 │   ├── tui/                    full-screen interface                     planned
+│   ├── text/                   plain-text output for clai run and clai chat
+│   │   ├── events.rs           tool lines, notices, the final answer
+│   │   ├── question.rs         questions as text
+│   │   ├── asker.rs            `LineAsker`: answers read as lines
+│   │   └── tests.rs
 │   ├── output.rs               writing command results to standard output
 │   ├── log.rs                  logging to a file
 │   └── error.rs                crate error type

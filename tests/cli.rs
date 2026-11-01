@@ -5,15 +5,18 @@
 use std::path::PathBuf;
 use std::process::{Command, Output};
 
-/// Runs `clai` with a private state directory, so tests never write to the
-/// user's home.
+/// Runs `clai` with a private home and state directory, so tests never
+/// read the user's configuration or write to their home.
 fn clai(name: &str, args: &[&str]) -> (Output, PathBuf) {
     let state = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(name);
     let _ = std::fs::remove_dir_all(&state);
     let output = Command::new(env!("CARGO_BIN_EXE_clai"))
         .args(args)
+        .env("HOME", state.join("home"))
+        .env("XDG_CONFIG_HOME", state.join("config"))
         .env("XDG_STATE_HOME", &state)
         .env_remove("CLAI_LOG")
+        .env_remove("CLAI_MODEL")
         .output()
         .unwrap();
     (output, state)
@@ -56,9 +59,14 @@ fn unbuilt_command_exits_1() {
 
 #[test]
 fn short_form_is_run() {
+    // `clai run` needs a configuration; the short form gets as far.
     let (out, _) = clai("short", &["fix", "the", "test"]);
-    assert_eq!(out.status.code(), Some(1));
-    assert_eq!(stderr(&out), "clai: 'run' is not implemented yet\n");
+    assert_eq!(out.status.code(), Some(2));
+    assert!(
+        stderr(&out).starts_with("clai: no configuration file at "),
+        "{}",
+        stderr(&out)
+    );
 }
 
 #[test]

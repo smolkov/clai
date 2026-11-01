@@ -5,8 +5,9 @@ a task in plain language; `clai` sends it to a large language model, runs the
 tool calls the model asks for (read and edit files, run commands) behind
 permission rules, and shows every change and command.
 
-> Status: in development. Only `clai models` and `clai completion` work; the other commands exit
-> with "not implemented yet". See [`todo.md`](todo.md).
+> Status: in development. `clai run` (one task, without the TUI),
+> `clai models` and `clai completion` work; the other commands exit with
+> "not implemented yet". See [`todo.md`](todo.md).
 
 ## Build
 
@@ -42,6 +43,22 @@ Tab then completes commands, options, and the configured models for
 | `clai completion [SHELL]` | Print the shell code for Tab completion. |
 
 All options and exit codes: [`spec/command.md`](spec/command.md).
+
+## Running a task
+
+```sh
+clai fix the failing test in tests/parse.rs
+clai run --model local/qwen "explain src/main.rs"
+clai - < task.txt                               # task from standard input
+clai --yes -C ~/ws/app "run the tests and fix what fails"
+```
+
+The final answer goes to standard output, one line per tool call to
+standard error. When `clai` runs in a terminal it asks before writing files
+or running commands that the rules do not allow; in scripts such calls are
+denied unless `--yes` is given. `deny` rules always apply. Exit codes: `0`
+done, `1` failed or stopped, `2` usage or configuration error, `130`
+`Ctrl-C`.
 
 ## Configuration
 
