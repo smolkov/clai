@@ -7,4 +7,6 @@ pub mod config;
 pub mod error;
 pub mod log;
 pub mod output;
+pub mod permissions;
 pub mod provider;
+pub mod tools;

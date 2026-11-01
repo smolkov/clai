@@ -68,13 +68,28 @@ pub struct PermissionsFile {
     pub edit_file: Option<Spanned<Action>>,
     pub write_file: Option<Spanned<Action>>,
     pub run_command: Option<Spanned<Action>>,
+    pub allow: Option<Spanned<RuleTable>>,
+    pub ask: Option<Spanned<RuleTable>>,
+    pub deny: Option<Spanned<RuleTable>>,
     #[serde(default)]
-    pub allow: Vec<Spanned<String>>,
+    pub rules: Vec<Spanned<DetailedRuleFile>>,
+    /// Strings or tables; checked by hand for clear messages.
+    pub extra_dirs: Option<Spanned<Vec<Spanned<toml::Value>>>>,
+}
+
+/// `[permissions.allow]` and the like: tool or group → patterns.
+pub type RuleTable = IndexMap<String, Spanned<Vec<Spanned<String>>>>;
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DetailedRuleFile {
+    pub action: Option<Spanned<Action>>,
+    pub tools: Option<Spanned<Vec<Spanned<String>>>>,
+    pub paths: Option<Spanned<Vec<Spanned<String>>>>,
+    pub commands: Option<Spanned<Vec<Spanned<String>>>>,
     #[serde(default)]
-    pub ask: Vec<Spanned<String>>,
-    #[serde(default)]
-    pub deny: Vec<Spanned<String>>,
-    pub extra_dirs: Option<Spanned<Vec<Spanned<String>>>>,
+    pub except: Vec<Spanned<String>>,
+    pub message: Option<Spanned<String>>,
 }
 
 #[derive(Debug, Default, Deserialize)]

@@ -1,19 +1,21 @@
-//! `[permissions]`: tool defaults, rules and extra directories.
+//! `[permissions]`: tool defaults, rules and extra directories (see
+//! `spec/config.md`, "Permissions").
 //!
-//! Only loading and merging live here; matching rules against tool calls
-//! belongs to the tools milestone.
+//! Loading and merging live here; matching a call against the rules is in
+//! [`crate::permissions`].
 
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use toml::Spanned;
 
 use super::errors::{ConfigError, FileCtx};
-use super::file::PermissionsFile;
+use super::file::{DetailedRuleFile, PermissionsFile, RuleTable};
+use crate::permissions::{CommandPattern, PathPattern};
 
 /// What happens with a tool call. Ordered from loose to strict.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Action {
     Allow,
@@ -22,12 +24,20 @@ pub enum Action {
 }
 
 impl Action {
+    pub const ALL: [Action; 3] = [Action::Allow, Action::Ask, Action::Deny];
+
     pub fn name(self) -> &'static str {
         match self {
             Action::Allow => "allow",
             Action::Ask => "ask",
             Action::Deny => "deny",
         }
+    }
+}
+
+impl fmt::Display for Action {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.name())
     }
 }
 
@@ -73,61 +83,217 @@ impl Tool {
             Tool::EditFile | Tool::WriteFile | Tool::RunCommand => Action::Ask,
         }
     }
+
+    /// Tools whose patterns are paths.
+    pub fn is_file_tool(self) -> bool {
+        self != Tool::RunCommand
+    }
+
+    /// Tools that change files.
+    pub fn writes(self) -> bool {
+        matches!(self, Tool::EditFile | Tool::WriteFile)
+    }
 }
 
-/// `TOOL` or `TOOL(PATTERN)`.
+impl Serialize for Tool {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.name())
+    }
+}
+
+impl fmt::Display for Tool {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.name())
+    }
+}
+
+/// Tool groups usable in rules.
+pub const GROUPS: [(&str, &[Tool]); 2] = [
+    (
+        "read",
+        &[Tool::ReadFile, Tool::ListFiles, Tool::SearchFiles],
+    ),
+    ("edit", &[Tool::EditFile, Tool::WriteFile]),
+];
+
+/// The tools a rule names: a tool or a group.
+pub fn tools_named(name: &str) -> Option<Vec<Tool>> {
+    if let Some(tool) = Tool::from_name(name) {
+        return Some(vec![tool]);
+    }
+    GROUPS
+        .iter()
+        .find(|(group, _)| *group == name)
+        .map(|(_, tools)| tools.to_vec())
+}
+
+fn unknown_tool(name: &str) -> String {
+    format!(
+        "unknown tool or group `{name}`; tools are {}; groups are read, edit",
+        Tool::ALL.map(Tool::name).join(", ")
+    )
+}
+
+/// Where a rule comes from.
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Source {
+    File { path: PathBuf, line: Option<usize> },
+    Session,
+}
+
+impl fmt::Display for Source {
+    /// `config.toml:31`, `.clai/config.toml:3`, `session`.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Source::Session => f.write_str("session"),
+            Source::File { path, line } => {
+                let name = path.file_name().map(|n| n.to_string_lossy());
+                let in_clai = path
+                    .parent()
+                    .and_then(Path::file_name)
+                    .is_some_and(|d| d == ".clai");
+                match (name, in_clai) {
+                    (Some(name), true) => write!(f, ".clai/{name}")?,
+                    (Some(name), false) => f.write_str(&name)?,
+                    (None, _) => write!(f, "{}", path.display())?,
+                }
+                match line {
+                    Some(line) => write!(f, ":{line}"),
+                    None => Ok(()),
+                }
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum Pattern {
+    Path(PathPattern),
+    Command(CommandPattern),
+}
+
+impl Pattern {
+    pub fn text(&self) -> &str {
+        match self {
+            Pattern::Path(p) => p.text(),
+            Pattern::Command(p) => p.text(),
+        }
+    }
+
+    fn parse(text: &str, commands: bool, home: Option<&Path>) -> Result<Pattern, String> {
+        if commands {
+            CommandPattern::parse(text).map(Pattern::Command)
+        } else {
+            PathPattern::parse(text, home).map(Pattern::Path)
+        }
+    }
+}
+
+impl PartialEq for Pattern {
+    fn eq(&self, other: &Pattern) -> bool {
+        matches!(
+            (self, other),
+            (Pattern::Path(_), Pattern::Path(_)) | (Pattern::Command(_), Pattern::Command(_))
+        ) && self.text() == other.text()
+    }
+}
+
+/// One rule, from an action table, a `[[permissions.rules]]` table or the
+/// session.
+#[derive(Debug, Clone, PartialEq)]
 pub struct Rule {
-    pub tool: Tool,
-    pub pattern: Option<String>,
+    pub action: Action,
+    pub tools: Vec<Tool>,
+    /// The tools as written: `read`, `run_command`, `read_file, edit`.
+    pub label: String,
+    /// Empty: every call of the tools.
+    pub patterns: Vec<Pattern>,
+    pub except: Vec<Pattern>,
+    pub message: Option<String>,
+    pub source: Source,
 }
 
 impl Rule {
-    pub fn parse(text: &str) -> Result<Rule, String> {
+    /// Parses `TOOL` or `TOOL(PATTERN)` as an allow rule of the session.
+    pub fn parse_session(text: &str, home: Option<&Path>) -> Result<Rule, String> {
+        let text = text.trim();
+        let text = text.strip_prefix("allow ").unwrap_or(text).trim();
         let (name, pattern) = match text.split_once('(') {
             None => (text, None),
             Some((name, rest)) => {
                 let Some(pattern) = rest.strip_suffix(')') else {
                     return Err(format!("rule `{text}`: missing `)` at the end"));
                 };
-                if pattern.is_empty() {
-                    return Err(format!("rule `{text}`: empty pattern"));
-                }
-                (name, Some(pattern.to_owned()))
+                (name.trim(), Some(pattern))
             }
         };
-        let tool = Tool::from_name(name).ok_or_else(|| {
-            format!(
-                "rule `{text}`: unknown tool `{name}`; tools are {}",
-                tool_list()
-            )
-        })?;
-        Ok(Rule { tool, pattern })
+        let tools =
+            tools_named(name).ok_or_else(|| format!("rule `{text}`: {}", unknown_tool(name)))?;
+        let commands = tools == [Tool::RunCommand];
+        let patterns = match pattern {
+            Some(p) => {
+                let pattern =
+                    Pattern::parse(p, commands, home).map_err(|e| format!("rule `{text}`: {e}"))?;
+                if let Pattern::Command(c) = &pattern
+                    && c.is_pipeline()
+                {
+                    return Err(format!(
+                        "rule `{text}`: `|` is only allowed in deny and ask rules"
+                    ));
+                }
+                vec![pattern]
+            }
+            None => Vec::new(),
+        };
+        Ok(Rule {
+            action: Action::Allow,
+            tools,
+            label: name.to_owned(),
+            patterns,
+            except: Vec::new(),
+            message: None,
+            source: Source::Session,
+        })
+    }
+
+    /// The rule without its action: `run_command(cargo test)`.
+    pub fn notation(&self) -> String {
+        if self.patterns.is_empty() {
+            return self.label.clone();
+        }
+        let patterns: Vec<&str> = self.patterns.iter().map(Pattern::text).collect();
+        format!("{}({})", self.label, patterns.join(", "))
     }
 }
 
 impl fmt::Display for Rule {
+    /// `deny run_command(rm)`.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &self.pattern {
-            Some(pattern) => write!(f, "{}({pattern})", self.tool.name()),
-            None => f.write_str(self.tool.name()),
-        }
+        write!(f, "{} {}", self.action, self.notation())
     }
 }
 
-fn tool_list() -> String {
-    Tool::ALL.map(Tool::name).join(", ")
+/// Access to an extra directory.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Access {
+    Read,
+    Write,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExtraDir {
+    /// Absolute, with `~` expanded; not resolved yet.
+    pub path: PathBuf,
+    pub access: Access,
 }
 
 /// Permissions in effect after merging user and project files.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Permissions {
     /// Tool keys set in a file; other tools use their default action.
     tools: Vec<(Tool, Action)>,
-    pub allow: Vec<Rule>,
-    pub ask: Vec<Rule>,
-    pub deny: Vec<Rule>,
-    pub extra_dirs: Vec<PathBuf>,
+    pub rules: Vec<Rule>,
+    pub extra_dirs: Vec<ExtraDir>,
 }
 
 impl Permissions {
@@ -139,7 +305,7 @@ impl Permissions {
             .map_or(tool.default_action(), |(_, a)| *a)
     }
 
-    fn set(&mut self, tool: Tool, action: Action) {
+    pub fn set(&mut self, tool: Tool, action: Action) {
         match self.tools.iter_mut().find(|(t, _)| *t == tool) {
             Some(entry) => entry.1 = action,
             None => self.tools.push((tool, action)),
@@ -162,13 +328,17 @@ impl Permissions {
                 perms.set(tool, *value.get_ref());
             }
         }
-        perms.allow = parse_rules(ctx, &file.allow, "permissions.allow", errors);
-        perms.ask = parse_rules(ctx, &file.ask, "permissions.ask", errors);
-        perms.deny = parse_rules(ctx, &file.deny, "permissions.deny", errors);
+        let loader = Loader { ctx, home };
+        for (action, table) in action_tables(&file) {
+            perms.rules.extend(loader.table(action, table, errors));
+        }
+        for rule in &file.rules {
+            perms.rules.extend(loader.detailed(rule, errors));
+        }
         if let Some(dirs) = &file.extra_dirs {
             for dir in dirs.get_ref() {
-                match expand_dir(dir.get_ref(), home) {
-                    Ok(path) => perms.extra_dirs.push(path),
+                match extra_dir(dir.get_ref(), home) {
+                    Ok(dir) => perms.extra_dirs.push(dir),
                     Err(message) => errors.push(ctx.error(
                         Some(dir.span()),
                         Some("permissions.extra_dirs".into()),
@@ -185,6 +355,7 @@ impl Permissions {
         &mut self,
         ctx: FileCtx<'_>,
         file: PermissionsFile,
+        home: Option<&Path>,
         errors: &mut Vec<ConfigError>,
     ) {
         for (tool, value) in tool_keys(&file) {
@@ -200,9 +371,9 @@ impl Permissions {
                 self.set(tool, self.action(tool).max(action));
             }
         }
-        if let Some(first) = file.allow.first() {
+        if let Some(allow) = &file.allow {
             errors.push(ctx.error(
-                Some(first.span()),
+                Some(allow.span()),
                 Some("permissions.allow".into()),
                 "a project file may not add allow rules",
             ));
@@ -214,11 +385,42 @@ impl Permissions {
                 "a project file may not set extra_dirs",
             ));
         }
-        self.ask
-            .extend(parse_rules(ctx, &file.ask, "permissions.ask", errors));
-        self.deny
-            .extend(parse_rules(ctx, &file.deny, "permissions.deny", errors));
+        let loader = Loader { ctx, home };
+        for (action, table) in action_tables(&file) {
+            if action != Action::Allow {
+                self.rules.extend(loader.table(action, table, errors));
+            }
+        }
+        for rule in &file.rules {
+            if rule.get_ref().action.as_ref().map(|a| *a.get_ref()) == Some(Action::Allow) {
+                errors.push(ctx.error(
+                    Some(rule.span()),
+                    Some("permissions.rules".into()),
+                    "a project file may not add allow rules",
+                ));
+                continue;
+            }
+            self.rules.extend(loader.detailed(rule, errors));
+        }
     }
+}
+
+/// `[permissions]` from TOML text, for tests of the checks.
+#[cfg(test)]
+pub(crate) fn parse_for_test(text: &str, home: Option<&Path>) -> Permissions {
+    #[derive(Deserialize)]
+    struct Wrapper {
+        permissions: Option<PermissionsFile>,
+    }
+    let ctx = FileCtx {
+        path: Path::new("config.toml"),
+        text,
+    };
+    let wrapper: Wrapper = ctx.parse().unwrap_or_else(|e| panic!("{e}"));
+    let mut errors = Vec::new();
+    let perms = Permissions::from_user(ctx, wrapper.permissions, home, &mut errors);
+    assert!(errors.is_empty(), "{errors:?}");
+    perms
 }
 
 fn tool_keys(file: &PermissionsFile) -> [(Tool, &Option<Spanned<Action>>); 6] {
@@ -232,20 +434,222 @@ fn tool_keys(file: &PermissionsFile) -> [(Tool, &Option<Spanned<Action>>); 6] {
     ]
 }
 
-fn parse_rules(
-    ctx: FileCtx<'_>,
-    list: &[Spanned<String>],
-    key: &str,
-    errors: &mut Vec<ConfigError>,
-) -> Vec<Rule> {
-    let mut rules = Vec::new();
-    for text in list {
-        match Rule::parse(text.get_ref()) {
-            Ok(rule) => rules.push(rule),
-            Err(message) => errors.push(ctx.error(Some(text.span()), Some(key.into()), message)),
+fn action_tables(file: &PermissionsFile) -> impl Iterator<Item = (Action, &Spanned<RuleTable>)> {
+    [
+        (Action::Allow, &file.allow),
+        (Action::Ask, &file.ask),
+        (Action::Deny, &file.deny),
+    ]
+    .into_iter()
+    .filter_map(|(action, table)| table.as_ref().map(|t| (action, t)))
+}
+
+struct Loader<'a> {
+    ctx: FileCtx<'a>,
+    home: Option<&'a Path>,
+}
+
+impl Loader<'_> {
+    fn source(&self, span: std::ops::Range<usize>) -> Source {
+        Source::File {
+            path: self.ctx.path.to_owned(),
+            line: self.ctx.line_of(span.start),
         }
     }
-    rules
+
+    fn error(&self, span: std::ops::Range<usize>, key: String, message: String) -> ConfigError {
+        self.ctx.error(Some(span), Some(key), message)
+    }
+
+    /// `[permissions.ACTION]`: one rule per pattern.
+    fn table(
+        &self,
+        action: Action,
+        table: &Spanned<RuleTable>,
+        errors: &mut Vec<ConfigError>,
+    ) -> Vec<Rule> {
+        let mut rules = Vec::new();
+        for (name, patterns) in table.get_ref() {
+            let key = format!("permissions.{action}.{name}");
+            let Some(tools) = tools_named(name) else {
+                errors.push(self.error(patterns.span(), key, unknown_tool(name)));
+                continue;
+            };
+            let commands = tools == [Tool::RunCommand];
+            for text in patterns.get_ref() {
+                match self.pattern(text.get_ref(), commands, action) {
+                    Ok(pattern) => rules.push(Rule {
+                        action,
+                        tools: tools.clone(),
+                        label: name.clone(),
+                        patterns: vec![pattern],
+                        except: Vec::new(),
+                        message: None,
+                        source: self.source(text.span()),
+                    }),
+                    Err(message) => errors.push(self.error(text.span(), key.clone(), message)),
+                }
+            }
+        }
+        rules
+    }
+
+    fn pattern(&self, text: &str, commands: bool, action: Action) -> Result<Pattern, String> {
+        let pattern = Pattern::parse(text, commands, self.home)?;
+        if action == Action::Allow
+            && let Pattern::Command(c) = &pattern
+            && c.is_pipeline()
+        {
+            return Err(format!(
+                "pattern `{text}`: `|` is only allowed in deny and ask rules"
+            ));
+        }
+        Ok(pattern)
+    }
+
+    /// One `[[permissions.rules]]` table.
+    fn detailed(
+        &self,
+        spanned: &Spanned<DetailedRuleFile>,
+        errors: &mut Vec<ConfigError>,
+    ) -> Option<Rule> {
+        let span = spanned.span();
+        let rule = spanned.get_ref();
+        let key = "permissions.rules".to_owned();
+        let before = errors.len();
+        let action = rule.action.as_ref().map(|a| *a.get_ref());
+        if action.is_none() {
+            errors.push(self.error(span.clone(), key.clone(), "missing action".into()));
+        }
+        let mut tools: Vec<Tool> = Vec::new();
+        let mut names: Vec<&str> = Vec::new();
+        match &rule.tools {
+            Some(list) if !list.get_ref().is_empty() => {
+                for name in list.get_ref() {
+                    match tools_named(name.get_ref()) {
+                        Some(named) => {
+                            names.push(name.get_ref());
+                            for tool in named {
+                                if !tools.contains(&tool) {
+                                    tools.push(tool);
+                                }
+                            }
+                        }
+                        None => errors.push(self.error(
+                            name.span(),
+                            key.clone(),
+                            unknown_tool(name.get_ref()),
+                        )),
+                    }
+                }
+            }
+            _ => errors.push(self.error(span.clone(), key.clone(), "missing tools".into())),
+        }
+        let commands = tools.contains(&Tool::RunCommand);
+        if commands && tools.len() > 1 {
+            errors.push(self.error(
+                span.clone(),
+                key.clone(),
+                "tools mixes file tools and run_command; use one rule for each".into(),
+            ));
+        }
+        if let Some(paths) = &rule.paths
+            && commands
+        {
+            errors.push(self.error(
+                paths.span(),
+                key.clone(),
+                "`paths` is for file tools; use `commands` for run_command".into(),
+            ));
+        }
+        if let Some(list) = &rule.commands
+            && !commands
+            && !tools.is_empty()
+        {
+            errors.push(self.error(
+                list.span(),
+                key.clone(),
+                "`commands` is for run_command; use `paths` for file tools".into(),
+            ));
+        }
+        if let (Some(message), Some(Action::Allow)) = (&rule.message, action) {
+            errors.push(self.error(
+                message.span(),
+                key.clone(),
+                "`message` is not allowed with action = \"allow\"".into(),
+            ));
+        }
+        let given = if commands {
+            &rule.commands
+        } else {
+            &rule.paths
+        };
+        let mut patterns = Vec::new();
+        let mut except = Vec::new();
+        let lists = given
+            .iter()
+            .flat_map(|l| l.get_ref().iter().map(|p| (p, false)))
+            .chain(rule.except.iter().map(|p| (p, true)));
+        for (text, is_except) in lists {
+            let checked_action = if is_except {
+                Action::Deny
+            } else {
+                action.unwrap_or(Action::Deny)
+            };
+            match self.pattern(text.get_ref(), commands, checked_action) {
+                Ok(p) if is_except => except.push(p),
+                Ok(p) => patterns.push(p),
+                Err(message) => errors.push(self.error(text.span(), key.clone(), message)),
+            }
+        }
+        if errors.len() > before {
+            return None;
+        }
+        Some(Rule {
+            action: action?,
+            tools,
+            label: names.join(", "),
+            patterns,
+            except,
+            message: rule.message.as_ref().map(|m| m.get_ref().clone()),
+            source: self.source(span),
+        })
+    }
+}
+
+/// An `extra_dirs` entry: a path, or `{ path = "...", access = "read" }`.
+fn extra_dir(value: &toml::Value, home: Option<&Path>) -> Result<ExtraDir, String> {
+    match value {
+        toml::Value::String(path) => Ok(ExtraDir {
+            path: expand_dir(path, home)?,
+            access: Access::Write,
+        }),
+        toml::Value::Table(table) => {
+            let mut path = None;
+            let mut access = Access::Write;
+            for (key, value) in table {
+                match (key.as_str(), value) {
+                    ("path", toml::Value::String(p)) => path = Some(expand_dir(p, home)?),
+                    ("access", toml::Value::String(a)) => {
+                        access = match a.as_str() {
+                            "read" => Access::Read,
+                            "write" => Access::Write,
+                            other => {
+                                return Err(format!("unknown access `{other}`; use read or write"));
+                            }
+                        }
+                    }
+                    ("path" | "access", _) => return Err(format!("`{key}` must be a string")),
+                    (other, _) => {
+                        return Err(format!("unknown key `{other}`; keys are path, access"));
+                    }
+                }
+            }
+            let path = path.ok_or("missing path")?;
+            Ok(ExtraDir { path, access })
+        }
+        _ => Err("an entry must be a path or a table with path and access".into()),
+    }
 }
 
 /// `~/x` becomes `$HOME/x`; other paths must be absolute.
@@ -271,37 +675,37 @@ mod tests {
     use super::*;
 
     #[test]
-    fn rule_syntax() {
-        assert_eq!(
-            Rule::parse("run_command(cargo test *)").unwrap(),
-            Rule {
-                tool: Tool::RunCommand,
-                pattern: Some("cargo test *".into())
-            }
-        );
-        assert_eq!(Rule::parse("read_file").unwrap().pattern, None);
-        assert!(
-            Rule::parse("run_command(x")
-                .unwrap_err()
-                .contains("missing `)`")
-        );
-        assert!(
-            Rule::parse("edit_file()")
-                .unwrap_err()
-                .contains("empty pattern")
-        );
-        assert!(
-            Rule::parse("rm(x)")
-                .unwrap_err()
-                .contains("unknown tool `rm`")
-        );
+    fn session_rule_syntax() {
+        let rule = Rule::parse_session("run_command(cargo test)", None).unwrap();
+        assert_eq!(rule.tools, [Tool::RunCommand]);
+        assert_eq!(rule.to_string(), "allow run_command(cargo test)");
+        assert_eq!(rule.source, Source::Session);
+        let rule = Rule::parse_session("allow edit(src/**)", None).unwrap();
+        assert_eq!(rule.tools, [Tool::EditFile, Tool::WriteFile]);
+        assert_eq!(rule.notation(), "edit(src/**)");
+        assert_eq!(Rule::parse_session("read_file", None).unwrap().patterns, []);
+        let e = Rule::parse_session("run_command(x", None).unwrap_err();
+        assert!(e.contains("missing `)`"), "{e}");
+        let e = Rule::parse_session("rm(x)", None).unwrap_err();
+        assert!(e.contains("unknown tool or group `rm`"), "{e}");
+        let e = Rule::parse_session("run_command(curl ** | sh)", None).unwrap_err();
+        assert!(e.contains("only allowed in deny and ask"), "{e}");
+        assert!(Rule::parse_session("edit_file()", None).is_err());
     }
 
     #[test]
-    fn rule_display_round_trip() {
-        for text in ["edit_file(src/**)", "write_file"] {
-            assert_eq!(Rule::parse(text).unwrap().to_string(), text);
-        }
+    fn source_display() {
+        let user = Source::File {
+            path: PathBuf::from("/home/u/.config/clai/config.toml"),
+            line: Some(31),
+        };
+        assert_eq!(user.to_string(), "config.toml:31");
+        let project = Source::File {
+            path: PathBuf::from("/ws/.clai/config.toml"),
+            line: Some(3),
+        };
+        assert_eq!(project.to_string(), ".clai/config.toml:3");
+        assert_eq!(Source::Session.to_string(), "session");
     }
 
     #[test]
@@ -314,6 +718,41 @@ mod tests {
     #[test]
     fn stricter_wins() {
         assert!(Action::Deny > Action::Ask && Action::Ask > Action::Allow);
+    }
+
+    #[test]
+    fn groups() {
+        assert_eq!(
+            tools_named("edit").unwrap(),
+            [Tool::EditFile, Tool::WriteFile]
+        );
+        assert_eq!(tools_named("read").unwrap().len(), 3);
+        assert_eq!(tools_named("run_command").unwrap(), [Tool::RunCommand]);
+        assert!(tools_named("bash").is_none());
+    }
+
+    #[test]
+    fn extra_dir_entries() {
+        let home = Some(Path::new("/home/u"));
+        let dir = extra_dir(&toml::Value::String("~/ws/lib".into()), home).unwrap();
+        assert_eq!(
+            dir,
+            ExtraDir {
+                path: PathBuf::from("/home/u/ws/lib"),
+                access: Access::Write
+            }
+        );
+        let table: toml::Value = toml::from_str("path = \"/opt\"\naccess = \"read\"").unwrap();
+        assert_eq!(extra_dir(&table, home).unwrap().access, Access::Read);
+        let bad: toml::Value = toml::from_str("path = \"/opt\"\naccess = \"all\"").unwrap();
+        assert!(
+            extra_dir(&bad, home)
+                .unwrap_err()
+                .contains("unknown access")
+        );
+        let bad: toml::Value = toml::from_str("access = \"read\"").unwrap();
+        assert_eq!(extra_dir(&bad, home).unwrap_err(), "missing path");
+        assert!(extra_dir(&toml::Value::Integer(1), home).is_err());
     }
 
     #[test]

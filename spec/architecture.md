@@ -48,7 +48,7 @@ Statements marked **(assumption)** need a decision from the user.
 | Tools | The six tools: arguments, execution, results, question details. | Permissions (per-entry checks), file system, `sh` | [`tools.md`](tools.md) |
 | Permissions | Rule matching, path resolution, command splitting, the decision and its reason. | Config | [`config.md`](config.md), "Permissions" |
 | Context | System prompt, project instructions, history size and truncation. | Config | `context.md` (planned) |
-| Agent loop | One turn: requests, streaming, tool calls, limits, cancellation, questions. | Provider, tools, permissions, context | `agent-loop.md` (planned) |
+| Agent loop | One turn: requests, streaming, tool calls, limits, cancellation, questions. | Provider, tools, permissions, context | [`agent-loop.md`](agent-loop.md) |
 | Session | State (`idle`, `working`, `waiting`), history, model, session rules, open question, event log, message queue. | Agent loop | [`sessions.md`](sessions.md) |
 | Server | Socket, session registry, start on demand, idle exit, config reload. | Session, protocol | [`sessions.md`](sessions.md), "Server" |
 | Protocol | Client–server messages, framing, version handshake. | — | [Protocol](#protocol) |
@@ -103,8 +103,8 @@ clai/
 │   ├── readme.md               introduction, terms, index, open questions
 │   ├── architecture.md         this file
 │   ├── command.md, tui.md, sessions.md
-│   ├── config.md, providers.md, tools.md
-│   └── agent-loop.md, context.md, commit.md             planned
+│   ├── config.md, providers.md, tools.md, agent-loop.md
+│   └── context.md, commit.md   planned
 │
 ├── src/
 │   ├── main.rs                 entry point: parse, run, exit code
@@ -135,8 +135,22 @@ clai/
 │   │   ├── anthropic.rs        adapter `anthropic`
 │   │   ├── openai.rs           adapter `openai-compatible`
 │   │   └── fake.rs             scripted provider for tests
-│   ├── permissions/            rule matching, paths, command splitting   planned
-│   ├── tools/                  the six tools, question details           planned
+│   ├── permissions/            Permissions (config.md, "Permissions")
+│   │   ├── mod.rs              exports
+│   │   ├── check.rs            checking order, decisions and reasons
+│   │   ├── workspace.rs        workspace, extra dirs, resolving paths
+│   │   ├── path_pattern.rs     path patterns
+│   │   ├── command_pattern.rs  command patterns, wrappers, pipelines
+│   │   ├── shell.rs            splitting command lines into parts
+│   │   └── session.rs          session rules, proposals for "always"
+│   ├── tools/                  Tools (tools.md)
+│   │   ├── mod.rs              specs, `prepare`, `PreparedCall::run`
+│   │   ├── read_file.rs, list_files.rs, search_files.rs,
+│   │   │   edit_file.rs, write_file.rs, run_command.rs
+│   │   ├── question.rs         details of permission questions
+│   │   ├── walk.rs             directory walking for list and search
+│   │   ├── text.rs             binary files, safe writing, similar names
+│   │   └── output.rs           results and their size limits
 │   ├── context/                system prompt, history, truncation        planned
 │   ├── agent/                  agent loop                                planned
 │   ├── session/                session actor, event log, questions       planned

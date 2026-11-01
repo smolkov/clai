@@ -68,6 +68,34 @@ A project can add `.clai/config.toml` to set `default_model`, `[commit]` and
 stricter `[permissions]`. `CLAI_MODEL` overrides `default_model` and
 `CLAI_THEME` overrides the theme. All keys: [`spec/config.md`](spec/config.md).
 
+## Permissions
+
+Every tool call of the model is allowed, asked about or denied. By default
+reading is allowed, and changing files and running commands ask. Rules in
+`[permissions]` change that, grouped by action; each key is a tool or a
+group (`read`, `edit`):
+
+```toml
+[permissions.allow]
+run_command = ["ls", "cat", "cargo build", "cargo test", "git status", "git diff"]
+edit        = ["src/**", "tests/**"]
+
+[permissions.ask]
+run_command = ["git push"]
+
+[permissions.deny]
+run_command = ["rm", "sudo", "git push --force"]
+read        = [".env*", "secrets/**"]
+```
+
+Command patterns match the first words of each command: `git push` also
+matches `git push origin main`, and `rm` denies every `rm`, also through
+`sudo`, `xargs` or `sh -c`. A command with several parts (`a && b`, pipes,
+`$( )`) is checked part by part, and redirections like `> file` are checked
+as writes. Nothing outside the workspace (and `extra_dirs`) is ever read or
+written. Details, exceptions (`except`) and messages for the model:
+[`spec/config.md`](spec/config.md), "Permissions".
+
 ## Logging
 
 `clai` logs to `~/.local/state/clai/clai.log` (or `$XDG_STATE_HOME/clai/clai.log`).

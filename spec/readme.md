@@ -139,7 +139,7 @@ When a spec file is added, renamed or removed, update this table and
 | [`sessions.md`](sessions.md) | draft | Server, several sessions, attach/detach, session commands. |
 | [`commit.md`](commit.md) | draft | Commit messages: `clai commit` (prints to stdout) and the TUI `/commit`. |
 | [`config.md`](config.md) | draft | Config files, precedence, providers and models, tool permissions, TUI settings and themes, validation, reloading. |
-| `agent-loop.md` | planned | Request/response cycle, streaming, limits, cancellation. |
+| [`agent-loop.md`](agent-loop.md) | draft | One turn: requests, system prompt, streaming, tool calls in order, limits, cancellation, errors, events. |
 | [`tools.md`](tools.md) | draft | Each tool: arguments, results, errors, limits; paths, text files, result size, denied calls. |
 | [`providers.md`](providers.md) | draft | Agent–provider interface: shared request, message, event and error types; adapters per API type that encode and decode the provider's format; retries. |
 | `context.md` | planned | System prompt, project instructions, history size and truncation. |

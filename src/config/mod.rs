@@ -26,7 +26,7 @@ use errors::FileCtx;
 use file::{ModelFile, ProjectFile, ProviderFile, UserFile};
 
 pub use errors::{ConfigError, ConfigErrors, Origin};
-pub use permissions::{Action, Permissions, Rule, Tool};
+pub use permissions::{Access, Action, ExtraDir, Pattern, Permissions, Rule, Source, Tool};
 pub use secret::{ApiKey, KEY_CMD_TIMEOUT, KeySource, KeyStatus};
 pub use tui::{BuiltinTheme, Colour, Symbols, Theme, Tui};
 
@@ -372,7 +372,7 @@ fn build(
             }
         }
         if let Some(perms) = file.permissions {
-            permissions.apply_project(ctx, perms, &mut errors);
+            permissions.apply_project(ctx, perms, env.home.as_deref(), &mut errors);
         }
         if let Some(file) = file.commit {
             if let Some(value) = &file.model

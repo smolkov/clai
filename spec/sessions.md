@@ -177,7 +177,7 @@ first and the whole on request. **(assumption)**
 | Choice | For | Effect |
 |--------|-----|--------|
 | `allow` | permission | Run this call once. |
-| `allow_always` | permission | Run this call and add an allow rule to the session. The answer names the rule: one of `proposals`, or a rule the user typed for the same tool that matches this call. Any other rule is rejected and the question stays open. |
+| `allow_always` | permission | Run this call and add allow rules to the session. The answer names the rules: one of `proposals` (each is a set of rules), or rules the user typed for this tool (for `run_command` also `write_file`/`read_file` rules for its redirections). Together they must allow this call; otherwise the answer is rejected and the question stays open. |
 | `deny` | permission | Do not run the call; the model gets `denied by the user`. |
 | `deny_message` | permission | As `deny`, with a text for the model: `denied by the user: <text>`. |
 | `cancel` | both | Deny, and cancel the turn. |

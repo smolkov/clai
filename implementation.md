@@ -60,7 +60,7 @@ maps to the code.
 | `provider::anthropic`, `provider::openai` | Adapters: encode requests, decode SSE streams, map errors. | `providers.md` |
 | `tools` | `read_file`, `list_files`, `search_files`, `edit_file`, `write_file`, `run_command`; tool specs. | `tools.md` |
 | `permissions` | Tool defaults, rules, glob matching, path resolution, command splitting, session rules. | `config.md`, "Permissions" |
-| `agent` | Agent loop: requests, streaming, tool calls, limits, cancellation, questions. | `agent-loop.md` (planned), `sessions.md` |
+| `agent` | Agent loop: requests, streaming, tool calls, limits, cancellation, questions. | `agent-loop.md`, `sessions.md` |
 | `context` | System prompt, history size, truncation. | `context.md` (planned) |
 | `session` | Session actor, state machine, message queue, event log for attach. | `sessions.md` |
 | `protocol` | Client–server messages, versioning, framing. | `sessions.md`, "Server" |
@@ -206,6 +206,13 @@ skipping denied files.
 
 Spec: [`spec/tools.md`](spec/tools.md).
 
+Status: done. Matching lives in `src/permissions/`, the tools in
+`src/tools/`; both are a library API (`tools::prepare`, `PreparedCall::run`,
+`accept_rules`) that the agent loop will drive. Decisions the spec left
+open (file-name matching only for deny/ask, wrappers, keywords, dynamic
+command names, pipelines, background processes after exit, proposals as
+rule sets) are written into `spec/config.md` and `spec/tools.md`.
+
 ### Agent loop
 
 - Turn: build request from context, stream events, collect tool calls,
@@ -218,13 +225,14 @@ Spec: [`spec/tools.md`](spec/tools.md).
 - Validates answers against the open question (id, choice, `always` rule).
 - Minimal context: system prompt and full history; `ContextTooLong` is
   reported as an error until truncation exists.
+- Loading `[limits]` (`max_requests`, `max_tool_calls`; the project file
+  only lowers them).
 
 Tests: all against the `fake` provider: plain answer, tool round trip,
 denied call, cancelled turn, limit reached then continue and stop, provider
 error mid-stream, malformed tool arguments.
 
-Needs: `spec/agent-loop.md` (limit config keys and defaults, system prompt
-basics).
+Spec: [`spec/agent-loop.md`](spec/agent-loop.md).
 
 ### One-shot mode
 
@@ -311,7 +319,7 @@ Needs: `spec/context.md`.
 | Before milestone | Spec to write or decide |
 |------------------|-------------------------|
 | Tools and permissions | Open question 5 in `spec/readme.md` (sandbox); open questions in `spec/tools.md`. |
-| Agent loop | `spec/agent-loop.md`: limit keys and defaults, streaming and cancellation details. |
+| Agent loop | Assumptions and open questions in `spec/agent-loop.md`. |
 | One-shot mode | Open question 2 (one-shot first, as proposed here). |
 | Server and sessions | Open questions in `spec/sessions.md`, at least persistence (1) and several sessions in one workspace (4). |
 | Commit | `spec/commit.md`. |

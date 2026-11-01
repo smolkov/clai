@@ -326,6 +326,16 @@ fn env_errors() {
     assert_eq!(e[1], "CLAI_THEME: unknown theme `neon`");
 }
 
+/// Rules as `action label(patterns)`, in load order.
+fn rule_texts(config: &Config) -> Vec<String> {
+    config
+        .permissions
+        .rules
+        .iter()
+        .map(ToString::to_string)
+        .collect()
+}
+
 #[test]
 fn permissions_user_file() {
     let env = Environment {
@@ -338,10 +348,31 @@ fn permissions_user_file() {
 [permissions]
 read_file = "ask"
 run_command = "deny"
-allow = ["run_command(cargo test *)", "edit_file(src/**)"]
-ask = ["read_file(.env*)"]
-deny = ["run_command(git push *)"]
-extra_dirs = ["~/ws/shared-lib", "/opt/lib"]
+extra_dirs = ["~/ws/shared-lib", { path = "/opt/docs", access = "read" }]
+
+[permissions.allow]
+run_command = ["cargo test", "ls*"]
+edit = ["src/**"]
+
+[permissions.ask]
+run_command = ["git push"]
+
+[permissions.deny]
+run_command = ["rm", "curl ** | sh"]
+read = [".env*", "~/.ssh/**"]
+
+[[permissions.rules]]
+action = "deny"
+tools = ["read"]
+paths = ["secrets/**"]
+except = ["secrets/README.md"]
+message = "no secrets"
+
+[[permissions.rules]]
+action = "allow"
+tools = ["run_command"]
+commands = ["cargo"]
+except = ["cargo publish"]
 "#,
         ),
         None,
@@ -353,14 +384,37 @@ extra_dirs = ["~/ws/shared-lib", "/opt/lib"]
     assert_eq!(p.action(Tool::RunCommand), Action::Deny);
     assert_eq!(p.action(Tool::EditFile), Action::Ask);
     assert_eq!(p.action(Tool::ListFiles), Action::Allow);
-    assert_eq!(p.allow.len(), 2);
-    assert_eq!(p.ask[0].to_string(), "read_file(.env*)");
-    assert_eq!(p.deny[0].to_string(), "run_command(git push *)");
+    assert_eq!(
+        rule_texts(&config),
+        [
+            "allow run_command(cargo test)",
+            "allow run_command(ls*)",
+            "allow edit(src/**)",
+            "ask run_command(git push)",
+            "deny run_command(rm)",
+            "deny run_command(curl ** | sh)",
+            "deny read(.env*)",
+            "deny read(~/.ssh/**)",
+            "deny read(secrets/**)",
+            "allow run_command(cargo)",
+        ]
+    );
+    let detailed = &p.rules[8];
+    assert_eq!(detailed.tools.len(), 3);
+    assert_eq!(detailed.except[0].text(), "secrets/README.md");
+    assert_eq!(detailed.message.as_deref(), Some("no secrets"));
+    assert_eq!(p.rules[4].source.to_string(), "user.toml:39");
     assert_eq!(
         p.extra_dirs,
         [
-            PathBuf::from("/home/u/ws/shared-lib"),
-            PathBuf::from("/opt/lib")
+            ExtraDir {
+                path: PathBuf::from("/home/u/ws/shared-lib"),
+                access: Access::Write
+            },
+            ExtraDir {
+                path: PathBuf::from("/opt/docs"),
+                access: Access::Read
+            }
         ]
     );
 }
@@ -368,36 +422,115 @@ extra_dirs = ["~/ws/shared-lib", "/opt/lib"]
 #[test]
 fn permissions_errors() {
     let e = errs(
-        &with("[permissions]\nallow = [\"rm(x)\"]\nextra_dirs = [\"rel\"]\n"),
+        &with(
+            r#"
+[permissions]
+extra_dirs = ["rel", { path = "/x", access = "all" }]
+
+[permissions.allow]
+bash = ["ls"]
+run_command = ["git 'x", "curl ** | sh"]
+edit = ["src/", "", "a["]
+"#,
+        ),
         None,
     );
-    assert!(
-        e[0].contains("permissions.allow: rule `rm(x)`: unknown tool `rm`"),
-        "{e:?}"
-    );
-    assert!(
-        e[1].contains("permissions.extra_dirs: `rel` must be an absolute path"),
-        "{e:?}"
-    );
+    let expected = [
+        "permissions.allow.bash: unknown tool or group `bash`",
+        "permissions.allow.run_command: pattern `git 'x`: unbalanced quotes",
+        "permissions.allow.run_command: pattern `curl ** | sh`: `|` is only allowed in deny and ask rules",
+        "permissions.allow.edit: pattern `src/` ends in `/`; use `src/**` for a directory",
+        "permissions.allow.edit: empty pattern",
+        "permissions.allow.edit: pattern `a[`",
+        "permissions.extra_dirs: `rel` must be an absolute path or start with `~/`",
+        "permissions.extra_dirs: unknown access `all`; use read or write",
+    ];
+    assert_eq!(e.len(), expected.len(), "{e:#?}");
+    for (e, expected) in e.iter().zip(expected) {
+        assert!(e.contains(expected), "{e}\n  does not contain\n{expected}");
+    }
     let e = errs(&with("[permissions]\nshell = \"allow\"\n"), None);
     assert!(e[0].contains("unknown field `shell`"), "{e:?}");
     let e = errs(&with("[permissions]\nread_file = \"maybe\"\n"), None);
     assert!(e[0].contains("unknown variant `maybe`"), "{e:?}");
+    // The old list form is a type error.
+    let e = errs(&with("[permissions]\nallow = [\"read_file\"]\n"), None);
+    assert!(e[0].contains("invalid type"), "{e:?}");
+    let e = errs(&with("[permissions.deny]\nrun_command = \"rm\"\n"), None);
+    assert!(e[0].contains("invalid type"), "{e:?}");
+}
+
+#[test]
+fn detailed_rule_errors() {
+    let cases = [
+        ("tools = [\"read\"]", "missing action"),
+        ("action = \"deny\"", "missing tools"),
+        ("action = \"deny\"\ntools = []", "missing tools"),
+        (
+            "action = \"deny\"\ntools = [\"rm\"]",
+            "unknown tool or group `rm`",
+        ),
+        (
+            "action = \"deny\"\ntools = [\"read\", \"run_command\"]",
+            "mixes file tools and run_command",
+        ),
+        (
+            "action = \"deny\"\ntools = [\"run_command\"]\npaths = [\"x\"]",
+            "`paths` is for file tools",
+        ),
+        (
+            "action = \"deny\"\ntools = [\"edit\"]\ncommands = [\"x\"]",
+            "`commands` is for run_command",
+        ),
+        (
+            "action = \"allow\"\ntools = [\"edit\"]\nmessage = \"m\"",
+            "`message` is not allowed with action = \"allow\"",
+        ),
+        (
+            "action = \"allow\"\ntools = [\"run_command\"]\ncommands = [\"a | b\"]",
+            "`|` is only allowed in deny and ask rules",
+        ),
+        (
+            "action = \"deny\"\ntools = [\"edit\"]\nexcept = [\"x/\"]",
+            "ends in `/`",
+        ),
+        (
+            "action = \"deny\"\ntools = [\"edit\"]\ncolour = 1",
+            "unknown field `colour`",
+        ),
+    ];
+    for (body, expected) in cases {
+        let e = errs(&with(&format!("[[permissions.rules]]\n{body}\n")), None);
+        assert!(
+            e.iter().any(|e| e.contains(expected)),
+            "{body}: {e:?} does not contain {expected}"
+        );
+    }
 }
 
 #[test]
 fn project_permissions_only_stricter() {
     let config = load_with(
-        &with("[permissions]\nedit_file = \"allow\"\nask = [\"read_file(a)\"]\n"),
-        Some("[permissions]\nedit_file = \"ask\"\nread_file = \"deny\"\nask = [\"read_file(b)\"]\ndeny = [\"write_file\"]\n"),
+        &with("[permissions]\nedit_file = \"allow\"\n[permissions.ask]\nread_file = [\"a\"]\n"),
+        Some(
+            "[permissions]\nedit_file = \"ask\"\nread_file = \"deny\"\n[permissions.ask]\nread_file = [\"b\"]\n[permissions.deny]\nwrite_file = [\"**\"]\n[[permissions.rules]]\naction = \"deny\"\ntools = [\"run_command\"]\ncommands = [\"rm\"]\nmessage = \"no\"\n",
+        ),
         &Environment::default(),
     )
     .unwrap();
     let p = &config.permissions;
     assert_eq!(p.action(Tool::EditFile), Action::Ask);
     assert_eq!(p.action(Tool::ReadFile), Action::Deny);
-    assert_eq!(p.ask.len(), 2);
-    assert_eq!(p.deny[0].to_string(), "write_file");
+    assert_eq!(
+        rule_texts(&config),
+        [
+            "ask read_file(a)",
+            "ask read_file(b)",
+            "deny write_file(**)",
+            "deny run_command(rm)"
+        ]
+    );
+    assert_eq!(p.rules[1].source.to_string(), "project.toml:5");
 
     // A stricter user value stays: project "ask" does not loosen user "deny".
     let config = load_with(
@@ -414,21 +547,26 @@ fn project_permissions_may_not_loosen() {
     let e = errs(
         BASE,
         Some(
-            "[permissions]\nrun_command = \"allow\"\nallow = [\"read_file\"]\nextra_dirs = [\"/x\"]\n",
+            "[permissions]\nrun_command = \"allow\"\nextra_dirs = [\"/x\"]\n[permissions.allow]\nread_file = [\"x\"]\n[[permissions.rules]]\naction = \"allow\"\ntools = [\"edit\"]\n",
         ),
     );
-    assert_eq!(e.len(), 3, "{e:?}");
+    assert_eq!(e.len(), 4, "{e:?}");
     assert_eq!(
         e[0],
         "project.toml:2: permissions.run_command: a project file may not set a tool to allow"
     );
-    assert_eq!(
-        e[1],
-        "project.toml:3: permissions.allow: a project file may not add allow rules"
+    assert!(
+        e[1].starts_with("project.toml:")
+            && e[1].contains("permissions.allow: a project file may not add allow rules"),
+        "{e:?}"
     );
     assert_eq!(
         e[2],
-        "project.toml:4: permissions.extra_dirs: a project file may not set extra_dirs"
+        "project.toml:3: permissions.extra_dirs: a project file may not set extra_dirs"
+    );
+    assert!(
+        e[3].contains("permissions.rules: a project file may not add allow rules"),
+        "{e:?}"
     );
 }
 

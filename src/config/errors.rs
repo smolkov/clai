@@ -81,7 +81,7 @@ impl FileCtx<'_> {
     }
 
     /// 1-based line of a byte offset.
-    fn line_of(&self, offset: usize) -> Option<usize> {
+    pub fn line_of(&self, offset: usize) -> Option<usize> {
         self.text
             .get(..offset)
             .map(|before| before.matches('\n').count() + 1)

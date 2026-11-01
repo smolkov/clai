@@ -18,6 +18,6 @@
 
 # Agent
 
-- [Agent loop]()
+- [Agent loop](agent-loop.md)
 - [Tools](tools.md)
 - [Context]()

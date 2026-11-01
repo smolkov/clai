@@ -11,8 +11,8 @@ Statements marked **(assumption)** need a decision from the user.
 
 | File                          | Scope   | May define |
 |-------------------------------|---------|------------|
-| `~/.config/clai/config.toml`  | User    | Everything: providers, models, defaults, `[permissions]`, `[commit]`, `[tui]`, `[themes]`. |
-| `<workspace>/.clai/config.toml` | Project | Defaults and limits only: `default_model`, limits (keys not defined yet, see `agent-loop.md`), `[permissions]` (restricted, see [Permissions](#permissions)), `[commit]`. Not providers, models, `[tui]` or `[themes]`. |
+| `~/.config/clai/config.toml`  | User    | Everything: providers, models, defaults, `[limits]`, `[permissions]`, `[commit]`, `[tui]`, `[themes]`. |
+| `<workspace>/.clai/config.toml` | Project | Defaults and limits only: `default_model`, `[limits]` (only lower, see [Limits](#limits)), `[permissions]` (restricted, see [Permissions](#permissions)), `[commit]`. Not providers, models, `[tui]` or `[themes]`. |
 
 `$XDG_CONFIG_HOME` replaces `~/.config` when it is set.
 
@@ -174,13 +174,19 @@ Patterns match the resolved path (see [`tools.md`](tools.md), "Paths").
 | Pattern | Matches |
 |---------|---------|
 | Without `/`, e.g. `.env*`, `*.pem` | The file or directory name, in any directory (like `.gitignore`). |
-| With `/`, e.g. `src/**`, `docs/*.md` | The path relative to the workspace. Never matches a path outside it. |
+| With `/`, e.g. `src/**`, `docs/*.md`, `./Cargo.toml` | The path relative to the workspace; a leading `./` is dropped, so `./Cargo.toml` is only the file in the workspace itself. Never matches a path outside it. |
 | Starting with `/` or `~/`, e.g. `~/.ssh/**` | The absolute path; this is how paths in `extra_dirs` are matched. `~` is expanded in patterns. |
 
 Glob syntax: `*` any characters within one path segment, `**` any number of
 segments, `?` one character, `[abc]` one of the characters, `{a,b}`
-alternatives. `DIR/**` also matches `DIR` itself. Matching is
+alternatives. `DIR/**` also matches `DIR` itself, and `./**` the whole
+workspace. A pattern that matches a directory also matches everything in
+it, so `secrets` or `docs/private` cover the files below them. Matching is
 case-sensitive. A trailing `/` is not allowed. **(assumption)**
+
+A path in an extra directory is matched by name patterns against its path
+below that directory, and by absolute patterns; relative patterns never
+match it.
 
 #### Command patterns
 
@@ -202,20 +208,28 @@ matched on its own, word by word. **(assumption)**
 - The word `**` matches any number of words, also none, so a pattern can
   name words further on: `git ** --force` matches `git push origin --force`;
   `find ** -delete` and `find ** -exec` catch those uses of `find`.
-- The first word also matches by its file name: `rm` matches `/bin/rm` and
-  `./rm`. A pattern whose first word contains `/` matches only that path.
+- For `deny` and `ask` rules, the first word also matches by its file name:
+  `rm` denies `/bin/rm` and `./rm`. `allow` rules match the command as
+  written, so `ls` does not allow a script `./ls` in the repository. A
+  pattern whose first word contains `/` matches only that path.
 - Variable assignments before a command (`RUST_LOG=debug cargo test`) are
   words too. They are skipped for `deny` and `ask` rules, so `rm` still
   denies `FOO=1 rm -rf x`; an `allow` rule matches only if it names them
   (`RUST_LOG=* cargo test`).
 - Wrappers that run another command — `sudo`, `doas`, `env`, `command`,
-  `exec`, `nice`, `nohup`, `time`, `timeout`, `xargs`, `watch` — are looked
-  through for `deny` and `ask` rules: `sudo rm -rf /` and `xargs rm` are
-  denied by `rm`. An `allow` rule must match the part as written, so `ls`
-  does not allow `sudo ls`.
-- `sh -c`, `bash -c` and `zsh -c` with a literal string: the string is split
-  and checked like a command line of its own. With anything else (a
-  variable, a substitution) the part asks.
+  `builtin`, `exec`, `nice`, `nohup`, `time`, `timeout`, `xargs`, `watch`,
+  `setsid`, `stdbuf`, `ionice` — are looked through for `deny` and `ask`
+  rules: every word after the wrapper is tried as the start of the wrapped
+  command, so `sudo -u root rm -rf /`, `timeout 10 rm x` and `xargs rm` are
+  denied by `rm`, whatever options the wrapper has. An `allow` rule must
+  match the part as written, so `ls` does not allow `sudo ls`.
+- `sh -c`, `bash -c`, `zsh -c`, `dash -c` and `ksh -c` (also with joined
+  flags such as `-ec`) with a literal string: the string is split and
+  checked like a command line of its own, and the shell part itself only
+  against `deny` and `ask` rules. With anything else (a variable, a
+  substitution) the part asks.
+- A command name that is only known when the command runs (`$CMD x`,
+  `` `which ls` ``) asks, unless a `deny` or `ask` rule matches the part.
 - Order matters only among words, not among rules: a more specific `allow`
   never beats a broader `deny` or `ask`. To allow `cargo` except
   `cargo publish`, deny or ask for `cargo publish`, or use `except`.
@@ -224,7 +238,7 @@ matched on its own, word by word. **(assumption)**
 |---------|---------|----------------|
 | `ls` | `ls`, `ls -la src` | `lsof`, `sudo ls` (for `allow`) |
 | `ls*` | `ls`, `lsof -i`, `lsblk` | `cat ls` |
-| `rm` | `rm x`, `rm -rf /`, `/bin/rm x`, `sudo rm x` (for `deny`) | `rmdir x` |
+| `rm` | `rm x`, `rm -rf /`; for `deny` and `ask` also `/bin/rm x`, `sudo rm x`, `FOO=1 rm x` | `rmdir x` |
 | `git push` | `git push`, `git push -f origin` | `git pull`, `git status` |
 | `git ** --force` | `git push --force`, `git push origin main --force` | `git push -f` |
 | `cargo {build,test}` | `cargo build --release`, `cargo test parse` | `cargo run` |
@@ -240,18 +254,30 @@ part that asks makes it ask. So `cargo test && rm -rf /` is not allowed by
 `cargo test`, and is denied by `rm`.
 
 A pattern with `|`, like `curl ** | sh`, is the exception: it is matched
-against a pipeline as a whole, part by part in order, and only `deny` and
-`ask` rules may use it. **(assumption)**
+against a pipeline as a whole, and only `deny` and `ask` rules may use it.
+Its pieces must match consecutive commands of one pipeline, in order, each
+like a `deny` rule does (file name, wrappers): `curl ** | sh` matches
+`cat x | curl -d @- y | sudo sh`. The result applies to the first command
+of the pipeline. **(assumption)**
+
+Shell keywords at the start of a part are skipped, so the commands inside
+`if`, `while` and `{ }` are checked: `if test -f x; then rm x; fi` has the
+parts `test -f x` and `rm x`. **(assumption)**
 
 Redirections are taken off the part before matching. Redirection to a file
-(`> out.txt`, `>> log`, `2> err`) is checked as a `write_file` call on that
-path, with the same boundary and rules; `/dev/null` and redirections between
-file descriptors (`2>&1`) are always allowed. Redirection from a file
-(`< in.txt`) is checked as a `read_file` call.
+(`> out.txt`, `>> log`, `2> err`, `&> all`) is checked as a `write_file`
+call on that path, with the same boundary and rules; `~/` is expanded as the
+shell does. `/dev/null`, `/dev/stdout`, `/dev/stderr`, `/dev/stdin`,
+`/dev/tty` and redirections between file descriptors (`2>&1`) are always
+allowed. Redirection from a file (`< in.txt`) is checked as a `read_file`
+call. A redirection whose file is only known when the command runs
+(`> $OUT`) asks.
 
-If a command cannot be split safely (unsupported syntax such as here
-documents, `eval`, unbalanced quotes), it asks, and the question says why; a
-`deny` rule that matches the start of the text still denies. **(assumption)**
+If a command cannot be split safely, it asks, and the question says why; a
+`deny` rule that matches the start of the text still denies. Not split
+safely are: here documents, `for`, `case`, `select`, `function`, `coproc`,
+`eval`, `trap`, function definitions, and unbalanced quotes, parentheses or
+backticks. **(assumption)**
 
 ### Checking order
 
@@ -338,6 +364,19 @@ In `clai run` (one-shot) the question is asked on the terminal when standard
 input is one. Without a terminal, or with `--no-ask`, `ask` is treated as
 `deny`. `--yes` turns `ask` into `allow` for that run; `deny` rules and the
 workspace boundary still apply. See [`command.md`](command.md).
+
+## Limits
+
+```toml
+[limits]
+max_requests   = 50     # model requests per turn before the limit question
+max_tool_calls = 120    # tool calls per turn before the limit question
+```
+
+Both keys are 1–10000. A project file may set them too; for each key the
+lower of the user and the project value is used. What they count and what
+happens at the limit: [`agent-loop.md`](agent-loop.md), "Limits".
+**(assumption)**
 
 ## Commit
 
@@ -515,7 +554,8 @@ It is an error when:
 - a provider or model name is empty or contains `/`;
 - a model has no `id` or `context_window`, or a number is out of range:
   `context_window` and `max_output_tokens` at least 1, `timeout_s` 1–86400,
-  `max_retries` 0–100, `temperature` 0–2, `tui.max_fps` 1–120;
+  `max_retries` 0–100, `temperature` 0–2, `tui.max_fps` 1–120,
+  `limits.max_requests` and `limits.max_tool_calls` 1–10000;
 - `commit.model`, `tui.theme`, `CLAI_MODEL` or `CLAI_THEME` names something
   that is not defined;
 - a key in `[permissions.allow]`, `[permissions.ask]` or

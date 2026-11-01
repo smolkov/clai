@@ -30,7 +30,8 @@ Statements marked **(assumption)** need a decision from the user.
   are an error result that names the problem; the tool does not run.
 - An unknown tool name is an error result that lists the tools.
 - Several tool calls in one answer run one after another, in the order the
-  model sent them. **(assumption; details in `agent-loop.md`)**
+  model sent them (see [`agent-loop.md`](agent-loop.md), "Tool calls").
+  **(assumption)**
 
 ### Paths
 
@@ -79,9 +80,19 @@ checks, and which rule `a` ("always") proposes in the TUI prompt.
 | `run_command` | each part of the command; redirection targets as `write_file` / `read_file` | — | each part not yet allowed, with all its words; then fewer words, down to the first word, e.g. `run_command(cargo test parse)`, `run_command(cargo test)`, `run_command(cargo)` |
 
 `DIR` is the directory of `PATH`, and wider steps go up one directory at a
-time, up to the workspace. A path outside the workspace is proposed as an
-absolute pattern. `a` never proposes a bare tool rule (`run_command`); the
-user may type one.
+time, up to the workspace (`./**`); a file in the workspace itself is
+proposed as `./NAME`, so the rule does not match that name in other
+directories. A path in an extra directory is proposed as an absolute
+pattern, up to that directory. Glob characters in names are put in brackets
+(`a[*]b.rs`), so a proposed rule matches only what it names. `a` never
+proposes a bare tool rule (`run_command`); the user may type one.
+
+For `run_command`, one proposal is a set of rules added together: one for
+each part that asks, and a `write_file` or `read_file` rule for each
+redirection that asks. There is no proposal when an `ask` rule decided or a
+part cannot be checked (see [`config.md`](config.md), "Commands with
+several parts"), because no allow rule would change the answer.
+**(assumption)**
 
 Checks while a tool runs keep a listing or search from showing what reading
 would not:
@@ -91,7 +102,10 @@ would not:
   that would ask are listed.
 - `search_files` skips files whose `read_file` check is `deny` or `ask`, and
   does not ask for each of them. The result ends with a line
-  `(3 files skipped by permission rules; read them with read_file to be asked)`.
+  `(3 files skipped by permission rules; read them with read_file to be asked)`,
+  also when nothing matched. Directories that a `read_file` `deny` rule
+  matches are not entered; their files are not counted. A symbolic link
+  to a file is checked where it points, including the workspace boundary.
 - Entries left out this way are not counted in the 1000-entry and 200-match
   limits.
 
@@ -138,7 +152,14 @@ line range instead. **(assumption)**
 | Denied by the user (`n`) | `denied by the user` |
 | Denied with a message (`e`) | `denied by the user: <message>` |
 | `ask` without a client that can answer (`clai run` without a terminal) | `denied: needs permission, and no one can answer` |
-| Turn cancelled before or while the call ran | `cancelled by the user` (with the output so far, for `run_command`) |
+| Turn cancelled before or while the call ran | `cancelled by the user` (with the output so far, for `run_command`, `list_files` and `search_files`) |
+
+### Cancellation
+
+`run_command` stops as described below. `list_files` and `search_files`
+check for cancellation between files and return what they found so far
+with `cancelled by the user`. `read_file`, `edit_file` and `write_file` are
+short and finish; their result is still recorded. **(assumption)**
 
 ### Display
 
@@ -181,8 +202,9 @@ arrow:
   `(file has 120 lines)`.
 
 Errors: file not found (with up to three similar names in the same
-directory, if any), path is a directory (use `list_files`), binary file,
-permission denied by the operating system.
+directory: the same name ignoring case, or at most two letters different,
+added or missing; closest first), path is a directory (use `list_files`),
+binary file, permission denied by the operating system.
 
 Shown: path and line range; expanded: the returned lines.
 
@@ -305,7 +327,7 @@ Errors:
 
 | Case | Message |
 |------|---------|
-| `old_text` not found | `old_text not found in src/parse.rs`; if a match that differs only in whitespace exists, it is quoted with its line number. |
+| `old_text` not found | `old_text not found in src/parse.rs`; if a match that differs only in whitespace exists, it is quoted with its line number: the first place where the same number of lines, with runs of whitespace taken as one space, equals `old_text` (or, for one line, contains it). |
 | Found more than once, without `replace_all` | `old_text occurs 3 times (lines 12, 40, 41); add surrounding text to make it unique, or set replace_all` |
 | `old_text` empty, or equal to `new_text` | says so; to create a file, use `write_file` |
 | File not found, binary, or not valid UTF-8 | says so |
@@ -344,7 +366,8 @@ Result: `created tests/parse_single_line.rs (12 lines)` or
 `replaced src/a.rs (40 lines, was 38)`.
 
 Errors: path is a directory, existing file without `overwrite`, a parent
-path is a file, permission denied by the operating system.
+path is a file (`src is a file, not a directory`), permission denied by the
+operating system.
 
 Shown: path and line count; expanded: content or diff.
 
@@ -377,6 +400,10 @@ Runs a shell command in the workspace and returns its output.
   cancelled, the group gets `SIGTERM`, and `SIGKILL` 2 s later (see
   [`tui.md`](tui.md), "Cancellation and exit"). Background processes the
   command started are stopped with it.
+- When the shell exits, processes it left in the background get 0.5 s to
+  finish writing output, then the whole group is stopped. So
+  `sleep 30 & echo hi` returns at once; a server started with `&` does not
+  outlive the call. **(assumption)**
 - Standard output and standard error are collected together, in the order
   they were written.
 - The permission question shows the command exactly as it will run, with the
@@ -391,6 +418,7 @@ keeps both the first error and the final summary of a build.
   the output is the same.
 - A timeout gives the output so far and `stopped after 120 s (timeout)`,
   as an error.
+- A command ended by a signal gives `killed by signal 9`, as an error.
 - A command that cannot be started (no `sh`) is an error.
 
 Shown: the command; expanded: command, working directory and output.

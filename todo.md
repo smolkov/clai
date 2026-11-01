@@ -17,17 +17,16 @@ Milestones and their order: [`implementation.md`](implementation.md).
 
 - [x] Load user file, project file, `CLAI_MODEL` / `CLAI_THEME`; precedence.
 - [x] Validation with file:line errors; project-file restrictions.
-- [x] Permissions loading and merging (matching: Tools and permissions).
+- [x] Permissions loading and merging.
 - [x] `[tui]` and `[themes]` validation (colours used by the TUI later).
 - [x] Model references with short form.
 - [x] API keys from env or `api_key_cmd`, never shown.
 - [x] `clai models`, `--json`.
 - [ ] Reload on file change (moved to Server and sessions).
-- [ ] Glob syntax check of rule patterns (moved to Tools and permissions).
-- [ ] Permissions loading follows the new spec: `[permissions.allow|ask|deny]`
-  tables, `[[permissions.rules]]`, `extra_dirs` tables (moved to Tools and
-  permissions; the loader still reads the old `allow = [...]` lists).
-- [ ] Limit keys (need `spec/agent-loop.md`).
+- [x] Glob syntax check of rule patterns (done in Tools and permissions).
+- [x] `[permissions.allow|ask|deny]` tables, `[[permissions.rules]]`,
+      `extra_dirs` tables (done in Tools and permissions).
+- [ ] Limit keys `[limits]` (moved to Agent loop).
 
 ## Shell completion
 
@@ -45,10 +44,23 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [x] Live tests (`cargo test --test live -- --ignored`).
 - [ ] Static musl build check (moved to Release; target not installed).
 
+## Tools and permissions
+
+- [x] Rule loading with sources (file:line), groups, detailed rules,
+      `except`, `message`, read-only `extra_dirs`.
+- [x] Path resolution (links, `..`, dangling links) and the workspace boundary.
+- [x] Path patterns; command patterns with wrappers, assignments, `**`,
+      pipelines; shell parser for parts, substitutions, redirections.
+- [x] Checking order, decisions with reasons, denial texts.
+- [x] Session rules and proposals for "always"; `accept_rules`.
+- [x] The six tools with question details, result size limits.
+- [x] `run_command`: process group, timeout, cancellation, background
+      processes stopped.
+- [ ] Questions on the wire and the TUI prompt (Agent loop, Server, TUI).
+
 ## Next milestones
 
-- [ ] Tools and permissions (spec: `spec/tools.md`)
-- [ ] Agent loop (needs `spec/agent-loop.md`)
+- [ ] Agent loop (spec: `spec/agent-loop.md`)
 - [ ] One-shot mode
 - [ ] Server and sessions
 - [ ] TUI core
