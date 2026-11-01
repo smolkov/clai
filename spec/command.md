@@ -195,15 +195,15 @@ conversation.
 
 ```
 ── clai · ~/ws/rust/clai · q17 · 12:04 ──────────────────────────────────
-run_command: cargo build && ./deploy.sh
+run_command: cargo build && ./deploy.sh staging
   in       ~/ws/rust/clai, timeout 120 s
-  part 1   cargo build    allow  run_command(cargo build)  config.toml:12
-  part 2   ./deploy.sh    ask    default for run_command
+  part 1   cargo build          allow  allow run_command(cargo build)  config.toml:28
+  part 2   ./deploy.sh staging  ask    default for run_command
   model    "Build passes; deploying to staging now."
 [y] allow  [a] always  [n] deny  [e] deny with message  [c] cancel turn
 > a
-  1  run_command(./deploy.sh)
-  2  run_command(./deploy.sh *)
+  1  run_command(./deploy.sh staging)
+  2  run_command(./deploy.sh)
 rule [1]>
 ```
 

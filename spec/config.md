@@ -59,29 +59,13 @@ What each tool checks (which path, which parts of a command) is described in
 
 ```toml
 [permissions]
-# Action for each tool when no rule below matches.
+# Action for each tool when no rule matches.
 read_file      = "allow"
 list_files     = "allow"
 search_files   = "allow"
 edit_file      = "ask"
 write_file     = "ask"
 run_command    = "ask"
-
-# Short rules: "TOOL" or "TOOL(PATTERN)". TOOL may be a group (read, edit).
-allow = [
-  "run_command(cargo build)",
-  "run_command(cargo test *)",
-  "run_command(git status)",
-  "edit_file(src/**)",
-]
-ask = [
-  "edit(Cargo.toml)",
-]
-deny = [
-  "run_command(git push *)",
-  "run_command(rm -rf *)",
-  "edit(.git/**)",
-]
 
 # Directories outside the workspace the file tools may use. Absolute, or
 # starting with ~/. Default: none.
@@ -90,20 +74,46 @@ extra_dirs = [
   { path = "~/ws/docs", access = "read" },        # read only
 ]
 
-# Detailed rules: several patterns, exceptions, a message for the model.
+# Rules, grouped by action. Key: a tool or a group; value: its patterns.
+[permissions.allow]
+run_command = [
+  "ls", "cat", "head", "wc", "grep", "rg",
+  "cargo build", "cargo test", "cargo clippy", "cargo fmt",
+  "git status", "git diff", "git log", "git show",
+]
+edit = ["src/**", "tests/**"]
+
+[permissions.ask]
+run_command = ["git push", "git commit", "cargo publish"]
+edit        = ["Cargo.toml", ".github/**"]
+
+[permissions.deny]
+run_command = [
+  "rm", "sudo", "curl ** | sh",
+  "git push --force", "git push -f", "git reset --hard", "git clean",
+]
+edit = [".git/**"]
+read = [".env*", "secrets/**", "~/.ssh/**"]
+
+# Detailed rules: exceptions and a message for the model.
 [[permissions.rules]]
 action  = "deny"
 tools   = ["read"]
-paths   = [".env*", "secrets/**", "~/.ssh/**"]
+paths   = [".env*"]
 except  = [".env.example"]
 message = "Secrets are not shown to the model. Ask the user for the value you need."
 
 [[permissions.rules]]
 action   = "allow"
 tools    = ["run_command"]
-commands = ["cargo *", "git diff *", "git log *", "git show *"]
-except   = ["cargo publish *", "cargo install *"]
+commands = ["cargo"]
+except   = ["cargo publish", "cargo install", "cargo login"]
 ```
+
+With these settings `ls -la src` and `cargo test parse --release` run
+without asking, `git push origin main` asks, and `rm -rf target`,
+`git push --force` and `sudo make install` are denied. A command that no
+rule names, e.g. `make`, asks (the `run_command` default).
 
 ### Tool defaults
 
@@ -122,28 +132,39 @@ the group. Groups are only allowed in rules, not as tool keys.
 | `read` | `read_file`, `list_files`, `search_files` |
 | `edit` | `edit_file`, `write_file` |
 
-So `deny = ["read(secrets/**)"]` keeps files below `secrets/` out of reading,
-listing and searching alike.
+So `read = ["secrets/**"]` in `[permissions.deny]` keeps files below
+`secrets/` out of reading, listing and searching alike.
 
 ### Rules
 
-A short rule is `TOOL` (every call of that tool) or `TOOL(PATTERN)`, written
-in the `allow`, `ask` or `deny` list. A detailed rule is a
-`[[permissions.rules]]` table:
+Rules are written in one of two forms:
 
-| Key | Required | Meaning |
-|-----|----------|---------|
-| `action` | yes | `allow`, `ask` or `deny`. |
-| `tools` | yes | Tool names and groups, at least one. Either only file tools, or only `run_command`. |
-| `paths` | no | Path patterns, for file tools. Omitted: every path. |
-| `commands` | no | Command patterns, for `run_command`. Omitted: every command. |
-| `except` | no | Patterns of the same kind; when one of them matches, the rule does not apply. |
-| `message` | no | For `deny`: sent to the model with the denial. For `ask`: shown in the prompt and sent to the model if the user denies. Not allowed for `allow`. |
+- **By action:** the tables `[permissions.allow]`, `[permissions.ask]` and
+  `[permissions.deny]`. Each key is a tool or a group, each value a list of
+  patterns. `"**"` as a path pattern, or `"*"` as a command pattern,
+  matches every call of the tool.
+- **Detailed:** a `[[permissions.rules]]` table, for exceptions and
+  messages:
 
-A rule matches a call when its tool is one of `tools`, one of its patterns
-matches (or it has none), and none of `except` matches. The short rule
-`deny = ["edit_file(src/**)"]` is the same as a detailed rule with
-`action = "deny"`, `tools = ["edit_file"]`, `paths = ["src/**"]`.
+  | Key | Required | Meaning |
+  |-----|----------|---------|
+  | `action` | yes | `allow`, `ask` or `deny`. |
+  | `tools` | yes | Tool names and groups, at least one. Either only file tools, or only `run_command`. |
+  | `paths` | no | Path patterns, for file tools. Omitted: every path. |
+  | `commands` | no | Command patterns, for `run_command`. Omitted: every command. |
+  | `except` | no | Patterns of the same kind; when one of them matches, the rule does not apply. |
+  | `message` | no | For `deny`: sent to the model with the denial. For `ask`: shown in the question and sent to the model if the user denies. Not allowed for `allow`. |
+
+A rule matches a call when its tool is one of its tools, one of its patterns
+matches (or it has none), and none of `except` matches. Each pattern in the
+action tables is a rule of its own: `run_command = ["rm", "sudo"]` in
+`[permissions.deny]` is the same as two detailed rules with
+`action = "deny"`, `tools = ["run_command"]` and `commands = ["rm"]` or
+`["sudo"]`.
+
+Rules are shown, in questions, denials, `/permissions` and logs, in the
+notation `ACTION TOOL(PATTERN)`, e.g. `deny run_command(rm)` or
+`ask edit(Cargo.toml)`.
 
 #### Path patterns
 
@@ -165,18 +186,49 @@ case-sensitive. A trailing `/` is not allowed. **(assumption)**
 
 For `run_command`. A command line is first split into its parts (see
 [Commands with several parts](#commands-with-several-parts)); each part is
-matched on its own.
+matched on its own, word by word. **(assumption)**
 
-- A pattern matches the whole text of a part, with leading and trailing
-  space removed and runs of unquoted space taken as one space. Quotes are
-  kept as written: `git commit -m "x"` is matched with its quotes.
-- `*` matches any characters, including spaces. A pattern that ends in
-  ` *` also matches the command without arguments: `cargo test *` matches
-  `cargo test` and `cargo test parse --release`. **(assumption)**
-- Variable assignments before a command are part of its text:
-  `cargo test *` does not match `RUST_LOG=debug cargo test`.
-- `git *` matches `git push --force` too; name the subcommands you mean
-  (`git diff *`, `git log *`) or add `except` patterns.
+- The part is split into words like the shell does: quotes and backslashes
+  are removed, so `git commit -m "fix parse"` has the words `git`, `commit`,
+  `-m`, `fix parse`. The pattern is split the same way.
+- A pattern matches when its words match the **first** words of the part.
+  Further words are allowed: `git push` matches `git push`,
+  `git push origin main` and `git push --force`; `rm` matches every `rm`
+  command. It does not match `git status` or `rmdir`.
+- Each pattern word is a glob over one word: `*` any characters, `?` one
+  character, `[abc]`, `{a,b}`. So `ls*` matches `ls`, `lsof` and `lsblk`;
+  `cargo {build,check}` matches both subcommands; `*` alone matches every
+  command.
+- The word `**` matches any number of words, also none, so a pattern can
+  name words further on: `git ** --force` matches `git push origin --force`;
+  `find ** -delete` and `find ** -exec` catch those uses of `find`.
+- The first word also matches by its file name: `rm` matches `/bin/rm` and
+  `./rm`. A pattern whose first word contains `/` matches only that path.
+- Variable assignments before a command (`RUST_LOG=debug cargo test`) are
+  words too. They are skipped for `deny` and `ask` rules, so `rm` still
+  denies `FOO=1 rm -rf x`; an `allow` rule matches only if it names them
+  (`RUST_LOG=* cargo test`).
+- Wrappers that run another command — `sudo`, `doas`, `env`, `command`,
+  `exec`, `nice`, `nohup`, `time`, `timeout`, `xargs`, `watch` — are looked
+  through for `deny` and `ask` rules: `sudo rm -rf /` and `xargs rm` are
+  denied by `rm`. An `allow` rule must match the part as written, so `ls`
+  does not allow `sudo ls`.
+- `sh -c`, `bash -c` and `zsh -c` with a literal string: the string is split
+  and checked like a command line of its own. With anything else (a
+  variable, a substitution) the part asks.
+- Order matters only among words, not among rules: a more specific `allow`
+  never beats a broader `deny` or `ask`. To allow `cargo` except
+  `cargo publish`, deny or ask for `cargo publish`, or use `except`.
+
+| Pattern | Matches | Does not match |
+|---------|---------|----------------|
+| `ls` | `ls`, `ls -la src` | `lsof`, `sudo ls` (for `allow`) |
+| `ls*` | `ls`, `lsof -i`, `lsblk` | `cat ls` |
+| `rm` | `rm x`, `rm -rf /`, `/bin/rm x`, `sudo rm x` (for `deny`) | `rmdir x` |
+| `git push` | `git push`, `git push -f origin` | `git pull`, `git status` |
+| `git ** --force` | `git push --force`, `git push origin main --force` | `git push -f` |
+| `cargo {build,test}` | `cargo build --release`, `cargo test parse` | `cargo run` |
+| `*` | every command | — |
 
 #### Commands with several parts
 
@@ -185,7 +237,11 @@ Commands that contain several commands (`;`, `&&`, `||`, `|`, `&`, newline,
 inside the substitutions. Every part is checked on its own, and the call gets
 the strictest result of its parts: one denied part denies the whole call, one
 part that asks makes it ask. So `cargo test && rm -rf /` is not allowed by
-`run_command(cargo test *)`.
+`cargo test`, and is denied by `rm`.
+
+A pattern with `|`, like `curl ** | sh`, is the exception: it is matched
+against a pipeline as a whole, part by part in order, and only `deny` and
+`ask` rules may use it. **(assumption)**
 
 Redirections are taken off the part before matching. Redirection to a file
 (`> out.txt`, `>> log`, `2> err`) is checked as a `write_file` call on that
@@ -194,8 +250,8 @@ file descriptors (`2>&1`) are always allowed. Redirection from a file
 (`< in.txt`) is checked as a `read_file` call.
 
 If a command cannot be split safely (unsupported syntax such as here
-documents, `eval`, unbalanced quotes), it asks, and the prompt says why; a
-`deny` rule that matches the whole text still denies. **(assumption)**
+documents, `eval`, unbalanced quotes), it asks, and the question says why; a
+`deny` rule that matches the start of the text still denies. **(assumption)**
 
 ### Checking order
 
@@ -212,14 +268,14 @@ For a call:
    (see below): allow.
 5. Otherwise the tool's default action.
 
-Short and detailed rules, and the rules of the user and the project file, are
-all checked together; their order in the files does not matter. To make an
+Rules from the action tables and detailed rules, and the rules of the user
+and the project file, are all checked together; their order in the files does not matter. To make an
 exception to a `deny` or `ask` rule, use `except`: an `allow` rule never
 overrides them.
 
 The rule that decided is kept with the decision, with its source (file and
 line, or "session"). The permission prompt shows why it asks, e.g.
-`asks: rule edit(Cargo.toml) (config.toml:24)` or `asks: default for
+`asks: rule ask edit(Cargo.toml) (config.toml:31)` or `asks: default for
 edit_file`; a denial tells the model which rule denied (see
 [`tools.md`](tools.md), "Denied and cancelled calls"). `/permissions` lists
 all rules with their source.
@@ -247,7 +303,7 @@ Limiting commands needs a sandbox (open question 5 in
 Pressing `a` ("always") in a TUI permission prompt adds an allow rule to the
 session. The prompt proposes the narrowest rule, e.g. `run_command(cargo test
 parse)` or `edit_file(src/parse.rs)`, and the user may widen it before
-confirming, e.g. to `run_command(cargo test *)` or `edit_file(src/**)`. What
+confirming, e.g. to `run_command(cargo test)` or `edit_file(src/**)`. What
 each tool proposes is described in [`tools.md`](tools.md), "Permissions".
 
 Session rules are shown with `/permissions` and end with the session; they
@@ -259,10 +315,11 @@ configuration still win over session rules.
 A project file may only make permissions stricter, because it comes with the
 repository:
 
-- It may set tool keys to `ask` or `deny`, and add `ask` and `deny` rules,
-  short or detailed, with `except` and `message`.
-- It may not set a tool key to `allow`, add `allow` rules, or set
-  `extra_dirs`. Such a file is rejected with an error naming the file and key.
+- It may set tool keys to `ask` or `deny`, and add rules in
+  `[permissions.ask]` and `[permissions.deny]` or detailed `ask` and `deny`
+  rules, with `except` and `message`.
+- It may not set a tool key to `allow`, have a `[permissions.allow]` table,
+  add detailed `allow` rules, or set `extra_dirs`. Such a file is rejected with an error naming the file and key.
 - Its rules are added to the user file's rules; for a tool key, the stricter
   value wins (`deny` over `ask` over `allow`).
 
@@ -461,8 +518,10 @@ It is an error when:
   `max_retries` 0–100, `temperature` 0–2, `tui.max_fps` 1–120;
 - `commit.model`, `tui.theme`, `CLAI_MODEL` or `CLAI_THEME` names something
   that is not defined;
-- a permission rule names an unknown tool or group, is not of the form
-  `TOOL` or `TOOL(PATTERN)`, or has an empty or invalid pattern;
+- a key in `[permissions.allow]`, `[permissions.ask]` or
+  `[permissions.deny]` is not a tool or group, its value is not a list of
+  strings, or a pattern is empty or invalid;
+- a command pattern has unbalanced quotes, or uses `|` in an `allow` rule;
 - a detailed rule has no `action` or `tools`, mixes file tools and
   `run_command`, has `paths` for `run_command` or `commands` for file tools,
   or has a `message` with `action = "allow"`;

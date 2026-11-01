@@ -187,7 +187,7 @@ The TUI:
 | Key   | Action |
 |-------|--------|
 | `y`   | Allow this call once. |
-| `a`   | Allow this call and add an allow rule for the session. The prompt bar shows the proposed rule (this command, this file); `Tab` widens it step by step (e.g. `cargo test *`, `src/**`), `Enter` confirms, `Esc` goes back. See [`config.md`](config.md), "Session rules". |
+| `a`   | Allow this call and add an allow rule for the session. The prompt bar shows the proposed rule (this command, this file); `Tab` widens it step by step (e.g. `cargo test`, `src/**`), `Enter` confirms, `Esc` goes back. See [`config.md`](config.md), "Session rules". |
 | `n`   | Deny; the model is told the call was denied. |
 | `e`   | Deny and type a short message to the model explaining why or what to do instead. |
 | `Esc` | Deny and cancel the turn. |

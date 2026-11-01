@@ -24,6 +24,9 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [x] `clai models`, `--json`.
 - [ ] Reload on file change (moved to Server and sessions).
 - [ ] Glob syntax check of rule patterns (moved to Tools and permissions).
+- [ ] Permissions loading follows the new spec: `[permissions.allow|ask|deny]`
+  tables, `[[permissions.rules]]`, `extra_dirs` tables (moved to Tools and
+  permissions; the loader still reads the old `allow = [...]` lists).
 - [ ] Limit keys (need `spec/agent-loop.md`).
 
 ## Shell completion

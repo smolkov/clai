@@ -76,7 +76,7 @@ checks, and which rule `a` ("always") proposes in the TUI prompt.
 | `search_files` | `path` | each file, with the `read_file` rules | `search_files(PATH/**)` |
 | `edit_file` | `path` | — | `edit_file(PATH)`, `edit_file(DIR/**)`, `edit(DIR/**)` |
 | `write_file` | `path` | — | `write_file(PATH)`, `write_file(DIR/**)`, `edit(DIR/**)` |
-| `run_command` | each part of the command; redirection targets as `write_file` / `read_file` | — | each part not yet allowed, as written; then its first two words and ` *`, e.g. `run_command(cargo test *)` |
+| `run_command` | each part of the command; redirection targets as `write_file` / `read_file` | — | each part not yet allowed, with all its words; then fewer words, down to the first word, e.g. `run_command(cargo test parse)`, `run_command(cargo test)`, `run_command(cargo)` |
 
 `DIR` is the directory of `PATH`, and wider steps go up one directory at a
 time, up to the workspace. A path outside the workspace is proposed as an
@@ -130,9 +130,9 @@ line range instead. **(assumption)**
 
 | Case | Result for the model (error) |
 |------|------------------------------|
-| Denied by a `deny` rule | `denied by permission rule: run_command(git push *)`; with the rule's `message`: `denied by permission rule: read(.env*): Secrets are not shown …` |
+| Denied by a `deny` rule | `denied by permission rule: deny run_command(git push --force)`; with the rule's `message`: `denied by permission rule: deny read(.env*): Secrets are not shown …` |
 | Denied by a tool default | `denied: run_command is not allowed` |
-| One part of a command denied | `denied by permission rule: run_command(rm -rf *), for the part "rm -rf target"` |
+| One part of a command denied | `denied by permission rule: deny run_command(rm), for the part "rm -rf target"` |
 | Path outside the workspace | `denied: /etc/passwd is outside the workspace` |
 | Write into a read-only extra directory | `denied: ~/ws/docs is read-only` |
 | Denied by the user (`n`) | `denied by the user` |

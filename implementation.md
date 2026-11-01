@@ -184,6 +184,12 @@ including a TLS check that needs only network.
 - Permission checking in the order of `config.md`: boundary (including
   read-only extra dirs), deny, ask, allow, default; session rules; the
   deciding rule and its source kept with the decision.
+- Loading `[permissions.allow]`, `[permissions.ask]`, `[permissions.deny]`
+  (tool or group → patterns) in place of the old `allow = [...]` lists.
+- Word-based command patterns: shell-like word splitting, prefix match,
+  per-word globs, `**` for any words, file name of the first word,
+  assignments and wrappers (`sudo`, `env`, `xargs`, …) looked through for
+  `deny`/`ask`, `sh -c` strings checked recursively, pipeline patterns.
 - Command splitting for `;`, `&&`, `||`, `|`, `&`, `$( )`, backticks,
   subshells; redirection targets checked as `write_file` / `read_file`;
   anything not split safely asks.
@@ -193,7 +199,9 @@ including a TLS check that needs only network.
 Tests: each tool in a temp dir; path escapes (`..`, symlinks) denied; rule
 order; `except`; name-only, relative and absolute path patterns; project-file
 merge; a table of command lines and their split parts, including the
-`cargo test && rm -rf /` and `echo x > ~/.bashrc` cases; `search_files`
+`cargo test && rm -rf /` and `echo x > ~/.bashrc` cases; a table of command
+patterns and parts that match or not (`ls*`, `rm` vs `rmdir`, `sudo rm`,
+`git ** --force`, `sh -c "rm x"`); `search_files`
 skipping denied files.
 
 Spec: [`spec/tools.md`](spec/tools.md).
