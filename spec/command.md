@@ -300,7 +300,7 @@ local/qwen        qwen3-coder:30b     32k
 
 `--json` prints an array of objects with `model`, `provider`, `name`, `id`,
 `context_window`, `max_output_tokens` (or `null`), `default` and `key`
-(`env`, `missing`, `command` or `none`). **(assumption)**
+(`config`, `env`, `missing`, `command` or `none`). **(assumption)**
 
 | Option | Meaning |
 |--------|---------|

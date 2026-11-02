@@ -141,7 +141,7 @@ installed yet).
 - Reject unknown keys, providers/`[tui]`/`[themes]` in project files, and
   permission loosening in project files, with file:line errors.
 - Model references `provider/model` and the short form.
-- API key from `api_key_env` / `api_key_cmd`, resolved on first use, never
+- API key from `api_key` / `api_key_env` / `api_key_cmd`, resolved on first use, never
   logged (wrapper type whose `Debug` prints `***`).
 - No user file: explanation and example, exit `2`.
 - `clai models` (with `--json`).

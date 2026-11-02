@@ -12,6 +12,10 @@ use std::time::{Duration, Instant};
 pub struct ApiKey(String);
 
 impl ApiKey {
+    pub(crate) fn new(key: String) -> Self {
+        ApiKey(key)
+    }
+
     pub fn expose(&self) -> &str {
         &self.0
     }
@@ -34,6 +38,8 @@ impl fmt::Display for ApiKey {
 pub enum KeySource {
     /// No key; requests are sent without one.
     None,
+    /// The key itself, written in the user config file.
+    Value(ApiKey),
     /// Name of an environment variable.
     Env(String),
     /// Shell command whose output is the key.
@@ -45,6 +51,8 @@ pub enum KeySource {
 pub enum KeyStatus {
     /// No key configured.
     None,
+    /// The key is written in the config file.
+    Config,
     /// The environment variable is set.
     Env,
     /// The environment variable is not set or empty.
@@ -57,6 +65,7 @@ impl KeyStatus {
     pub fn name(self) -> &'static str {
         match self {
             KeyStatus::None => "none",
+            KeyStatus::Config => "config",
             KeyStatus::Env => "env",
             KeyStatus::Missing => "missing",
             KeyStatus::Command => "command",
@@ -71,6 +80,7 @@ impl KeySource {
     pub fn status(&self, getenv: impl Fn(&str) -> Option<String>) -> KeyStatus {
         match self {
             KeySource::None => KeyStatus::None,
+            KeySource::Value(_) => KeyStatus::Config,
             KeySource::Env(name) => match getenv(name) {
                 Some(v) if !v.is_empty() => KeyStatus::Env,
                 _ => KeyStatus::Missing,
@@ -87,6 +97,7 @@ impl KeySource {
     ) -> Result<Option<ApiKey>, String> {
         match self {
             KeySource::None => Ok(None),
+            KeySource::Value(key) => Ok(Some(key.clone())),
             KeySource::Env(name) => match getenv(name) {
                 Some(v) if !v.is_empty() => Ok(Some(ApiKey(v))),
                 _ => Err(format!("environment variable {name} is not set")),
@@ -189,6 +200,15 @@ mod tests {
         assert_eq!(source.status(no_env), KeyStatus::Missing);
         assert_eq!(source.status(|_| Some(String::new())), KeyStatus::Missing);
         assert!(source.resolve(no_env, KEY_CMD_TIMEOUT).is_err());
+    }
+
+    #[test]
+    fn value_key() {
+        let source = KeySource::Value(ApiKey::new("sk-cfg".into()));
+        assert_eq!(source.status(no_env), KeyStatus::Config);
+        let key = source.resolve(no_env, KEY_CMD_TIMEOUT).unwrap().unwrap();
+        assert_eq!(key.expose(), "sk-cfg");
+        assert!(!format!("{source:?}").contains("sk-cfg"));
     }
 
     #[test]

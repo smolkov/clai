@@ -43,6 +43,7 @@ pub struct ProjectFile {
 pub struct ProviderFile {
     pub api: Option<Spanned<String>>,
     pub base_url: Option<Spanned<String>>,
+    pub api_key: Option<Spanned<String>>,
     pub api_key_env: Option<Spanned<String>>,
     pub api_key_cmd: Option<Spanned<String>>,
     pub timeout_s: Option<Spanned<i64>>,

@@ -512,14 +512,16 @@ context_window = 32768
 |----------------|----------|---------|
 | `api`          | yes      | API type: `anthropic` or `openai-compatible`. Decides which adapter encodes requests and decodes answers, see [`providers.md`](providers.md). **(assumption: these two first)** |
 | `base_url`     | no       | API address. Default: the official address of the API type. Required for `openai-compatible`. |
+| `api_key`      | no       | The API key itself. Only for a user file that nobody else can read; prefer `api_key_env` or `api_key_cmd`. Must not be empty. |
 | `api_key_env`  | no       | Name of the environment variable that holds the API key. |
 | `api_key_cmd`  | no       | Command whose output is the API key, e.g. `pass show anthropic`. Run with `sh -c` once when the provider is first used; it must finish within 30 s. The trailing newline is removed. Empty output or a non-zero exit is an error that shows the command's standard error. **(assumption)** |
 | `timeout_s`    | no       | Request timeout in seconds. Default 300. |
 | `max_retries`  | no       | Retries for network errors and rate limits. Default 3. |
 
-At most one of `api_key_env` and `api_key_cmd` is set. With neither, requests
-are sent without a key. The key itself is never stored in a config file and
-never written to a log or shown in the TUI.
+At most one of `api_key`, `api_key_env` and `api_key_cmd` is set. With none,
+requests are sent without a key. Providers, and so `api_key`, are only allowed
+in the user file, never in a project file. The key is never written to a log
+or shown in the TUI.
 
 ### Model keys
 
@@ -548,7 +550,8 @@ It is an error when:
 
 - no provider or no model is defined;
 - `default_model` is missing or does not name a defined model;
-- a provider has an unknown `api`, or both `api_key_env` and `api_key_cmd`;
+- a provider has an unknown `api`, more than one of `api_key`, `api_key_env`
+  and `api_key_cmd`, or an empty `api_key`;
 - an `openai-compatible` provider has no `base_url`;
 - `base_url` does not start with `http://` or `https://`;
 - a provider or model name is empty or contains `/`;

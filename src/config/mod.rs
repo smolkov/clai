@@ -554,18 +554,32 @@ fn build_providers(
                 parsed
             }
         };
-        let key_source = match (&file.api_key_env, &file.api_key_cmd) {
-            (Some(_), Some(_)) => {
+        let sources = [&file.api_key, &file.api_key_env, &file.api_key_cmd]
+            .iter()
+            .filter(|s| s.is_some())
+            .count();
+        let key_source = if sources > 1 {
+            errors.push(err(
+                span.clone(),
+                key.clone(),
+                "set only one of api_key, api_key_env and api_key_cmd".into(),
+            ));
+            KeySource::None
+        } else if let Some(value) = &file.api_key {
+            if value.get_ref().is_empty() {
                 errors.push(err(
-                    span.clone(),
-                    key.clone(),
-                    "set only one of api_key_env and api_key_cmd".into(),
+                    value.span(),
+                    format!("{key}.api_key"),
+                    "must not be empty".into(),
                 ));
-                KeySource::None
             }
-            (Some(var), None) => KeySource::Env(var.get_ref().clone()),
-            (None, Some(cmd)) => KeySource::Cmd(cmd.get_ref().clone()),
-            (None, None) => KeySource::None,
+            KeySource::Value(ApiKey::new(value.get_ref().clone()))
+        } else if let Some(var) = &file.api_key_env {
+            KeySource::Env(var.get_ref().clone())
+        } else if let Some(cmd) = &file.api_key_cmd {
+            KeySource::Cmd(cmd.get_ref().clone())
+        } else {
+            KeySource::None
         };
         let base_url = match (&file.base_url, api) {
             (Some(url), _) => {

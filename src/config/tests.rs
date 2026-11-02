@@ -197,7 +197,7 @@ timeout_s = 0
     );
     let expect = [
         "providers.bad.api: unknown api `gemini`",
-        "providers.both: set only one of api_key_env and api_key_cmd",
+        "providers.both: set only one of api_key, api_key_env and api_key_cmd",
         "providers.open: missing base_url (required for openai-compatible)",
         "providers.url.base_url: `localhost` must start with http:// or https://",
         "providers.url.timeout_s: 0 is not in 1–86400",
@@ -257,6 +257,26 @@ fn key_cmd() {
         config.providers["anthropic"].key,
         KeySource::Cmd("pass show anthropic".into())
     );
+}
+
+#[test]
+fn key_value() {
+    let config = ok(&BASE.replace(
+        "api_key_env = \"ANTHROPIC_API_KEY\"",
+        "api_key = \"sk-ant-test\"",
+    ));
+    let key = &config.providers["anthropic"].key;
+    assert_eq!(key, &KeySource::Value(ApiKey::new("sk-ant-test".into())));
+    assert!(!format!("{config:?}").contains("sk-ant-test"));
+}
+
+#[test]
+fn key_value_empty() {
+    let e = errs(
+        &BASE.replace("api_key_env = \"ANTHROPIC_API_KEY\"", "api_key = \"\""),
+        None,
+    );
+    assert_eq!(e.len(), 1, "{e:?}");
 }
 
 #[test]
