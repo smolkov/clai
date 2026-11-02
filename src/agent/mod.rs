@@ -15,7 +15,7 @@ mod stream;
 mod tests;
 
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex};
 
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
@@ -34,6 +34,7 @@ pub use question::{
     PolicyAsker, Question, QuestionKind, Reply, SessionRef, TurnInfo,
 };
 
+use crate::sync::lock;
 use stream::{StreamEnd, Streamed};
 
 /// The result for calls not run because the turn stopped at its limit.
@@ -63,14 +64,11 @@ impl ModelHandle {
     }
 
     pub fn get(&self) -> (Arc<dyn Provider>, Model) {
-        self.0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
+        lock(&self.0).clone()
     }
 
     pub fn set(&self, provider: Arc<dyn Provider>, model: Model) {
-        *self.0.lock().unwrap_or_else(PoisonError::into_inner) = (provider, model);
+        *lock(&self.0) = (provider, model);
     }
 }
 
@@ -81,18 +79,15 @@ pub struct CancelReason(Arc<Mutex<Option<String>>>);
 
 impl CancelReason {
     pub fn set(&self, why: impl Into<String>) {
-        *self.0.lock().unwrap_or_else(PoisonError::into_inner) = Some(why.into());
+        *lock(&self.0) = Some(why.into());
     }
 
     fn get(&self) -> Option<String> {
-        self.0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
+        lock(&self.0).clone()
     }
 
     fn take(&self) -> Option<String> {
-        self.0.lock().unwrap_or_else(PoisonError::into_inner).take()
+        lock(&self.0).take()
     }
 }
 
@@ -706,7 +701,7 @@ where
                 } else {
                     Err(format!(
                         "`{}` is not an answer to this question",
-                        choice_name(answer.choice())
+                        answer.choice().name()
                     ))
                 };
                 if let Err(message) = &checked {
@@ -735,13 +730,6 @@ where
         state: State::Working,
     });
     result
-}
-
-fn choice_name(choice: Choice) -> String {
-    serde_json::to_value(choice)
-        .ok()
-        .and_then(|v| v.as_str().map(str::to_owned))
-        .unwrap_or_default()
 }
 
 /// The tool calls of an answer, each with the text before it.

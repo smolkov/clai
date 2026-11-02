@@ -14,13 +14,14 @@ use serde_json::Value;
 use tokio::sync::mpsc;
 
 use crate::agent::{Answer, Question, now_secs};
-use crate::client::{Client, Connect, runtime};
+use crate::client::{Client, Connect};
 use crate::command::ls::age;
 use crate::complete;
 use crate::config::{self, Environment, LoadOptions, Symbols};
 use crate::error::{Error, Result};
 use crate::output::write_stdout;
 use crate::protocol::{Request, SessionInfo};
+use crate::runtime::current_thread;
 
 /// Words that make `clai chat NAME CHOICE` the script form.
 const CHOICES: [&str; 6] = ["allow", "always", "deny", "cancel", "continue", "stop"];
@@ -136,7 +137,7 @@ impl Chat {
     }
 
     fn list(&self, config: Option<&Path>, names: &[String]) -> Result<()> {
-        let sessions = runtime()?.block_on(async {
+        let sessions = current_thread()?.block_on(async {
             let mut client = Client::connect(&Connect::chat(config, false)).await?;
             client.list().await
         })?;
@@ -227,7 +228,7 @@ fn list_lines(questions: &[(&SessionInfo, &Question)], now: u64) -> String {
 }
 
 fn script(config: Option<&Path>, name: &str, answer: Answer, id: Option<&str>) -> Result<()> {
-    runtime()?.block_on(async {
+    current_thread()?.block_on(async {
         let mut client = Client::connect(&Connect::chat(config, false)).await?;
         let sessions = client.list().await?;
         let session = sessions
@@ -255,14 +256,6 @@ fn script(config: Option<&Path>, name: &str, answer: Answer, id: Option<&str>) -
             .await
             .map(|_| ())
     })
-}
-
-/// The name of a choice as written in answers: `allow`, `deny_message`.
-fn choice_name(answer: &Answer) -> String {
-    serde_json::to_value(answer.choice())
-        .ok()
-        .and_then(|v| v.as_str().map(str::to_owned))
-        .unwrap_or_default()
 }
 
 /// Reads lines from standard input on a thread, one per request, so that
@@ -420,14 +413,5 @@ mod tests {
                 "{words:?}"
             );
         }
-    }
-
-    #[test]
-    fn choice_names() {
-        assert_eq!(choice_name(&Answer::Allow), "allow");
-        assert_eq!(
-            choice_name(&Answer::DenyMessage { text: "x".into() }),
-            "deny_message"
-        );
     }
 }

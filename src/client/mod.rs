@@ -16,6 +16,7 @@ use crate::protocol::{
     self, ClientHello, ClientKind, ClientMessage, Outcome, Payload, Request, ServerHello,
     ServerMessage, SessionInfo, VERSION,
 };
+use crate::runtime::current_thread;
 use crate::server::{runtime_dir, socket_path, version_mismatch};
 
 /// How long a started server may take until it accepts connections.
@@ -204,10 +205,7 @@ async fn start(options: &Connect, socket: &Path) -> Result<UnixStream> {
         workspace: options.dir.clone(),
         env: Environment::from_process(),
     })?;
-    let exe = std::env::current_exe().map_err(|source| Error::Io {
-        context: "path of clai".to_owned(),
-        source,
-    })?;
+    let exe = std::env::current_exe().map_err(Error::io("path of clai"))?;
     let mut command = Command::new(exe);
     if let Some(file) = &options.config_file {
         command.arg("--config").arg(file);
@@ -217,10 +215,7 @@ async fn start(options: &Connect, socket: &Path) -> Result<UnixStream> {
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
-    let mut child = command.spawn().map_err(|source| Error::Io {
-        context: "starting the server".to_owned(),
-        source,
-    })?;
+    let mut child = command.spawn().map_err(Error::io("starting the server"))?;
     tracing::info!(pid = child.id(), "server started");
     let deadline = Instant::now() + START_TIMEOUT;
     loop {
@@ -247,17 +242,6 @@ async fn start(options: &Connect, socket: &Path) -> Result<UnixStream> {
     }
 }
 
-/// A runtime for a client command.
-pub fn runtime() -> Result<tokio::runtime::Runtime> {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|source| Error::Io {
-            context: "async runtime".to_owned(),
-            source,
-        })
-}
-
 /// Runs `f` with a client connected as a terminal command.
 pub fn with_client<T>(
     config_file: Option<&Path>,
@@ -265,7 +249,7 @@ pub fn with_client<T>(
     f: impl AsyncFnOnce(&mut Client) -> Result<T>,
 ) -> Result<T> {
     let options = Connect::cli(config_file, start);
-    runtime()?.block_on(async move {
+    current_thread()?.block_on(async move {
         let mut client = Client::connect(&options).await?;
         f(&mut client).await
     })

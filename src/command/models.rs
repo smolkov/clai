@@ -17,10 +17,7 @@ pub struct Models {
 
 impl Models {
     pub fn run(&self, config_file: Option<&Path>) -> Result<()> {
-        let workspace = std::env::current_dir().map_err(|source| Error::Io {
-            context: "current directory".to_owned(),
-            source,
-        })?;
+        let workspace = std::env::current_dir().map_err(Error::io("current directory"))?;
         let config = config::load(&LoadOptions {
             config_file: config_file.map(Path::to_path_buf),
             workspace,

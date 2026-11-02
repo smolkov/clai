@@ -86,16 +86,10 @@ pub async fn create(client: &mut Client, request: Request) -> Result<Box<Session
 pub fn workspace(dir: Option<&Path>) -> Result<PathBuf> {
     let dir = match dir {
         Some(dir) => dir.to_path_buf(),
-        None => std::env::current_dir().map_err(|source| Error::Io {
-            context: "current directory".to_owned(),
-            source,
-        })?,
+        None => std::env::current_dir().map_err(Error::io("current directory"))?,
     };
     if !dir.is_dir() {
         return Err(Error::Usage(format!("{}: not a directory", dir.display())));
     }
-    std::path::absolute(&dir).map_err(|source| Error::Io {
-        context: dir.display().to_string(),
-        source,
-    })
+    std::path::absolute(&dir).map_err(Error::io(dir.display().to_string()))
 }

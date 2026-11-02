@@ -42,7 +42,7 @@ pub fn sessions(current: &OsStr) -> Vec<CompletionCandidate> {
     let Some(current) = current.to_str() else {
         return Vec::new();
     };
-    let Ok(runtime) = crate::client::runtime() else {
+    let Ok(runtime) = crate::runtime::current_thread() else {
         return Vec::new();
     };
     let options = Connect::cli(None, false);

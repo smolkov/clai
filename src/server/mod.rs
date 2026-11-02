@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 
 use nix::fcntl::{Flock, FlockArg};
@@ -26,6 +26,7 @@ use crate::protocol::{
 use crate::provider::{self, Provider};
 use crate::session::store::{self, Meta, Store};
 use crate::session::{ClientId, Outbox, SessionHandle};
+use crate::sync::lock;
 
 pub use paths::{lock_path, prepare, runtime_dir, socket_path};
 
@@ -114,11 +115,6 @@ struct Shared {
     stop: CancellationToken,
 }
 
-/// A poisoned lock means a bug in another task; the data is still usable.
-fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(PoisonError::into_inner)
-}
-
 fn stamp(path: &Path) -> Option<(SystemTime, u64)> {
     let meta = std::fs::metadata(path).ok()?;
     Some((meta.modified().ok()?, meta.len()))
@@ -136,10 +132,8 @@ fn error_lines(e: &Error) -> Vec<String> {
 /// runs or the configuration is invalid.
 pub async fn serve(options: Options) -> Result<()> {
     prepare(&options.dir)?;
-    let lock_file = File::create(lock_path(&options.dir)).map_err(|source| Error::Io {
-        context: lock_path(&options.dir).display().to_string(),
-        source,
-    })?;
+    let lock_file = File::create(lock_path(&options.dir))
+        .map_err(Error::io(lock_path(&options.dir).display().to_string()))?;
     let _lock = match Flock::lock(lock_file, FlockArg::LockExclusiveNonblock) {
         Ok(lock) => lock,
         Err((_, nix::errno::Errno::EWOULDBLOCK)) => {
@@ -177,10 +171,7 @@ pub async fn serve(options: Options) -> Result<()> {
             });
         }
     }
-    let listener = UnixListener::bind(&socket).map_err(|source| Error::Io {
-        context: socket.display().to_string(),
-        source,
-    })?;
+    let listener = UnixListener::bind(&socket).map_err(Error::io(socket.display().to_string()))?;
     tracing::info!(socket = %socket.display(), pid = std::process::id(), "server started");
 
     let shared = Arc::new(Shared {

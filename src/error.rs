@@ -56,6 +56,15 @@ pub enum Error {
 }
 
 impl Error {
+    /// For `map_err`: an I/O error, with what was being read or written.
+    pub fn io(context: impl Into<String>) -> impl Fn(io::Error) -> Error {
+        let context = context.into();
+        move |source| Error::Io {
+            context: context.clone(),
+            source,
+        }
+    }
+
     /// Process exit code for this error (see `spec/command.md`, "Exit codes").
     pub fn exit_code(&self) -> u8 {
         match self {

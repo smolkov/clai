@@ -45,10 +45,7 @@ pub fn registration(shell: &str, completer: &str) -> Result<String> {
     let mut buf = Vec::new();
     env_completer
         .write_registration(COMPLETE_ENV, "clai", "clai", completer, &mut buf)
-        .map_err(|source| Error::Io {
-            context: "completion script".to_owned(),
-            source,
-        })?;
+        .map_err(Error::io("completion script"))?;
     Ok(String::from_utf8_lossy(&buf).into_owned())
 }
 

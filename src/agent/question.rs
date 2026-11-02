@@ -22,6 +22,21 @@ pub enum Choice {
     Stop,
 }
 
+impl Choice {
+    /// The name as written in answers: `allow`, `deny_message`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Choice::Allow => "allow",
+            Choice::AllowAlways => "allow_always",
+            Choice::Deny => "deny",
+            Choice::DenyMessage => "deny_message",
+            Choice::Cancel => "cancel",
+            Choice::Continue => "continue",
+            Choice::Stop => "stop",
+        }
+    }
+}
+
 pub const PERMISSION_CHOICES: [Choice; 5] = [
     Choice::Allow,
     Choice::AllowAlways,
@@ -194,5 +209,22 @@ impl Asker for PolicyAsker {
 
     fn reject(&self, _question: &Question, _by: &str, message: &str) {
         tracing::warn!("policy answer rejected: {message}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn choice_names_match_the_wire() {
+        for choice in PERMISSION_CHOICES.iter().chain(&LIMIT_CHOICES) {
+            assert_eq!(
+                serde_json::to_value(choice).unwrap(),
+                serde_json::Value::from(choice.name())
+            );
+        }
+        assert_eq!(Choice::Continue.name(), "continue");
+        assert_eq!(Choice::Stop.name(), "stop");
     }
 }

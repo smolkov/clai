@@ -1,6 +1,8 @@
 //! Adapters over real HTTP against a small local test server.
 
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex};
+
+use crate::sync::lock;
 use std::time::{Duration, Instant};
 
 use futures_util::StreamExt;
@@ -71,10 +73,7 @@ struct Server {
 
 impl Server {
     fn requests(&self) -> usize {
-        self.seen
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .len()
+        lock(&self.seen).len()
     }
 }
 
@@ -125,14 +124,11 @@ async fn serve(replies: Vec<Reply>) -> Server {
                     data.extend_from_slice(&buf[..n]);
                 }
                 let body = serde_json::from_slice(&data[head_end..head_end + length]).unwrap();
-                record
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .push(Seen {
-                        path,
-                        headers,
-                        body,
-                    });
+                lock(&record).push(Seen {
+                    path,
+                    headers,
+                    body,
+                });
 
                 if reply.silent {
                     tokio::time::sleep(Duration::from_secs(60)).await;

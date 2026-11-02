@@ -1,7 +1,7 @@
 //! A provider that replays a script, for tests of the agent loop.
 
 use std::collections::VecDeque;
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::Mutex;
 
 use futures_util::stream::{self, StreamExt};
 use tokio_util::sync::CancellationToken;
@@ -10,6 +10,7 @@ use super::error::ProviderError;
 use super::remote::error_stream;
 use super::types::{Event, Request};
 use super::{EventStream, Provider};
+use crate::sync::lock;
 
 /// The answer to one request: events and errors, in order.
 pub type Answer = Vec<Result<Event, ProviderError>>;
@@ -33,11 +34,6 @@ impl Fake {
     pub fn requests(&self) -> Vec<Request> {
         lock(&self.requests).clone()
     }
-}
-
-/// A poisoned lock only means another test thread panicked; the data is fine.
-fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 impl Provider for Fake {

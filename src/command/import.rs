@@ -21,10 +21,8 @@ pub struct Import {
 
 impl Import {
     pub fn run(&self, config: Option<&Path>) -> Result<()> {
-        let path = std::path::absolute(&self.file).map_err(|source| Error::Io {
-            context: self.file.display().to_string(),
-            source,
-        })?;
+        let path =
+            std::path::absolute(&self.file).map_err(Error::io(self.file.display().to_string()))?;
         let request = Request::Import {
             path,
             name: self.name.clone(),

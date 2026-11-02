@@ -2,7 +2,7 @@
 //! "clai chat").
 
 use std::io::{BufRead, Write};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex};
 
 use futures_util::future::BoxFuture;
 
@@ -10,6 +10,7 @@ use crate::agent::{Asker, Question, Reply};
 
 use super::dialog::{Dialog, Step};
 use super::question::render_question;
+use crate::sync::lock;
 
 type Input = Arc<Mutex<Box<dyn BufRead + Send>>>;
 type Output = Arc<Mutex<Box<dyn Write + Send>>>;
@@ -61,7 +62,7 @@ impl Asker for LineAsker {
 
 impl LineAsker {
     fn write(&self, text: &str) {
-        let mut out = self.output.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut out = lock(&self.output);
         let _ = out.write_all(text.as_bytes());
         let _ = out.flush();
     }
@@ -70,7 +71,7 @@ impl LineAsker {
     fn read(&self, prompt: &str) -> Option<String> {
         self.write(prompt);
         let mut line = String::new();
-        let mut input = self.input.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut input = lock(&self.input);
         match input.read_line(&mut line) {
             Ok(0) | Err(_) => None,
             Ok(_) => Some(line.trim().to_owned()),

@@ -27,10 +27,7 @@ impl Send {
             let mut text = String::new();
             std::io::stdin()
                 .read_to_string(&mut text)
-                .map_err(|source| Error::Io {
-                    context: "standard input".to_owned(),
-                    source,
-                })?;
+                .map_err(Error::io("standard input"))?;
             text
         } else {
             self.message.join(" ")

@@ -29,16 +29,13 @@ pub fn lock_path(dir: &Path) -> PathBuf {
 /// Creates the directory with mode `0700`, or checks that an existing one
 /// belongs to the user and is not a link, then sets its mode to `0700`.
 pub fn prepare(dir: &Path) -> Result<()> {
-    let io_err = |source: io::Error| Error::Io {
-        context: dir.display().to_string(),
-        source,
-    };
+    let io_err = Error::io(dir.display().to_string());
     match DirBuilder::new().mode(0o700).recursive(true).create(dir) {
         Ok(()) => {}
         Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {}
         Err(e) => return Err(io_err(e)),
     }
-    let meta = fs::symlink_metadata(dir).map_err(io_err)?;
+    let meta = fs::symlink_metadata(dir).map_err(&io_err)?;
     if !meta.is_dir() {
         return Err(Error::Failed(format!("{}: not a directory", dir.display())));
     }
@@ -49,7 +46,7 @@ pub fn prepare(dir: &Path) -> Result<()> {
         )));
     }
     if meta.mode() & 0o777 != 0o700 {
-        fs::set_permissions(dir, fs::Permissions::from_mode(0o700)).map_err(io_err)?;
+        fs::set_permissions(dir, fs::Permissions::from_mode(0o700)).map_err(&io_err)?;
     }
     Ok(())
 }

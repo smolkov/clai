@@ -7,6 +7,7 @@ use crate::config::Action;
 use crate::permissions::Decision;
 use crate::tools::{Details, PathDetails, group};
 
+use super::ansi::{diff_colour, paint};
 use super::cut;
 
 /// New file content shown before `… N more lines`.
@@ -27,11 +28,6 @@ pub struct Style {
     /// Whether `v` shows cut content in a pager.
     pub pager: bool,
 }
-
-const GREEN: &str = "\x1b[32m";
-const RED: &str = "\x1b[31m";
-const CYAN: &str = "\x1b[36m";
-const RESET: &str = "\x1b[0m";
 
 /// The question and its choices; `place` is the workspace as shown
 /// (`~/ws/rust/clai`).
@@ -257,20 +253,7 @@ fn diff_block(out: &mut String, text: &str, colour: bool) {
         return;
     }
     for line in text.lines() {
-        let colour = if line.starts_with("@@") {
-            CYAN
-        } else if line.starts_with('+') {
-            GREEN
-        } else if line.starts_with('-') {
-            RED
-        } else {
-            ""
-        };
-        if colour.is_empty() {
-            let _ = writeln!(out, "    {line}");
-        } else {
-            let _ = writeln!(out, "    {colour}{line}{RESET}");
-        }
+        let _ = writeln!(out, "    {}", paint(diff_colour(line), line, true));
     }
 }
 

@@ -8,12 +8,13 @@ use clap::{Args, Subcommand};
 use tokio::signal::unix::{SignalKind, signal};
 use tokio_util::sync::CancellationToken;
 
-use crate::client::{Client, Connect, runtime, unexpected};
+use crate::client::{Client, Connect, unexpected};
 use crate::config::{Environment, LoadOptions};
 use crate::error::{Error, Result};
 use crate::log;
 use crate::output::write_stdout;
 use crate::protocol::{Payload, Request};
+use crate::runtime::current_thread;
 use crate::server::{self, Options, runtime_dir};
 
 /// How long `stop` waits for the server to end its sessions.
@@ -86,13 +87,7 @@ fn foreground(config: Option<&Path>, detached: bool) -> Result<()> {
         },
     );
     let stop = options.stop.clone();
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-        .map_err(|source| Error::Io {
-            context: "async runtime".to_owned(),
-            source,
-        })?;
+    let runtime = crate::runtime::multi_thread()?;
     let result = runtime.block_on(async move {
         watch_signals(stop, detached)?;
         server::serve(options).await
@@ -102,12 +97,7 @@ fn foreground(config: Option<&Path>, detached: bool) -> Result<()> {
 }
 
 fn watch_signals(stop: CancellationToken, detached: bool) -> Result<()> {
-    let listen = |kind: SignalKind| {
-        signal(kind).map_err(|source| Error::Io {
-            context: "signal handler".to_owned(),
-            source,
-        })
-    };
+    let listen = |kind: SignalKind| signal(kind).map_err(Error::io("signal handler"));
     let mut int = listen(SignalKind::interrupt())?;
     let mut term = listen(SignalKind::terminate())?;
     let mut hup = listen(SignalKind::hangup())?;
@@ -130,7 +120,7 @@ fn watch_signals(stop: CancellationToken, detached: bool) -> Result<()> {
 }
 
 fn status(config: Option<&Path>) -> Result<()> {
-    let result = runtime()?.block_on(async {
+    let result = current_thread()?.block_on(async {
         let mut client = Client::connect(&Connect::cli(config, false)).await?;
         match client.request(Request::Status).await? {
             Payload::Status(status) => Ok(status),
@@ -160,7 +150,7 @@ fn status(config: Option<&Path>) -> Result<()> {
 }
 
 fn stop(config: Option<&Path>, force: bool) -> Result<()> {
-    runtime()?.block_on(async {
+    current_thread()?.block_on(async {
         let mut client = Client::connect(&Connect::cli(config, false)).await?;
         // Sessions stay saved; only work in progress is interrupted.
         let busy = match client.request(Request::Status).await? {
@@ -195,9 +185,6 @@ fn confirm(busy: usize) -> Result<bool> {
     io::stdin()
         .lock()
         .read_line(&mut line)
-        .map_err(|source| Error::Io {
-            context: "standard input".to_owned(),
-            source,
-        })?;
+        .map_err(Error::io("standard input"))?;
     Ok(matches!(line.trim(), "y" | "Y" | "yes"))
 }

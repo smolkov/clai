@@ -176,14 +176,17 @@ clai/
 │   ├── tui/                    full-screen interface                     planned
 │   ├── text/                   plain-text output for clai run and clai chat
 │   │   ├── events.rs           tool lines, notices, the final answer
+│   │   ├── ansi.rs             colours, used when the terminal has them
 │   │   ├── conversation.rs     a conversation as streamed text (clai chat)
 │   │   ├── question.rs         questions as text, colour, pager hint
 │   │   ├── dialog.rs           answering a question line by line
 │   │   ├── asker.rs            `LineAsker`: answers read as lines
 │   │   └── tests.rs
 │   ├── output.rs               writing command results to standard output
-│   ├── log.rs                  logging to a file
-│   └── error.rs                crate error type
+│   ├── log.rs                  logging to a file, the state directory
+│   ├── runtime.rs              async runtimes of the commands
+│   ├── sync.rs                 locking without panics
+│   └── error.rs                crate error type, `Error::io`
 │
 └── tests/                      tests of the binary and live tests
     ├── cli.rs, completion.rs, models.rs

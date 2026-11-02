@@ -5,14 +5,8 @@ use std::collections::{HashMap, VecDeque};
 
 use crate::agent::{CallState, SessionEvent};
 
+use super::ansi::{BOLD, DIM, GREEN, RED, YELLOW, paint};
 use super::events::tool_line;
-
-const GREEN: &str = "\x1b[32m";
-const RED: &str = "\x1b[31m";
-const YELLOW: &str = "\x1b[33m";
-const DIM: &str = "\x1b[2m";
-const BOLD: &str = "\x1b[1m";
-const RESET: &str = "\x1b[0m";
 
 /// Turns session events into text. Questions are not shown here; the
 /// chat shows them with its dialog.
@@ -58,11 +52,7 @@ impl Conversation {
     }
 
     fn paint(&self, colour: &str, text: &str) -> String {
-        if self.colour {
-            format!("{colour}{text}{RESET}")
-        } else {
-            text.to_owned()
-        }
+        paint(colour, text, self.colour)
     }
 
     /// The text this event adds; `replay` for events from the log.

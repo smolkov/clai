@@ -52,16 +52,13 @@ pub fn init() -> Result<PathBuf> {
 }
 
 fn open(path: &PathBuf) -> Result<File> {
-    let io_err = |source| Error::Io {
-        context: format!("cannot open log file {}", path.display()),
-        source,
-    };
+    let io_err = Error::io(format!("cannot open log file {}", path.display()));
     if let Some(dir) = path.parent() {
-        fs::create_dir_all(dir).map_err(io_err)?;
+        fs::create_dir_all(dir).map_err(&io_err)?;
     }
     OpenOptions::new()
         .create(true)
         .append(true)
         .open(path)
-        .map_err(io_err)
+        .map_err(&io_err)
 }

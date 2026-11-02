@@ -22,10 +22,8 @@ pub struct Export {
 
 impl Export {
     pub fn run(&self, config: Option<&Path>) -> Result<()> {
-        let path = std::path::absolute(&self.file).map_err(|source| Error::Io {
-            context: self.file.display().to_string(),
-            source,
-        })?;
+        let path =
+            std::path::absolute(&self.file).map_err(Error::io(self.file.display().to_string()))?;
         let request = Request::Export {
             session: self.name.clone(),
             path,

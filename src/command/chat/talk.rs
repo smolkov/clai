@@ -1,22 +1,23 @@
 //! `clai chat [NAME]`: a conversation with one session in the terminal.
 //! Lines typed are messages; the session's questions are answered inline.
 
-use std::io::{self, IsTerminal, Write};
+use std::io::{self, Write};
 use std::path::Path;
 use std::time::{Duration, Instant};
 
 use tokio::signal::unix::{SignalKind, signal};
 
 use crate::agent::{Closed, Question, SessionEvent, State};
-use crate::client::{Client, Connect, runtime, unexpected};
+use crate::client::{Client, Connect, unexpected};
 use crate::command::new::create;
 use crate::error::{Error, Result};
 use crate::protocol::{Notice, Payload, Request, ServerMessage, SessionInfo};
+use crate::runtime::current_thread;
 use crate::text::{
-    Conversation, Dialog, Step, Style, full_content, render_question_styled, unicode,
+    Conversation, Dialog, Step, Style, Terminal, full_content, render_question_styled,
 };
 
-use super::{Lines, choice_name, pager, symbols};
+use super::{Lines, pager, symbols};
 
 /// A second `Ctrl-C` within this time detaches.
 const DOUBLE_INTERRUPT: Duration = Duration::from_secs(1);
@@ -40,9 +41,8 @@ pub enum Target {
 }
 
 pub fn talk(config: Option<&Path>, target: Target) -> Result<()> {
-    let unicode = unicode(symbols(config), |name| std::env::var(name).ok());
-    let colour = io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none();
-    runtime()?.block_on(async {
+    let Terminal { unicode, colour } = Terminal::detect(symbols(config));
+    current_thread()?.block_on(async {
         let mut client = Client::connect(&Connect::chat(config, true)).await?;
         let name = match target {
             Target::Attach { name, model } => {
@@ -162,10 +162,8 @@ impl Talk {
     }
 
     async fn run(mut self) -> Result<()> {
-        let mut interrupts = signal(SignalKind::interrupt()).map_err(|source| Error::Io {
-            context: "signal handler".to_owned(),
-            source,
-        })?;
+        let mut interrupts =
+            signal(SignalKind::interrupt()).map_err(Error::io("signal handler"))?;
         loop {
             self.lines.want();
             let flow = tokio::select! {
@@ -275,7 +273,7 @@ impl Talk {
                     self.dialog = None;
                     let text = match closed {
                         Closed::Answered { answer, by } => {
-                            format!("answered in {by}: {}", choice_name(answer))
+                            format!("answered in {by}: {}", answer.choice().name())
                         }
                         Closed::Cancelled => "question closed: the turn was cancelled".to_owned(),
                         Closed::NoOne => "question closed".to_owned(),

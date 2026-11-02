@@ -3,7 +3,7 @@
 use std::io::{self, IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU8, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use clap::{Args, ValueHint};
@@ -18,6 +18,7 @@ use crate::error::{Error, Result};
 use crate::output::write_stdout;
 use crate::permissions::{SessionRules, Workspace};
 use crate::provider;
+use crate::sync::lock;
 use crate::text::{LineAsker, Renderer, unicode};
 use crate::tools::Env;
 
@@ -66,10 +67,7 @@ impl Run {
             let mut text = String::new();
             io::stdin()
                 .read_to_string(&mut text)
-                .map_err(|source| Error::Io {
-                    context: "standard input".to_owned(),
-                    source,
-                })?;
+                .map_err(Error::io("standard input"))?;
             text
         } else {
             self.task.join(" ")
@@ -86,10 +84,7 @@ impl Run {
 
         let workspace = match &self.dir {
             Some(dir) => dir.clone(),
-            None => std::env::current_dir().map_err(|source| Error::Io {
-                context: "current directory".to_owned(),
-                source,
-            })?,
+            None => std::env::current_dir().map_err(Error::io("current directory"))?,
         };
         if !workspace.is_dir() {
             return Err(Error::Usage(format!(
@@ -113,10 +108,7 @@ impl Run {
         let provider = provider::from_config(provider_config)
             .map_err(|e| Error::Failed(format!("provider {}: {e}", provider_config.name)))?;
         let workspace = Workspace::new(&workspace, &config.permissions.extra_dirs, env.home)
-            .map_err(|source| Error::Io {
-                context: workspace.display().to_string(),
-                source,
-            })?;
+            .map_err(Error::io(workspace.display().to_string()))?;
         let place = workspace.tilde(workspace.root());
         let unicode = unicode(config.tui.symbols, |name| std::env::var(name).ok());
         let setup = Setup {
@@ -142,13 +134,7 @@ impl Run {
                 unicode,
             )),
         };
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .map_err(|source| Error::Io {
-                context: "async runtime".to_owned(),
-                source,
-            })?;
+        let runtime = crate::runtime::multi_thread()?;
         let result = runtime.block_on(turn(Agent::new(setup), task, asker, unicode));
         // A question may still wait for a line on standard input.
         runtime.shutdown_timeout(Duration::from_millis(100));
@@ -177,10 +163,7 @@ async fn turn(mut agent: Agent, task: String, asker: Box<dyn Asker>, unicode: bo
     let sink = {
         let renderer = renderer.clone();
         EventSink::call(move |event| {
-            let text = renderer
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .event(&event);
+            let text = lock(&renderer).event(&event);
             if !text.is_empty() {
                 let mut stderr = io::stderr().lock();
                 let _ = stderr.write_all(text.as_bytes());
@@ -197,12 +180,7 @@ async fn turn(mut agent: Agent, task: String, asker: Box<dyn Asker>, unicode: bo
     }
     match end.reason {
         EndReason::Done => {
-            let answer = renderer
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .answer()
-                .unwrap_or_default()
-                .to_owned();
+            let answer = lock(&renderer).answer().unwrap_or_default().to_owned();
             if answer.is_empty() {
                 Ok(())
             } else if answer.ends_with('\n') {
@@ -219,12 +197,7 @@ async fn turn(mut agent: Agent, task: String, asker: Box<dyn Asker>, unicode: bo
 /// `SIGINT`, `SIGTERM` and `SIGHUP` cancel the turn. Later signals are
 /// ignored while it stops, so no command is left running.
 fn watch_signals(cancel: CancellationToken, stopped: Arc<AtomicU8>) -> Result<()> {
-    let listen = |kind: SignalKind| {
-        signal(kind).map_err(|source| Error::Io {
-            context: "signal handler".to_owned(),
-            source,
-        })
-    };
+    let listen = |kind: SignalKind| signal(kind).map_err(Error::io("signal handler"));
     let mut int = listen(SignalKind::interrupt())?;
     let mut term = listen(SignalKind::terminate())?;
     let mut hup = listen(SignalKind::hangup())?;

@@ -121,6 +121,17 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [x] Tests: store, in-process restarts, binary resume.
 - [ ] Bound the event log (in memory and on disk) for very long sessions.
 
+## Refactoring
+
+- [x] A: `Choice::name`, `text::ansi`, `text::Terminal`, `sync::lock`,
+      `Error::io`, `runtime` (no behaviour change).
+- [ ] B: session registry type, `Meta::info`, question state machine in
+      the session, agent split, shared chat answering, `paths`, `signals`.
+- [ ] C: shared test tools (model server, `Env`, fake provider), split
+      server tests.
+- [ ] D (to decide): split `SessionEvent`, typed store errors, one text
+      renderer.
+
 ## Next milestones
 
 - [ ] TUI core

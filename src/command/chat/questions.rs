@@ -2,16 +2,17 @@
 //! without their conversations.
 
 use std::collections::HashMap;
-use std::io::{self, IsTerminal, Write};
+use std::io::{self, Write};
 use std::path::Path;
 
 use crate::agent::{Closed, Question, SessionEvent};
-use crate::client::{Client, Connect, runtime, unexpected};
+use crate::client::{Client, Connect, unexpected};
 use crate::error::{Error, Result};
 use crate::protocol::{Notice, Payload, Request, ServerMessage, SessionInfo};
-use crate::text::{Dialog, Step, Style, full_content, render_question_styled, unicode};
+use crate::runtime::current_thread;
+use crate::text::{Dialog, Step, Style, Terminal, full_content, render_question_styled};
 
-use super::{Lines, choice_name, pager, symbols};
+use super::{Lines, pager, symbols};
 
 /// A question waiting to be shown.
 struct Open {
@@ -35,9 +36,8 @@ struct Interactive {
 }
 
 pub fn questions(config: Option<&Path>, names: &[String]) -> Result<()> {
-    let unicode = unicode(symbols(config), |name| std::env::var(name).ok());
-    let colour = io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none();
-    runtime()?.block_on(async {
+    let Terminal { unicode, colour } = Terminal::detect(symbols(config));
+    current_thread()?.block_on(async {
         let mut client = Client::connect(&Connect::chat(config, true)).await?;
         let all = client.list().await?;
         let chosen: Vec<&SessionInfo> = if names.is_empty() {
@@ -203,7 +203,7 @@ impl Interactive {
                 if shown {
                     let text = match closed {
                         Closed::Answered { answer, by } => {
-                            format!("\nanswered in {by}: {}\n", choice_name(&answer))
+                            format!("\nanswered in {by}: {}\n", answer.choice().name())
                         }
                         Closed::Cancelled => "\nclosed: the turn was cancelled\n".to_owned(),
                         Closed::NoOne => "\nclosed\n".to_owned(),
