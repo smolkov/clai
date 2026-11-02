@@ -4,6 +4,8 @@ pub mod attach;
 pub mod chat;
 pub mod commit;
 pub mod completion;
+pub mod export;
+pub mod import;
 pub mod kill;
 pub mod ls;
 pub mod models;
@@ -28,6 +30,8 @@ impl Command {
             Command::Kill(_) => "kill",
             Command::Send(_) => "send",
             Command::Chat(_) => "chat",
+            Command::Export(_) => "export",
+            Command::Import(_) => "import",
             Command::Models(_) => "models",
             Command::Commit(_) => "commit",
             Command::Server(server) => server.name(),
@@ -45,6 +49,8 @@ impl Command {
             Command::Kill(c) => c.run(config),
             Command::Send(c) => c.run(config),
             Command::Chat(c) => c.run(config),
+            Command::Export(c) => c.run(config),
+            Command::Import(c) => c.run(config),
             Command::Models(c) => c.run(config),
             Command::Commit(c) => c.run(config),
             Command::Server(c) => c.run(config),

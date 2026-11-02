@@ -17,9 +17,10 @@ Statements marked **(assumption)** need a decision from the user.
 | [`clai ls`](#clai-ls) | List sessions. | [`sessions.md`](sessions.md) |
 | [`clai kill`](#clai-kill) | End a session. | [`sessions.md`](sessions.md) |
 | [`clai send`](#clai-send) | Send a message to a session without attaching. | [`sessions.md`](sessions.md) |
-| [`clai chat`](#clai-chat) | Answer permission and limit questions in the terminal, without the TUI. | [`sessions.md`](sessions.md), "Questions" |
+| [`clai chat`](#clai-chat) | Chat with a session in the terminal, without the TUI, or answer the questions of sessions. | [`sessions.md`](sessions.md), "Questions" |
 | [`clai models`](#clai-models) | List configured providers and models. | [`config.md`](config.md) |
 | [`clai commit`](#clai-commit) | Print a commit message for the changes in a directory. | [`commit.md`](commit.md) |
+| [`clai export`](#clai-export), [`clai import`](#clai-import) | Write a session to a file, add one from a file. | [`sessions.md`](sessions.md), "Persistence" |
 | [`clai server`](#clai-server) | Run, stop or check the background server. | [`sessions.md`](sessions.md) |
 | [`clai completion`](#clai-completion) | Print the shell code for Tab completion. | this file |
 
@@ -189,13 +190,15 @@ fails with `1` (`no sessions`) if there are none.
 clai ls [--json]
 ```
 
-Lists the sessions, one per line: name, workspace, provider/model, state
-(`idle`, `working`, `waiting`), age. A waiting session ends with `? ` and
-the question's summary. No sessions: prints nothing, exit `0`.
+Lists the sessions, running and saved, one per line: name, workspace,
+provider/model, state (`idle`, `working`, `waiting`, or `saved` for a
+session on disk that is not loaded), age. A waiting session ends with `? `
+and the question's summary. No sessions: prints nothing, exit `0`.
 
 ```
 clai    ~/ws/rust/clai  anthropic/sonnet  waiting  12m  ? run_command: cargo test parse
 docs    ~/ws/docs       local/qwen        idle     2h
+old     ~/ws/old        local/qwen        saved    3d
 ```
 
 | Option | Meaning |
@@ -209,8 +212,33 @@ clai kill NAME...
 clai kill --all
 ```
 
-Ends the named sessions; a running turn is cancelled first. Unknown names are
-reported on standard error and give exit `1`; the known ones are still ended.
+Ends the named sessions and deletes their saved files; a running turn is
+cancelled first. Saved sessions are deleted without resuming them. Unknown
+names are reported on standard error and give exit `1`; the known ones are
+still ended.
+
+## clai export
+
+```sh
+clai export NAME FILE
+```
+
+Writes session `NAME`, running or saved, to `FILE` as one JSON file with
+mode `0600` (replaced if it exists): its settings, history and event log,
+as saved (see [`sessions.md`](sessions.md), "Persistence"). The session goes
+on. Exit `1` if there is no such session or the file cannot be written.
+
+## clai import
+
+```sh
+clai import FILE [--name NAME]
+```
+
+Adds the session in `FILE`, written by `clai export`, as a saved session
+and prints its name: `--name`, or the name in the file made unique (`-2`,
+…). It is resumed by the first command that names it. Exit `1` if the
+file cannot be read, is of a newer format, or `--name` is taken; `2` for
+an invalid name.
 
 ## clai send
 
@@ -226,16 +254,63 @@ unknown session `1`.
 ## clai chat
 
 ```sh
-clai chat [NAME...]
+clai chat [NAME]
+clai chat [--model PROVIDER/MODEL] NAME
+clai chat --new [--name NAME] [--model PROVIDER/MODEL] [DIR]
+clai chat --questions [NAME...]
 clai chat --list [--json] [NAME...]
 clai chat NAME CHOICE [--id ID]
 ```
 
-Answers questions of sessions in the terminal, without the TUI (see
+Talks to sessions in the terminal with lines of text, without the TUI:
+a conversation with one session, or only its questions (see
 [`sessions.md`](sessions.md), "Questions"). Useful over a plain SSH
 connection, in a second terminal, or from a script.
 
-**Interactive** (`clai chat [NAME...]`): attaches as an answering client
+**Conversation** (`clai chat [NAME]`): attaches to session `NAME` as an
+answering client named `clai chat`. Without `NAME`, or with `--new`, it
+first creates a session like `clai new -d` (workspace `DIR` or the current
+directory, `--name`, `--model` or `CLAI_MODEL`), then attaches.
+
+```
+clai: attached to clai (~/ws/rust/clai, anthropic/sonnet); /help lists commands, Ctrl-D detaches
+> fix the failing test in tests/parse.rs
+Let me look at the test first.
+✓ read_file tests/parse.rs (lines 1–80) — 80 lines
+── clai · ~/ws/rust/clai · q4 ──
+run_command: cargo test parse
+  in       ~/ws/rust/clai, timeout 120 s
+  part 1   cargo test parse  ask    default for run_command
+[y] allow  [a] always  [n] deny  [e] deny with message  [c] cancel turn
+? y
+✓ run_command cargo test parse — test result: ok. 12 passed
+The test passes now.
+>
+```
+
+- On attach it shows the session's history first: user messages after
+  `> `, model text, tool lines, notices and errors. Then it shows what
+  happens as it happens; model text appears as it streams.
+- The prompt `> ` shows that the session waits for a message. A line typed
+  is sent as a message; while a turn runs it is queued by the session. The
+  user's own messages are not shown again; messages from other clients are.
+- Tool lines, notices and errors are those of `clai run`, on standard
+  output, coloured when it is a terminal and `NO_COLOR` is not set.
+- A question of the session (permission or limit) is shown like below, in
+  "Questions", with the prompt `? `; the next line answers it, with the
+  keys of `clai run` and `v` for the pager. An answer the server does not
+  accept is shown as `not accepted: …` and asked again. A question answered
+  elsewhere closes with `answered in tui pts/3: allow`.
+- Commands: `/cancel` cancels the running turn, `/model [PROVIDER/MODEL]`
+  shows or changes the model, `/detach` leaves, `/kill` ends the session
+  and leaves, `/help` lists them.
+- `Ctrl-C` cancels the running turn. With no running turn it prints a hint;
+  a second `Ctrl-C` within 1 s detaches.
+- `Ctrl-D` (end of input) detaches; the session keeps running and `clai
+  chat NAME` returns to it. When the session ends, `clai chat` ends too.
+  Exit `0`; `1` if `NAME` is not a session; `2` for more than one `NAME`.
+
+**Questions** (`clai chat --questions [NAME...]`): attaches as an answering client
 (named `clai chat`) to the named sessions, or to all sessions, including
 ones created later. It prints each open question and each new one as it
 opens, on standard output, reads the answer as a line on standard input,
@@ -286,6 +361,10 @@ session names.
 
 | Option | Meaning |
 |--------|---------|
+| `--new` | Start a new session and chat with it; takes `DIR` instead of `NAME`. |
+| `--name` | With `--new`: as for `clai new`. |
+| `--model` | The model of a new session; with `NAME`, switch the session to it first. This also resumes a saved session whose model is no longer configured. |
+| `--questions` | Only answer questions, of the named sessions or all, without their conversations. |
 | `--list` | List open questions and exit. |
 | `--json` | With `--list`: print JSON. |
 | `--id ID` | Answer only if `ID` is still the open question; protects a script from answering a newer question it has not seen. |
@@ -350,17 +429,19 @@ clai commit --staged | git commit -F -
 
 ```sh
 clai server             # run the server in the foreground
-clai server stop        # stop the running server and end all its sessions
+clai server stop        # stop the running server; its sessions stay saved
 clai server status      # print whether a server runs, its PID and session count
 ```
 
 `clai server` fails with `1` if a server is already running, and with `2`
-if the configuration is invalid. `stop` asks for confirmation on a terminal
-when sessions are running; `--force` skips it. It waits until the server
-has ended its sessions, and fails with `1` if no server runs.
+if the configuration is invalid. `stop` keeps every session saved; it asks
+for confirmation on a terminal when sessions are working or waiting for an
+answer (their turns are interrupted); `--force` skips it. It waits until
+the server has stopped its sessions, and fails with `1` if no server runs.
 
-`status` prints `running, pid 4242, 2 sessions, version 0.1.0` and exits
-`0`, or prints `not running` and exits `1`.
+`status` prints `running, pid 4242, 3 sessions (2 running, 1 busy), version
+0.1.0` and exits `0`, or prints `not running` and exits `1`. Busy sessions
+are working or waiting for an answer.
 
 ## clai completion
 

@@ -2,6 +2,7 @@
 //! socket, the session registry, idle exit and configuration reload.
 
 mod paths;
+mod requests;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs::File;
@@ -16,17 +17,15 @@ use tokio::io::BufReader;
 use tokio::net::{UnixListener, UnixStream};
 use tokio_util::sync::CancellationToken;
 
-use crate::agent::{Agent, Setup, system_prompt, today};
-use crate::config::{self, Config, LoadOptions};
+use crate::agent::State;
+use crate::config::{self, LoadOptions};
 use crate::error::{Error, Result};
-use crate::permissions::{SessionRules, Workspace};
 use crate::protocol::{
-    self, ClientHello, ClientMessage, ErrorReply, Notice, Outcome, Payload, Request, ServerHello,
-    ServerMessage, SessionInfo, Status, VERSION,
+    self, ClientHello, ClientMessage, ErrorReply, Notice, ServerHello, ServerMessage, VERSION,
 };
 use crate::provider::{self, Provider};
-use crate::session::{self, ClientId, Outbox, SessionHandle, Spec};
-use crate::tools::Env;
+use crate::session::store::{self, Meta, Store};
+use crate::session::{ClientId, Outbox, SessionHandle};
 
 pub use paths::{lock_path, prepare, runtime_dir, socket_path};
 
@@ -45,6 +44,8 @@ const HELLO_TIMEOUT: Duration = Duration::from_secs(10);
 pub struct Options {
     /// The runtime directory with the socket.
     pub dir: PathBuf,
+    /// Where sessions are saved: `$XDG_STATE_HOME/clai/sessions`.
+    pub sessions_dir: PathBuf,
     /// Exit after this long without sessions and clients.
     pub idle: Duration,
     /// How often the user config file is checked for changes.
@@ -57,9 +58,10 @@ pub struct Options {
 }
 
 impl Options {
-    pub fn new(dir: PathBuf, load: LoadOptions) -> Options {
+    pub fn new(dir: PathBuf, sessions_dir: PathBuf, load: LoadOptions) -> Options {
         Options {
             dir,
+            sessions_dir,
             idle: Duration::from_secs(60),
             reload_every: Duration::from_secs(2),
             load,
@@ -77,12 +79,30 @@ struct UserConfig {
     stamp: Option<(SystemTime, u64)>,
 }
 
+/// A session in the registry: running in the server, or saved on disk.
 struct Entry {
     name: String,
-    handle: SessionHandle,
+    /// `None` if it could not be saved; it then lives in memory only.
+    store: Option<Store>,
+    slot: Slot,
+}
+
+enum Slot {
+    Running(SessionHandle),
+    Saved(Box<Meta>),
+}
+
+impl Entry {
+    fn handle(&self) -> Option<&SessionHandle> {
+        match &self.slot {
+            Slot::Running(handle) => Some(handle),
+            Slot::Saved(_) => None,
+        }
+    }
 }
 
 struct Shared {
+    sessions_dir: PathBuf,
     load: LoadOptions,
     providers: ProviderFactory,
     config: Mutex<UserConfig>,
@@ -164,6 +184,7 @@ pub async fn serve(options: Options) -> Result<()> {
     tracing::info!(socket = %socket.display(), pid = std::process::id(), "server started");
 
     let shared = Arc::new(Shared {
+        sessions_dir: options.sessions_dir.clone(),
         load: options.load.clone(),
         providers: options.providers.clone(),
         config: Mutex::new(user),
@@ -174,6 +195,7 @@ pub async fn serve(options: Options) -> Result<()> {
         questions: Arc::new(AtomicU64::new(0)),
         stop: options.stop.clone(),
     });
+    load_saved(&shared);
     tokio::spawn(idle_watch(shared.clone(), options.idle));
     tokio::spawn(reload_watch(shared.clone(), options.reload_every));
 
@@ -194,13 +216,14 @@ pub async fn serve(options: Options) -> Result<()> {
 
     tracing::info!("server stopping");
     broadcast(&shared, Notice::Stopping);
+    // Running sessions stop; their files stay, so they can be resumed.
     let handles: Vec<SessionHandle> = lock(&shared.sessions)
         .values()
-        .map(|e| e.handle.clone())
+        .filter_map(|e| e.handle().cloned())
         .collect();
     let kills = handles
         .iter()
-        .map(|handle| async move { handle.kill("server stopped").await });
+        .map(|handle| async move { handle.kill("server stopped", true).await });
     futures_util::future::join_all(kills).await;
     // Give the connections a moment to send what is queued.
     tokio::time::sleep(Duration::from_millis(100)).await;
@@ -208,6 +231,50 @@ pub async fn serve(options: Options) -> Result<()> {
     let _ = std::fs::remove_file(&socket);
     tracing::info!("server stopped");
     Ok(())
+}
+
+/// Lists the saved sessions; names taken twice (e.g. by an import) are
+/// made unique.
+fn load_saved(shared: &Shared) {
+    let mut sessions = lock(&shared.sessions);
+    for (store, mut meta) in store::list(&shared.sessions_dir) {
+        let name = unique_name(&meta.name, &sessions);
+        if name != meta.name {
+            meta.name.clone_from(&name);
+            if let Err(e) = store.write_meta(&meta) {
+                tracing::warn!("renaming saved session: {e}");
+            }
+        }
+        let id = shared.next_session.fetch_add(1, Ordering::Relaxed) + 1;
+        sessions.insert(
+            id,
+            Entry {
+                name,
+                store: Some(store),
+                slot: Slot::Saved(Box::new(meta)),
+            },
+        );
+    }
+    tracing::info!(saved = sessions.len(), "saved sessions listed");
+}
+
+/// Whether a running session works or waits for an answer.
+async fn busy(shared: &Shared) -> usize {
+    let handles: Vec<SessionHandle> = lock(&shared.sessions)
+        .values()
+        .filter_map(|e| e.handle().cloned())
+        .collect();
+    let mut busy = 0;
+    for handle in handles {
+        if handle
+            .info()
+            .await
+            .is_some_and(|info| matches!(info.state, State::Working | State::Waiting))
+        {
+            busy += 1;
+        }
+    }
+    busy
 }
 
 fn broadcast(shared: &Shared, notice: Notice) {
@@ -218,7 +285,8 @@ fn broadcast(shared: &Shared, notice: Notice) {
     }
 }
 
-/// Stops the server once it has had no sessions and no clients for `idle`.
+/// Stops the server once it has had no clients and no working or waiting
+/// session for `idle`; idle sessions are saved and resume later.
 async fn idle_watch(shared: Arc<Shared>, idle: Duration) {
     let tick = (idle / 4).min(Duration::from_secs(1));
     let mut since: Option<Instant> = None;
@@ -227,7 +295,7 @@ async fn idle_watch(shared: Arc<Shared>, idle: Duration) {
             () = shared.stop.cancelled() => return,
             () = tokio::time::sleep(tick) => {}
         }
-        let empty = lock(&shared.sessions).is_empty() && lock(&shared.clients).is_empty();
+        let empty = lock(&shared.clients).is_empty() && busy(&shared).await == 0;
         if !empty {
             since = None;
             continue;
@@ -360,8 +428,8 @@ async fn connection(shared: Arc<Shared>, stream: UnixStream) {
     }
 
     for session in &conn.attached {
-        if let Some(entry) = lock(&shared.sessions).get(session) {
-            entry.handle.detach(id);
+        if let Some(handle) = lock(&shared.sessions).get(session).and_then(Entry::handle) {
+            handle.detach(id);
         }
     }
     lock(&shared.clients).remove(&id);
@@ -406,261 +474,6 @@ struct Conn {
     outbox: Outbox,
     answers: bool,
     attached: BTreeSet<u64>,
-}
-
-type Reply = std::result::Result<Payload, ErrorReply>;
-
-impl Conn {
-    fn find(&self, name: &str) -> std::result::Result<SessionHandle, ErrorReply> {
-        lock(&self.shared.sessions)
-            .values()
-            .find(|e| e.name == name)
-            .map(|e| e.handle.clone())
-            .ok_or_else(|| ErrorReply::failed(format!("no session named {name}")))
-    }
-
-    /// Handles one request. `None` when the session sends the response
-    /// itself (`attach`).
-    async fn request(&mut self, id: u64, request: Request) -> Option<Outcome> {
-        let reply: Reply = match request {
-            Request::Attach { session } => match self.find(&session) {
-                Ok(handle) => match handle.attach(self.outbox.clone(), self.answers, id) {
-                    Ok(()) => {
-                        self.attached.insert(handle.id);
-                        return None;
-                    }
-                    Err(e) => Err(ErrorReply::failed(e)),
-                },
-                Err(e) => Err(e),
-            },
-            Request::New {
-                workspace,
-                name,
-                model,
-            } => self.new_session(workspace, name, model).await,
-            Request::List => Ok(Payload::Sessions {
-                sessions: self.list().await,
-            }),
-            Request::Kill { session } => match self.find(&session) {
-                Ok(handle) => {
-                    handle.kill("killed").await;
-                    lock(&self.shared.sessions).remove(&handle.id);
-                    Ok(Payload::Done)
-                }
-                Err(e) => Err(e),
-            },
-            Request::Rename { session, name } => self.rename(&session, name),
-            Request::Detach { session } => self.find(&session).map(|handle| {
-                handle.detach(self.outbox.id);
-                self.attached.remove(&handle.id);
-                Payload::Done
-            }),
-            Request::Send { session, text } => {
-                if text.trim().is_empty() {
-                    Err(ErrorReply::usage("the message is empty"))
-                } else {
-                    self.find(&session).and_then(|handle| {
-                        handle
-                            .message(text)
-                            .map(|()| Payload::Done)
-                            .map_err(ErrorReply::failed)
-                    })
-                }
-            }
-            Request::SetModel { session, model } => self.set_model(&session, &model),
-            Request::Cancel { session } => self.find(&session).and_then(|handle| {
-                handle
-                    .cancel()
-                    .map(|()| Payload::Done)
-                    .map_err(ErrorReply::failed)
-            }),
-            Request::Answer {
-                session,
-                question,
-                answer,
-            } => match self.find(&session) {
-                Ok(handle) => handle
-                    .answer(question, answer, self.outbox.name.clone())
-                    .await
-                    .map(|()| Payload::Done)
-                    .map_err(ErrorReply::failed),
-                Err(e) => Err(e),
-            },
-            Request::Status => Ok(Payload::Status(Status {
-                pid: std::process::id(),
-                sessions: lock(&self.shared.sessions).len(),
-                clients: lock(&self.shared.clients).len(),
-                version: env!("CARGO_PKG_VERSION").to_owned(),
-            })),
-            Request::Stop => {
-                tracing::info!(client = %self.outbox.name, "stop requested");
-                self.shared.stop.cancel();
-                Ok(Payload::Done)
-            }
-        };
-        Some(match reply {
-            Ok(payload) => Outcome::Ok(payload),
-            Err(e) => Outcome::Error(e),
-        })
-    }
-
-    async fn list(&self) -> Vec<SessionInfo> {
-        let handles: Vec<SessionHandle> = lock(&self.shared.sessions)
-            .values()
-            .map(|e| e.handle.clone())
-            .collect();
-        let mut sessions = Vec::new();
-        for handle in handles {
-            if let Some(info) = handle.info().await {
-                sessions.push(info);
-            }
-        }
-        sessions
-    }
-
-    /// The configuration for a workspace: the kept user file and the
-    /// workspace's project file.
-    fn config(&self, workspace: &Path) -> std::result::Result<Config, ErrorReply> {
-        let (path, text) = {
-            let user = lock(&self.shared.config);
-            (user.path.clone(), user.text.clone())
-        };
-        let options = LoadOptions {
-            workspace: workspace.to_path_buf(),
-            ..self.shared.load.clone()
-        };
-        config::load_with_user_text(&path, &text, &options)
-            .map_err(|e| ErrorReply::usage(error_lines(&e).join("\n")))
-    }
-
-    async fn new_session(
-        &mut self,
-        workspace: PathBuf,
-        name: Option<String>,
-        model: Option<String>,
-    ) -> Reply {
-        if !workspace.is_absolute() || !workspace.is_dir() {
-            return Err(ErrorReply::usage(format!(
-                "{}: not a directory",
-                workspace.display()
-            )));
-        }
-        let config = self.config(&workspace)?;
-        let model_ref = match &model {
-            Some(text) => config.resolve_model(text).map_err(ErrorReply::usage)?,
-            None => config.default_model.clone(),
-        };
-        let Some((provider_config, model_config)) = config.model(&model_ref) else {
-            return Err(ErrorReply::usage(format!("unknown model `{model_ref}`")));
-        };
-        let provider = (self.shared.providers)(provider_config)
-            .map_err(|e| ErrorReply::failed(format!("provider {}: {e}", provider_config.name)))?;
-        let ws = Workspace::new(
-            &workspace,
-            &config.permissions.extra_dirs,
-            self.shared.load.env.home.clone(),
-        )
-        .map_err(|e| ErrorReply::failed(format!("{}: {e}", workspace.display())))?;
-        let place = ws.tilde(ws.root());
-        let path = ws.root().to_path_buf();
-        let mut agent = Agent::new(Setup {
-            provider,
-            model: model_config.clone(),
-            limits: config.limits,
-            system: system_prompt(&ws, &today()),
-            env: Env {
-                permissions: Arc::new(config.permissions.clone()),
-                session: Arc::new(SessionRules::default()),
-                workspace: Arc::new(ws),
-            },
-        });
-        agent.share_question_ids(self.shared.questions.clone());
-
-        let id = self.shared.next_session.fetch_add(1, Ordering::Relaxed) + 1;
-        let handle = {
-            let mut sessions = lock(&self.shared.sessions);
-            let name = match name {
-                Some(name) => {
-                    check_name(&name)?;
-                    if sessions.values().any(|e| e.name == name) {
-                        return Err(ErrorReply::failed(format!("the name {name} is taken")));
-                    }
-                    name
-                }
-                None => unique_name(&default_name(&path), &sessions),
-            };
-            let weak = Arc::downgrade(&self.shared);
-            let handle = session::spawn(
-                Spec {
-                    id,
-                    name: name.clone(),
-                    place,
-                    path,
-                    model: model_ref.to_string(),
-                    agent,
-                    created: crate::agent::now_secs(),
-                },
-                move |id| {
-                    if let Some(shared) = weak.upgrade() {
-                        lock(&shared.sessions).remove(&id);
-                    }
-                },
-            );
-            sessions.insert(
-                id,
-                Entry {
-                    name,
-                    handle: handle.clone(),
-                },
-            );
-            handle
-        };
-        let info = handle.info().await.ok_or_else(session::gone)?;
-        tracing::info!(session = %info.name, model = %info.model, "session created");
-        broadcast(
-            &self.shared,
-            Notice::SessionCreated {
-                session: Box::new(info.clone()),
-            },
-        );
-        Ok(Payload::Session {
-            session: Box::new(info),
-        })
-    }
-
-    fn rename(&self, session: &str, name: String) -> Reply {
-        check_name(&name)?;
-        let mut sessions = lock(&self.shared.sessions);
-        if sessions.values().any(|e| e.name == name) {
-            return Err(ErrorReply::failed(format!("the name {name} is taken")));
-        }
-        let entry = sessions
-            .values_mut()
-            .find(|e| e.name == session)
-            .ok_or_else(|| ErrorReply::failed(format!("no session named {session}")))?;
-        entry
-            .handle
-            .rename(name.clone())
-            .map_err(ErrorReply::failed)?;
-        entry.name = name;
-        Ok(Payload::Done)
-    }
-
-    fn set_model(&self, session: &str, model: &str) -> Reply {
-        let handle = self.find(session)?;
-        // Models come only from the user file; any workspace will do.
-        let config = self.config(&std::env::temp_dir())?;
-        let model_ref = config.resolve_model(model).map_err(ErrorReply::usage)?;
-        let Some((provider_config, model_config)) = config.model(&model_ref) else {
-            return Err(ErrorReply::usage(format!("unknown model `{model_ref}`")));
-        };
-        let provider = (self.shared.providers)(provider_config)
-            .map_err(|e| ErrorReply::failed(format!("provider {}: {e}", provider_config.name)))?;
-        handle
-            .set_model(model_ref.to_string(), provider, model_config.clone())
-            .map_err(ErrorReply::failed)?;
-        Ok(Payload::Done)
-    }
 }
 
 /// Names are one word: no spaces or control characters, at most 64

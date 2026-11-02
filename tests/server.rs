@@ -13,7 +13,8 @@ use std::fs;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
-use std::process::{Command, Output, Stdio};
+use std::process::{Child, ChildStdin, Command, Output, Stdio};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -278,13 +279,13 @@ fn sessions_through_the_server() {
     assert_eq!(code(&out), Some(1));
     assert_eq!(text(&out.stderr), "clai: s has no open question\n");
 
-    // A question, answered in interactive `clai chat`.
+    // A question, answered in `clai chat --questions`.
     // An empty message is a usage error.
     assert_eq!(code(&env.run(&["send", "s", "-"])), Some(2));
     let out = env.run_with_input(&["send", "s", "-"], "write b.txt\n");
     assert_eq!(code(&out), Some(0), "{}", text(&out.stderr));
     env.wait_for("a question", |s| !s["question"].is_null());
-    let out = env.run_with_input(&["chat", "s"], "x\ny\n");
+    let out = env.run_with_input(&["chat", "--questions", "s"], "x\ny\n");
     assert_eq!(code(&out), Some(0), "{}", text(&out.stderr));
     let shown = text(&out.stdout);
     assert!(shown.starts_with("── s · "), "{shown}");
@@ -317,4 +318,197 @@ fn invalid_config_does_not_start_a_server() {
     let out = env.run(&["ls"]);
     assert_eq!(code(&out), Some(2), "{}", text(&out.stderr));
     assert_eq!(code(&env.run(&["server", "status"])), Some(1));
+}
+
+/// A running `clai chat`: lines go to its standard input; standard output
+/// and error are collected together.
+struct Live {
+    child: Child,
+    stdin: Option<ChildStdin>,
+    seen: Arc<Mutex<String>>,
+}
+
+impl Live {
+    fn start(env: &Env, args: &[&str]) -> Live {
+        let mut child = env
+            .command(args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let seen = Arc::new(Mutex::new(String::new()));
+        let mut pipes: Vec<Box<dyn Read + Send>> = vec![
+            Box::new(child.stdout.take().unwrap()),
+            Box::new(child.stderr.take().unwrap()),
+        ];
+        for mut pipe in pipes.drain(..) {
+            let seen = seen.clone();
+            thread::spawn(move || {
+                let mut buf = [0u8; 4096];
+                while let Ok(n) = pipe.read(&mut buf) {
+                    if n == 0 {
+                        return;
+                    }
+                    seen.lock()
+                        .unwrap()
+                        .push_str(&String::from_utf8_lossy(&buf[..n]));
+                }
+            });
+        }
+        let stdin = child.stdin.take();
+        Live { child, stdin, seen }
+    }
+
+    fn send(&mut self, line: &str) {
+        let stdin = self.stdin.as_mut().unwrap();
+        stdin.write_all(format!("{line}\n").as_bytes()).unwrap();
+        stdin.flush().unwrap();
+    }
+
+    /// Waits until the output contains `text`.
+    fn expect(&self, text: &str) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !self.seen.lock().unwrap().contains(text) {
+            assert!(
+                Instant::now() < deadline,
+                "waiting for {text:?} in:\n{}",
+                self.seen.lock().unwrap()
+            );
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    /// Closes standard input (Ctrl-D) and waits for the exit.
+    fn finish(mut self) -> (Option<i32>, String) {
+        drop(self.stdin.take());
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let status = loop {
+            if let Some(status) = self.child.try_wait().unwrap() {
+                break status;
+            }
+            if Instant::now() > deadline {
+                let _ = self.child.kill();
+                panic!("clai chat did not exit:\n{}", self.seen.lock().unwrap());
+            }
+            thread::sleep(Duration::from_millis(10));
+        };
+        thread::sleep(Duration::from_millis(50));
+        let seen = self.seen.lock().unwrap().clone();
+        (status.code(), seen)
+    }
+}
+
+#[test]
+fn chat_with_a_session() {
+    let port = model_server(vec![
+        write_file("c1", "c.txt"),
+        say("I wrote c.txt."),
+        say("first"),
+        say("second"),
+    ]);
+    let env = Env::new("chat", port);
+
+    // `clai chat` starts the server and a new session in this directory.
+    let mut chat = Live::start(&env, &["chat"]);
+    chat.expect("clai: attached to ws (");
+    chat.send("write c.txt please");
+    chat.expect("[y] allow  [a] always");
+    chat.expect("? ");
+    chat.send("z");
+    chat.expect("answer y, a, n, e or c");
+    chat.send("y");
+    chat.expect("I wrote c.txt.");
+    chat.expect("✓ write_file c.txt");
+    chat.send("/model");
+    chat.expect("clai: model: test/m");
+    chat.send("/nope");
+    chat.expect("unknown command /nope");
+    let (status, seen) = chat.finish();
+    assert_eq!(status, Some(0), "{seen}");
+    assert!(
+        seen.contains("clai: detached; `clai chat ws` returns to ws"),
+        "{seen}"
+    );
+    assert_eq!(fs::read_to_string(env.ws().join("c.txt")).unwrap(), "hi\n");
+    // The user's own message is not echoed back.
+    assert!(!seen.contains("> write c.txt please"), "{seen}");
+
+    // The session keeps running; attaching again shows its history.
+    assert_eq!(env.sessions().len(), 1);
+    let mut chat = Live::start(&env, &["chat", "ws"]);
+    chat.expect("> write c.txt please\n");
+    chat.expect("✓ write_file c.txt");
+    chat.expect("I wrote c.txt.\n> ");
+    // Two messages: the second is queued until the first turn ends.
+    chat.send("one");
+    chat.send("two");
+    chat.expect("first");
+    chat.expect("second");
+    chat.send("/kill");
+    chat.expect("session ws ended");
+    let (status, seen) = chat.finish();
+    assert_eq!(status, Some(0), "{seen}");
+    assert!(env.sessions().is_empty());
+
+    let out = env.run(&["chat", "nope"]);
+    assert_eq!(code(&out), Some(1));
+    assert_eq!(text(&out.stderr), "clai: no session named nope\n");
+    let out = env.run(&["chat", "a", "b"]);
+    assert_eq!(code(&out), Some(2));
+}
+
+#[test]
+fn sessions_are_saved_and_resumed() {
+    let port = model_server(vec![say("noted: 42"), say("it was 42")]);
+    let env = Env::new("saved", port);
+
+    let mut chat = Live::start(&env, &["chat", "--new", "--name", "s"]);
+    chat.expect("clai: attached to s (");
+    chat.send("remember 42");
+    chat.expect("noted: 42");
+    let (status, seen) = chat.finish();
+    assert_eq!(status, Some(0), "{seen}");
+
+    let out = env.run(&["server", "stop"]);
+    assert_eq!(code(&out), Some(0), "{}", text(&out.stderr));
+    let files = fs::read_dir(env.root.join("state/clai/sessions"))
+        .unwrap()
+        .count();
+    assert_eq!(files, 1);
+
+    // A new server lists it as saved; chat resumes it with its history.
+    let out = env.run(&["ls"]);
+    assert!(
+        text(&out.stdout).contains("test/m  saved"),
+        "{}",
+        text(&out.stdout)
+    );
+    let mut chat = Live::start(&env, &["chat", "s"]);
+    chat.expect("> remember 42\n");
+    chat.expect("noted: 42\n> ");
+    chat.send("what was it?");
+    chat.expect("it was 42");
+    let (status, seen) = chat.finish();
+    assert_eq!(status, Some(0), "{seen}");
+
+    // Export and import.
+    let file = env.root.join("s.json");
+    let out = env.run(&["export", "s", file.to_str().unwrap()]);
+    assert_eq!(code(&out), Some(0), "{}", text(&out.stderr));
+    let out = env.run(&["import", file.to_str().unwrap()]);
+    assert_eq!(code(&out), Some(0), "{}", text(&out.stderr));
+    assert_eq!(text(&out.stdout), "s-2\n");
+    let out = env.run(&["chat", "--list"]);
+    assert_eq!(code(&out), Some(0));
+    let sessions = env.sessions();
+    assert_eq!(sessions.len(), 2);
+    assert_eq!(sessions[1]["state"], "saved");
+
+    // Kill deletes the files.
+    assert_eq!(code(&env.run(&["kill", "--all"])), Some(0));
+    let files = fs::read_dir(env.root.join("state/clai/sessions"))
+        .unwrap()
+        .count();
+    assert_eq!(files, 0);
 }

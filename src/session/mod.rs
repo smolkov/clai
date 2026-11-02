@@ -4,9 +4,9 @@
 //! client.
 
 mod outbox;
+pub mod store;
 
 use std::collections::{HashMap, VecDeque};
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use futures_util::future::BoxFuture;
@@ -15,29 +15,29 @@ use tokio::task::{JoinError, JoinHandle};
 use tokio_util::sync::CancellationToken;
 
 use crate::agent::{
-    Agent, Answer, Asker, Closed, EventSink, ModelHandle, Question, Reply, SessionEvent,
-    SessionRef, State,
+    Agent, Answer, Asker, CancelReason, Closed, EventSink, ModelHandle, Question, Reply,
+    SessionEvent, SessionRef, State,
 };
 use crate::config::Model;
 use crate::protocol::{ErrorReply, Outcome, Payload, ServerMessage, SessionInfo};
 use crate::provider::Provider;
 
 pub use outbox::{ClientId, MAX_QUEUED, Outbox, OutboxReceiver};
+pub use store::{Meta, Store};
 
 const GONE: &str = "the session has ended";
 
-/// What a new session starts with.
+/// What a new or resumed session starts with.
 pub struct Spec {
     pub id: u64,
-    pub name: String,
-    /// The workspace as shown: `~/ws/rust/clai`.
-    pub place: String,
-    pub path: PathBuf,
-    /// `provider/model`.
-    pub model: String,
+    /// Name, workspace, model, turns, queued messages.
+    pub meta: Meta,
+    /// Where it is saved; `None` keeps it in memory only.
+    pub store: Option<Store>,
+    /// With its history and session rules, if resumed.
     pub agent: Agent,
-    /// Seconds since 1970.
-    pub created: u64,
+    /// The event log so far, if resumed.
+    pub log: Vec<SessionEvent>,
 }
 
 /// Commands to a session.
@@ -75,12 +75,17 @@ enum Msg {
     },
     Kill {
         reason: String,
+        /// Keep the saved files and leave `ended` out of them: the server
+        /// stops, the session can be resumed.
+        keep: bool,
         reply: oneshot::Sender<()>,
     },
 }
 
-/// From the agent's asker to the session.
+/// From the agent's asker and journal to the session.
 enum AskMsg {
+    /// Writing the history failed.
+    SaveFailed(String),
     Ask {
         question: String,
         reply: oneshot::Sender<Reply>,
@@ -164,12 +169,13 @@ impl SessionHandle {
     }
 
     /// Ends the session, cancelling a running turn first; returns when it
-    /// has ended.
-    pub async fn kill(&self, reason: &str) {
+    /// has ended. With `keep`, the saved files stay valid for a resume.
+    pub async fn kill(&self, reason: &str, keep: bool) {
         let (reply, rx) = oneshot::channel();
         if self
             .send(Msg::Kill {
                 reason: reason.to_owned(),
+                keep,
                 reply,
             })
             .is_ok()
@@ -185,6 +191,7 @@ pub fn spawn(spec: Spec, on_end: impl FnOnce(u64) + Send + 'static) -> SessionHa
     let (tx, rx) = mpsc::unbounded_channel();
     let id = spec.id;
     let actor = Actor::new(spec, rx);
+    tracing::info!(session = %actor.meta.name, "session started");
     let task = tokio::spawn(actor.run());
     tokio::spawn(async move {
         if let Err(e) = task.await {
@@ -260,12 +267,12 @@ enum Flow {
 
 struct Actor {
     id: u64,
-    name: String,
-    place: String,
-    path: PathBuf,
-    model: String,
-    created: u64,
+    meta: Meta,
+    store: Option<Store>,
+    /// Writing failed last time; said once until it works again.
+    save_failed: bool,
     model_handle: ModelHandle,
+    cancel_reason: CancelReason,
     /// `None` while a turn has it.
     agent: Option<Agent>,
     turn: Option<Turn>,
@@ -294,19 +301,30 @@ impl Actor {
     fn new(spec: Spec, rx: mpsc::UnboundedReceiver<Msg>) -> Actor {
         let (sink, events) = EventSink::channel();
         let (ask_tx, ask_rx) = mpsc::unbounded_channel();
+        let mut agent = spec.agent;
+        if let Some(store) = spec.store.clone() {
+            let tx = ask_tx.clone();
+            agent.set_journal(Arc::new(move |record| {
+                if let Err(e) = store.append_record(&record) {
+                    let _ = tx.send(AskMsg::SaveFailed(e));
+                }
+            }));
+        }
+        // A turn a stopped server left open gets results for its calls.
+        agent.repair();
+        let queue = spec.meta.queued.iter().cloned().collect();
         Actor {
             id: spec.id,
-            name: spec.name,
-            place: spec.place,
-            path: spec.path,
-            model: spec.model,
-            created: spec.created,
-            model_handle: spec.agent.model(),
-            agent: Some(spec.agent),
+            meta: spec.meta,
+            store: spec.store,
+            save_failed: false,
+            model_handle: agent.model(),
+            cancel_reason: agent.cancel_reason(),
+            agent: Some(agent),
             turn: None,
             state: State::Idle,
-            queue: VecDeque::new(),
-            log: Vec::new(),
+            queue,
+            log: spec.log,
             clients: HashMap::new(),
             open: None,
             asking: None,
@@ -322,6 +340,8 @@ impl Actor {
     }
 
     async fn run(mut self) {
+        // Messages queued before a stop run now.
+        self.next_turn();
         loop {
             let wake = tokio::select! {
                 msg = self.rx.recv() => Wake::Msg(msg),
@@ -333,7 +353,7 @@ impl Actor {
                 Wake::Msg(Some(msg)) => self.handle(msg).await,
                 // Every handle is gone: the server is stopping.
                 Wake::Msg(None) => {
-                    self.end("server stopped").await;
+                    self.end("server stopped", true).await;
                     Flow::Stop
                 }
                 Wake::Ask(Some(msg)) => {
@@ -368,7 +388,9 @@ impl Actor {
             }
             Msg::Send { text } => {
                 self.queue.push_back(text);
-                self.next_turn();
+                if !self.next_turn() {
+                    self.save_meta();
+                }
             }
             Msg::Cancel => {
                 if let Some(turn) = &self.turn {
@@ -381,11 +403,13 @@ impl Actor {
                 config,
             } => {
                 self.model_handle.set(provider, config);
-                self.model.clone_from(&model);
+                self.meta.model.clone_from(&model);
+                self.save_meta();
                 self.publish(SessionEvent::ModelChanged { model });
             }
             Msg::Rename { name } => {
-                self.name.clone_from(&name);
+                self.meta.name.clone_from(&name);
+                self.save_meta();
                 if let Some(question) = &mut self.open {
                     question.session.name.clone_from(&name);
                 }
@@ -405,8 +429,16 @@ impl Actor {
             Msg::Info { reply } => {
                 let _ = reply.send(self.info());
             }
-            Msg::Kill { reason, reply } => {
-                self.end(&reason).await;
+            Msg::Kill {
+                reason,
+                keep,
+                reply,
+            } => {
+                if !keep {
+                    // The files are about to go; nothing more to write.
+                    self.store = None;
+                }
+                self.end(&reason, keep).await;
                 let _ = reply.send(());
                 return Flow::Stop;
             }
@@ -417,12 +449,12 @@ impl Actor {
     fn info(&self) -> SessionInfo {
         SessionInfo {
             id: self.id,
-            name: self.name.clone(),
-            workspace: self.place.clone(),
-            path: self.path.clone(),
-            model: self.model.clone(),
+            name: self.meta.name.clone(),
+            workspace: self.meta.place.clone(),
+            path: self.meta.workspace.clone(),
+            model: self.meta.model.clone(),
             state: self.state,
-            created: self.created,
+            created: self.meta.created,
             queued: self.queue.len(),
             question: self.open.clone(),
         }
@@ -451,8 +483,8 @@ impl Actor {
             SessionEvent::State { state } => self.state = *state,
             SessionEvent::Question(question) => {
                 question.session = SessionRef {
-                    name: self.name.clone(),
-                    workspace: self.place.clone(),
+                    name: self.meta.name.clone(),
+                    workspace: self.meta.place.clone(),
                 };
                 self.open = Some((**question).clone());
             }
@@ -466,6 +498,58 @@ impl Actor {
                 session: self.id,
                 replay: false,
                 event: for_client(&event, client.answers),
+            });
+        }
+        self.save_event(&event);
+        self.log.push(event);
+    }
+
+    /// Appends an event to the saved log. `ended` is never saved: a
+    /// killed session's files are deleted, a stopped server's sessions
+    /// are resumed.
+    fn save_event(&mut self, event: &SessionEvent) {
+        if matches!(event, SessionEvent::Ended { .. }) {
+            return;
+        }
+        let result = match &self.store {
+            Some(store) => store.append_event(event),
+            None => return,
+        };
+        self.saved(result);
+    }
+
+    /// Writes `session.json` with the current name, model, turns and queue.
+    fn save_meta(&mut self) {
+        let Some(store) = &self.store else {
+            return;
+        };
+        self.meta.queued = self.queue.iter().cloned().collect();
+        self.meta.updated = crate::agent::now_secs();
+        let result = store.write_meta(&self.meta);
+        self.saved(result);
+    }
+
+    fn saved(&mut self, result: Result<(), String>) {
+        match result {
+            Ok(()) => self.save_failed = false,
+            Err(e) => self.save_failed(&e),
+        }
+    }
+
+    /// Says once that saving fails; the session goes on in memory.
+    fn save_failed(&mut self, error: &str) {
+        tracing::error!(session = %self.meta.name, "cannot save: {error}");
+        if std::mem::replace(&mut self.save_failed, true) {
+            return;
+        }
+        let event = SessionEvent::Notice {
+            text: format!("cannot save the session: {error}; it goes on in memory"),
+        };
+        for client in self.clients.values() {
+            client.outbox.send(ServerMessage::Event {
+                session: self.id,
+                replay: false,
+                event: event.clone(),
             });
         }
         self.log.push(event);
@@ -507,7 +591,7 @@ impl Actor {
                         "{} is not the open question; the open question is {open}",
                         pending.question
                     ),
-                    None => format!("{} has no open question", self.name),
+                    None => format!("{} has no open question", self.meta.name),
                 });
             let _ = pending.reply.send(Err(why));
             return;
@@ -541,6 +625,7 @@ impl Actor {
 
     fn handle_ask(&mut self, msg: AskMsg) {
         match msg {
+            AskMsg::SaveFailed(e) => self.save_failed(&e),
             AskMsg::Ask { question, reply } => {
                 self.asking = Some((question, reply));
                 self.deliver();
@@ -553,18 +638,21 @@ impl Actor {
         }
     }
 
-    /// Starts a turn with the next queued message, if none runs.
-    fn next_turn(&mut self) {
+    /// Starts a turn with the next queued message, if none runs; returns
+    /// whether it did.
+    fn next_turn(&mut self) -> bool {
         if self.turn.is_some() {
-            return;
+            return false;
         }
         let Some(mut agent) = self.agent.take() else {
-            return;
+            return false;
         };
         let Some(text) = self.queue.pop_front() else {
             self.agent = Some(agent);
-            return;
+            return false;
         };
+        self.meta.turns += 1;
+        self.save_meta();
         let cancel = CancellationToken::new();
         let sink = self.sink.clone();
         let asker = self.asker.clone();
@@ -574,6 +662,7 @@ impl Actor {
             agent
         });
         self.turn = Some(Turn { join, cancel });
+        true
     }
 
     fn turn_done(&mut self, done: Result<Agent, JoinError>) -> Flow {
@@ -585,7 +674,7 @@ impl Actor {
                 Flow::Go
             }
             Err(e) => {
-                tracing::error!(session = %self.name, "turn task failed: {e}");
+                tracing::error!(session = %self.meta.name, "turn task failed: {e}");
                 self.publish(SessionEvent::Error {
                     message: format!("the session failed: {}", join_error(&e)),
                 });
@@ -602,14 +691,20 @@ impl Actor {
     }
 
     /// Cancels a running turn, waits for it, and ends the session.
-    async fn end(&mut self, reason: &str) {
+    async fn end(&mut self, reason: &str, keep: bool) {
         if let Some(turn) = self.turn.take() {
+            if keep {
+                self.cancel_reason.set("the server stopped");
+            }
             turn.cancel.cancel();
             let done = turn.join.await;
             self.drain_events();
             if let Err(e) = done {
-                tracing::error!(session = %self.name, "turn task failed: {e}");
+                tracing::error!(session = %self.meta.name, "turn task failed: {e}");
             }
+        }
+        if keep {
+            self.save_meta();
         }
         self.finish(reason);
     }
@@ -621,7 +716,7 @@ impl Actor {
         self.publish(SessionEvent::Ended {
             reason: reason.to_owned(),
         });
-        tracing::info!(session = %self.name, reason, "session ended");
+        tracing::info!(session = %self.meta.name, reason, "session ended");
     }
 }
 

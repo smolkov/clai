@@ -101,9 +101,25 @@ Milestones and their order: [`implementation.md`](implementation.md).
       script form), `server`, `server stop`, `server status`.
 - [x] Tests: in-process server with scripted providers; the commands as
       processes against a local model server.
+- [x] `clai chat [NAME]`: conversation in the terminal (new session or
+      attach, history on attach, streamed text, inline questions,
+      `/` commands, `Ctrl-C` cancel, `Ctrl-D` detach); the old mode is
+      `clai chat --questions`.
+- [ ] Line editing with history in `clai chat` (e.g. `rustyline`).
 - [ ] `clai`, `clai new` and `clai attach` with the TUI (TUI core).
 - [ ] An end-to-end test of `clai chat` through a pseudo-terminal (colour,
       pager).
+
+## Session persistence
+
+- [x] Store: `session.json`, `history.jsonl`, `events.jsonl`, modes
+      `0700`/`0600`, format version, cut last line, repair of an open turn.
+- [x] History journal and restore in the agent; allow rules kept.
+- [x] Saved state in the server: lazy resume, `kill` deletes, `stop` and
+      idle exit keep sessions; a failed session becomes saved.
+- [x] `clai export`, `clai import`, `clai chat NAME --model`; protocol 2.
+- [x] Tests: store, in-process restarts, binary resume.
+- [ ] Bound the event log (in memory and on disk) for very long sessions.
 
 ## Next milestones
 

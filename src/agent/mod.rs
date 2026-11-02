@@ -27,7 +27,7 @@ use crate::tools::{self, Env, Prepared, PreparedCall, ToolOutput};
 pub use events::{
     CallResult, CallState, EndReason, EventSink, SessionEvent, State, ToolCallEvent, TurnEnd,
 };
-pub use history::History;
+pub use history::{History, INTERRUPTED, Journal, Record};
 pub use prompt::{now_secs, system_prompt, today};
 pub use question::{
     Answer, Asker, CallInfo, Choice, Closed, LIMIT_CHOICES, Limit, PERMISSION_CHOICES, Permission,
@@ -74,8 +74,31 @@ impl ModelHandle {
     }
 }
 
+/// Why the session cancels a turn, if not because of the user: the calls
+/// not run and the notice say so. Read once when the turn ends.
+#[derive(Clone, Default)]
+pub struct CancelReason(Arc<Mutex<Option<String>>>);
+
+impl CancelReason {
+    pub fn set(&self, why: impl Into<String>) {
+        *self.0.lock().unwrap_or_else(PoisonError::into_inner) = Some(why.into());
+    }
+
+    fn get(&self) -> Option<String> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    fn take(&self) -> Option<String> {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner).take()
+    }
+}
+
 /// The state of a session that turns work on.
 pub struct Agent {
+    cancel_reason: CancelReason,
     model: ModelHandle,
     limits: Limits,
     env: Env,
@@ -84,6 +107,7 @@ pub struct Agent {
     turns: u64,
     /// The last question number; shared by all sessions of a server.
     questions: Arc<AtomicU64>,
+    journal: Option<Journal>,
 }
 
 /// Requests and tool calls: in the current budget, and in the whole turn.
@@ -113,7 +137,15 @@ impl Stop {
     }
 
     /// The result for calls not run because of this stop.
-    fn not_run(self) -> (&'static str, CallState) {
+    fn not_run(self, why: Option<&str>) -> (String, CallState) {
+        if let (Stop::Cancelled, Some(why)) = (self, why) {
+            return (format!("not run: {why}"), CallState::Cancelled);
+        }
+        let (text, state) = self.not_run_text();
+        (text.to_owned(), state)
+    }
+
+    fn not_run_text(self) -> (&'static str, CallState) {
         match self {
             Stop::Cancelled => (CANCELLED, CallState::Cancelled),
             Stop::Limit => (NOT_RUN_LIMIT, CallState::Cancelled),
@@ -133,6 +165,7 @@ struct CallIn {
 impl Agent {
     pub fn new(setup: Setup) -> Agent {
         Agent {
+            cancel_reason: CancelReason::default(),
             model: ModelHandle::new(setup.provider, setup.model),
             limits: setup.limits,
             env: setup.env,
@@ -140,13 +173,88 @@ impl Agent {
             history: History::default(),
             turns: 0,
             questions: Arc::new(AtomicU64::new(0)),
+            journal: None,
         }
+    }
+
+    /// Reports every later change of the history and session rules.
+    pub fn set_journal(&mut self, journal: Journal) {
+        self.journal = Some(journal);
+    }
+
+    /// Restores a saved history: messages, full outputs, session rules and
+    /// the number of turns. Rules that no longer parse are left out; the
+    /// returned texts say which.
+    pub fn restore(
+        &mut self,
+        records: Vec<Record>,
+        turns: u64,
+        home: Option<&std::path::Path>,
+    ) -> Vec<String> {
+        let mut problems = Vec::new();
+        let mut rules = Vec::new();
+        for record in records {
+            match record {
+                Record::Message(message) => self.history.push(message.role, message.content),
+                Record::Full { call_id, text } => {
+                    self.history.keep_full(&call_id, "", text);
+                }
+                Record::Rules { rules: texts } => {
+                    for text in texts {
+                        match Rule::parse_session(&text, home) {
+                            Ok(rule) => rules.push(rule),
+                            Err(e) => problems.push(format!("saved rule left out: {e}")),
+                        }
+                    }
+                }
+            }
+        }
+        if !rules.is_empty() {
+            let mut session = (*self.env.session).clone();
+            session.add(rules);
+            self.env.session = Arc::new(session);
+        }
+        self.turns = turns;
+        problems
+    }
+
+    /// Gives every tool call without a result the result
+    /// [`INTERRUPTED`]; returns whether there were any.
+    pub fn repair(&mut self) -> bool {
+        let results = self.history.missing_results();
+        if results.is_empty() {
+            return false;
+        }
+        self.push(Role::User, results);
+        true
+    }
+
+    fn journal(&self, record: Record) {
+        if let Some(journal) = &self.journal {
+            journal(record);
+        }
+    }
+
+    fn push(&mut self, role: Role, content: Vec<Block>) {
+        if content.is_empty() {
+            return;
+        }
+        self.journal(Record::Message(crate::provider::Message {
+            role,
+            content: content.clone(),
+        }));
+        self.history.push(role, content);
     }
 
     /// Numbers questions from a counter shared with other agents, so that
     /// question ids are unique in the server.
     pub fn share_question_ids(&mut self, counter: Arc<AtomicU64>) {
         self.questions = counter;
+    }
+
+    /// The handle to give a reason before cancelling a turn.
+    pub fn cancel_reason(&self) -> CancelReason {
+        self.cancel_reason.clone()
     }
 
     /// The handle to change the provider and model.
@@ -180,11 +288,13 @@ impl Agent {
         events.emit(SessionEvent::UserMessage {
             text: message.clone(),
         });
-        self.history
-            .push(Role::User, vec![Block::Text { text: message }]);
+        self.push(Role::User, vec![Block::Text { text: message }]);
         let reason = self.turn(&mut budget, events, asker, &cancel).await;
         match reason {
-            EndReason::Cancelled => events.notice("turn cancelled"),
+            EndReason::Cancelled => match self.cancel_reason.take() {
+                Some(why) => events.notice(format!("turn cancelled: {why}")),
+                None => events.notice("turn cancelled"),
+            },
             EndReason::Limit => events.notice("limit reached"),
             EndReason::Done | EndReason::Failed => {}
         }
@@ -242,11 +352,11 @@ impl Agent {
             match &answer.end {
                 StreamEnd::Done => {}
                 StreamEnd::Cancelled => {
-                    self.history.push(Role::Assistant, answer.text_only());
+                    self.push(Role::Assistant, answer.text_only());
                     return EndReason::Cancelled;
                 }
                 StreamEnd::Failed(e) => {
-                    self.history.push(Role::Assistant, answer.text_only());
+                    self.push(Role::Assistant, answer.text_only());
                     events.emit(SessionEvent::Error {
                         message: error_message(&model, e),
                     });
@@ -262,7 +372,7 @@ impl Agent {
                 return EndReason::Done;
             }
             let calls = calls_of(&answer);
-            self.history.push(Role::Assistant, answer.blocks.clone());
+            self.push(Role::Assistant, answer.blocks.clone());
             if calls.is_empty() {
                 match answer.stop {
                     Some(StopReason::MaxTokens) => events.notice("answer cut at max_output_tokens"),
@@ -275,7 +385,7 @@ impl Agent {
                 events.notice("answer cut at max_output_tokens; the last tool call is left out");
             }
             let (results, stop) = self.run_calls(calls, budget, events, asker, cancel).await;
-            self.history.push(Role::User, results);
+            self.push(Role::User, results);
             if let Some(stop) = stop {
                 return stop.reason();
             }
@@ -303,7 +413,7 @@ impl Agent {
             }
             let (output, state) = match stop {
                 Some(stop) => {
-                    let (text, state) = stop.not_run();
+                    let (text, state) = stop.not_run(self.cancel_reason.get().as_deref());
                     (ToolOutput::error(text), state)
                 }
                 None => {
@@ -327,7 +437,15 @@ impl Agent {
                     is_error: output.is_error,
                 }),
             }));
-            self.history.keep_full(&call.id, &output.text, output.full);
+            if self
+                .history
+                .keep_full(&call.id, &output.text, output.full.clone())
+            {
+                self.journal(Record::Full {
+                    call_id: call.id.clone(),
+                    text: output.full,
+                });
+            }
             results.push(Block::ToolResult {
                 call_id: call.id,
                 content: output.text,
@@ -361,7 +479,7 @@ impl Agent {
                 Decided::Run => {}
                 Decided::Result(output, state) => return (output, state, None),
                 Decided::Stop(stop) => {
-                    let (text, state) = stop.not_run();
+                    let (text, state) = stop.not_run(self.cancel_reason.get().as_deref());
                     return (ToolOutput::error(text), state, Some(stop));
                 }
             }
@@ -454,6 +572,9 @@ impl Agent {
             Answer::AllowAlways { .. } => {
                 let rules = rules.unwrap_or_default();
                 let texts: Vec<String> = rules.iter().map(ToString::to_string).collect();
+                self.journal(Record::Rules {
+                    rules: texts.clone(),
+                });
                 let mut session = (*self.env.session).clone();
                 session.add(rules);
                 self.env.session = Arc::new(session);

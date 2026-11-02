@@ -15,7 +15,7 @@ Statements marked **(assumption)** need a decision from the user.
 | Role | Started by | Lives | Does |
 |------|------------|-------|------|
 | Client | `clai`, `clai attach`, `clai chat`, `clai ls`, … | As long as the command | Talks to the server; shows sessions and questions; sends user input and answers. |
-| Server | The first client that needs one, or `clai server` | Until idle for 60 s | Owns all sessions and runs their agent loops and tools. |
+| Server | The first client that needs one, or `clai server` | Until idle for 60 s | Owns all sessions, runs their agent loops and tools, saves them and resumes saved ones. |
 | One-shot | `clai run`, `clai TASK...` | One task | Runs one temporary session in its own process, without a server. |
 
 ```
@@ -113,8 +113,10 @@ clai/
 │   ├── complete.rs             values for shell completion
 │   ├── command/                one file per command, with its arguments and `run`
 │   │   ├── mod.rs              `Command`: name, run
-│   │   └── run.rs, new.rs, attach.rs, ls.rs, kill.rs, send.rs,
-│   │       chat.rs, models.rs, commit.rs, server.rs, completion.rs
+│   │   └── run.rs, new.rs, attach.rs, ls.rs, kill.rs, send.rs, export.rs, import.rs,
+│   │       models.rs, commit.rs, server.rs, completion.rs
+│   │   └── chat/               clai chat: mod.rs (options, --list, script form),
+│   │                           talk.rs (conversation), questions.rs (--questions)
 │   │       commit.rs            git changes, commit message   planned
 │   ├── config/                 Config (config.md)
 │   │   ├── mod.rs              files, precedence, validation
@@ -162,16 +164,19 @@ clai/
 │   │   └── tests.rs            turns against a scripted provider
 │   ├── session/                Session (sessions.md)
 │   │   ├── mod.rs              the actor: state, queue, event log, questions
+│   │   ├── store.rs            saved sessions: files, loading, repair, bundles
 │   │   └── outbox.rs           messages to one client, slow-client limit
 │   ├── protocol/               messages, framing, handshake; tests.rs
 │   ├── server/                 Server (sessions.md, "Server")
-│   │   ├── mod.rs              socket, registry, requests, idle exit, reload
+│   │   ├── mod.rs              socket, registry, connections, idle exit, reload
+│   │   ├── requests.rs         requests: create, resume, kill, export, import
 │   │   ├── paths.rs            runtime directory and its mode
 │   │   └── tests.rs            the server in-process with scripted providers
 │   ├── client/                 connect, start the server, requests, events
 │   ├── tui/                    full-screen interface                     planned
 │   ├── text/                   plain-text output for clai run and clai chat
 │   │   ├── events.rs           tool lines, notices, the final answer
+│   │   ├── conversation.rs     a conversation as streamed text (clai chat)
 │   │   ├── question.rs         questions as text, colour, pager hint
 │   │   ├── dialog.rs           answering a question line by line
 │   │   ├── asker.rs            `LineAsker`: answers read as lines
@@ -202,7 +207,7 @@ need the network. Build output goes to `target/`, the spec book to
 | State | Owner | Others see |
 |-------|-------|------------|
 | Configuration | Server (one-shot: its process) | A snapshot, taken by each session when it is created and replaced on reload for new requests. |
-| History, model, session rules, open question, limits | The session | Events; the full event log on attach. |
+| History, model, session rules, open question, limits | The session | Events; the full event log on attach. Saved to `$XDG_STATE_HOME/clai/sessions/` as it changes (see [`sessions.md`](sessions.md), "Persistence"). |
 | Session list and names | Server registry | `clai ls`, the TUI session list. |
 | Scroll position, expanded entries, unsent input, theme | Each TUI | Nobody. |
 | API keys | Provider, in memory, after first use | Nobody; never logged or sent to clients. |
@@ -221,7 +226,7 @@ need the network. Build output goes to `target/`, the spec book to
 Clients and the server exchange JSON messages over the Unix socket, one
 message per line (at most 16 MiB). Every message is an object with a
 `type`. The first message in each direction is `hello` with the protocol
-version (now `1`); on a mismatch the server sends `error` and closes the
+version (now `2`); on a mismatch the server sends `error` and closes the
 connection, and the message tells the user to restart the server with
 `clai server stop` (see [`sessions.md`](sessions.md), "Server"). The code
 is in `src/protocol/`.
@@ -231,7 +236,7 @@ Message kinds:
 | Direction | Kind | Content |
 |-----------|------|---------|
 | client → server | `hello` | Protocol version; client kind (`tui`, `chat`, `cli`, `bridge`) and name (e.g. `tui pts/3`, `clai chat`), which is shown as who answered; whether it answers questions. |
-| client → server | `request` | An id and a command: `new`, `list`, `kill`, `rename`, `attach`, `detach`, `send` (message), `set_model`, `cancel`, `answer`, `status`, `stop`. Each gets exactly one `response`. Sessions are named by their current name. |
+| client → server | `request` | An id and a command: `new`, `list`, `kill`, `rename`, `attach`, `detach`, `send` (message), `set_model`, `cancel`, `answer`, `export`, `import`, `status`, `stop`. Each gets exactly one `response`. Sessions are named by their current name; `attach`, `send` and `set_model` resume a saved session. |
 | server → client | `hello` | Protocol version and the server's PID. |
 | server → client | `response` | The request's id and its `result`: `ok` with a payload (`done`, a session, the session list, the status) or `error` with a message, marked `usage` when the request itself was wrong (the command then exits `2`). |
 | server → client | `event` | Something that happened in an attached session, with the session's id, and `replay` when it is part of the log sent on attach (see below). |
@@ -265,7 +270,12 @@ Session events, in the order they happen:
 On `attach`, the session first sends its event log, then live events, so a
 client that attaches late shows the same conversation as one that was there
 from the start (see [`tui.md`](tui.md), "Switching sessions"). The log is
-kept in memory, whole, for the session's lifetime.
+kept in memory, whole, while the session runs, and on disk without the
+streamed pieces; a resumed session replays it from disk.
+
+The session list has the state `saved` besides `idle`, `working` and
+`waiting`: a session on disk, not loaded. `status` reports the sessions,
+how many run, and how many are busy (`working` or `waiting`).
 
 All texts in messages are UTF-8 and carry no colour or layout; clients
 render them. A client that does not know an event kind of the same protocol

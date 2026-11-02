@@ -14,7 +14,7 @@ use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWrite, AsyncWr
 use crate::agent::{Answer, Question, SessionEvent, State};
 
 /// The protocol version; a new message or event kind needs a new one.
-pub const VERSION: u32 = 1;
+pub const VERSION: u32 = 2;
 
 /// The longest message accepted, in bytes.
 pub const MAX_LINE: usize = 16 << 20;
@@ -103,8 +103,22 @@ pub enum Request {
         question: String,
         answer: Answer,
     },
+    /// Writes a session, running or saved, to one file.
+    Export {
+        session: String,
+        /// Absolute path of the file.
+        path: PathBuf,
+    },
+    /// Adds a saved session from a file written by `export`.
+    Import {
+        /// Absolute path of the file.
+        path: PathBuf,
+        /// Default: the name in the file, made unique.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+    },
     Status,
-    /// Stops the server and ends all sessions.
+    /// Stops the server; running sessions stop and stay saved.
     Stop,
 }
 
@@ -200,7 +214,12 @@ pub struct SessionInfo {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Status {
     pub pid: u32,
+    /// Running and saved.
     pub sessions: usize,
+    /// Loaded in the server.
+    pub running: usize,
+    /// Working or waiting for an answer.
+    pub busy: usize,
     pub clients: usize,
     /// Version of the server binary.
     pub version: String,

@@ -39,6 +39,7 @@ fn state_name(state: State) -> &'static str {
         State::Idle => "idle",
         State::Working => "working",
         State::Waiting => "waiting",
+        State::Saved => "saved",
     }
 }
 

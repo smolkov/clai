@@ -17,6 +17,9 @@ pub enum State {
     Idle,
     Working,
     Waiting,
+    /// Only in the session list: saved on disk, not loaded; any command
+    /// that names it resumes it.
+    Saved,
 }
 
 /// The state of a tool call.

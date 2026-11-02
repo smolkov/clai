@@ -33,7 +33,9 @@ Statements marked **(assumption)** need a decision from the user.
   a server that does not start. A started server leaves the terminal's
   session and ignores `SIGHUP`; `clai server` runs it in the foreground, for
   debugging, where `Ctrl-C`, `SIGTERM` and `SIGHUP` stop it.
-- The server exits when it has had no sessions and no clients for 60 s.
+- The server exits when it has had no clients and no session `working` or
+  `waiting` for 60 s. Idle sessions do not keep it running: they are saved
+  and resume later (see [Persistence](#persistence)).
 - The server is a local, single-user process. It never listens on a network
   port.
 - The server must not crash (see `agent.md`, "Never crash"). An error in one
@@ -65,12 +67,12 @@ Statements marked **(assumption)** need a decision from the user.
   same files, so `clai new` prints a note on standard error naming the other
   sessions in that workspace.
 - **Working and waiting:** see [Background work](#background-work).
-- **Kill:** ends the session. A running turn is cancelled first (same as
-  cancelling in the TUI). Attached clients get `ended`; TUIs show "session
-  ended" and offer the session list.
+- **Kill:** ends the session and deletes its saved files. A running turn is
+  cancelled first (same as cancelling in the TUI). Attached clients get
+  `ended`; TUIs show "session ended" and offer the session list.
 - **Failure:** if a session's task fails (a bug, a panic), the session
-  sends `error` and `ended` with reason `failed` and is removed; other
-  sessions go on.
+  sends `error` and `ended` with reason `failed` and becomes `saved` again;
+  other sessions go on. Resuming it closes the turn that failed.
 - Each session keeps its own history, provider and model, allow rules and
   limits. The provider and model can be changed at any time from the TUI
   (see `spec/tui.md`, "Model picker"). Allow
@@ -212,7 +214,7 @@ call fails (see [`tools.md`](tools.md), "edit_file").
 | Client | Shows a question as | Answers with |
 |--------|---------------------|--------------|
 | TUI | Expanded tool call and prompt bar (see [`tui.md`](tui.md), "Permission prompts"). | Keys `y`, `a`, `n`, `e`, `Esc`. |
-| Terminal: `clai chat` | The fields as text, the diff or command, and a numbered list of choices (see [`command.md`](command.md)). | A line on standard input, or options for scripts. |
+| Terminal: `clai chat` | In the conversation with the session, or alone with `--questions`: the fields as text, the diff or command, and a numbered list of choices (see [`command.md`](command.md)). | A line on standard input, or options for scripts. |
 | Terminal: `clai run` | The same text on standard error, when standard input is a terminal. | A line on standard input. |
 | Web UI (later) | A page with the same fields. | The same answers. |
 
@@ -232,9 +234,56 @@ Sessions are managed with `clai`, `clai new`, `clai attach`, `clai ls`,
 
 ## Persistence
 
-Sessions live only as long as the server. If the server stops, its sessions
-end (`ended` with reason `server stopped`); a later server starts empty.
-Nothing is saved to disk.
+Every session of the server is saved as it goes, so it survives a server
+stop, a crash or a reboot. `clai run` sessions are not saved.
+
+- **Where:** `$XDG_STATE_HOME/clai/sessions/<id>/` (fallback
+  `~/.local/state/clai/sessions/`), directories with mode `0700`, files with
+  mode `0600`. They hold the session's code, file contents and command
+  output, as the conversation does; API keys are never written.
+- **What:**
+
+  | File | Content | Written |
+  |------|---------|---------|
+  | `session.json` | Format version, `clai` version, name, workspace, `provider/model`, created and updated time, number of turns, queued messages. | Replaced atomically (temporary file, then rename) on every change. |
+  | `history.jsonl` | What the model sees: each message (text, tool calls, tool results), full tool outputs that were cut for the model, and allow rules added by `always` answers (as text). | Appended as the agent adds them. |
+  | `events.jsonl` | What clients see: the event log. Streamed text is kept as whole blocks (`text_done`), a command's live output only as the call's final result; `ended` is not kept. | Appended as events happen. |
+
+  The configuration is not saved: it is read again on resume. One JSON
+  value per line; a last line cut by a crash is left out when loading. A
+  file of a newer format than the running `clai` reads is refused and left
+  untouched.
+- **Saved state:** a server that starts lists every saved session with the
+  state `saved`, reading only `session.json`. A command that names it
+  resumes it: `attach`, `send`, `set_model` (`clai chat NAME`, `clai send`,
+  the TUI). `list`, `rename`, `kill` and `export` work without resuming.
+  Names are unique across running and saved sessions.
+- **Resume:** the history, the allow rules, the model, the number of turns
+  and the queued messages come back, and the event log is replayed to
+  clients as on any attach. Queued messages start one after another. The
+  project file of the workspace is read again. A saved rule that no longer
+  parses is left out, with a notice. If the model is no longer configured,
+  resuming fails with a message; `set_model` (`clai chat NAME --model
+  PROVIDER/MODEL`) resumes it with another one. If the workspace is no
+  longer a directory, resuming fails and the session stays saved.
+- **Server stop:** running sessions stop and stay saved. A running turn is
+  cancelled with the reason `the server stopped`: calls not run get the
+  result `not run: the server stopped`, and the notice says so. An open
+  question is closed as cancelled. On resume the session is `idle`; the
+  interrupted turn is not continued by itself.
+- **Crash:** if the server ends without stopping its sessions (a crash, a
+  power loss), resuming closes the turn that was open: every tool call
+  without a result gets `not run or interrupted: the server stopped during
+  this turn`, an open question is closed as cancelled, and a notice says
+  that the turn was interrupted.
+- **Saving fails** (disk full, no permission): the session goes on in
+  memory. Its clients get one notice; saving is tried again with the next
+  change. A session that could not be created on disk lives in memory only
+  and says so.
+- **Export and import:** `clai export NAME FILE` writes a running or saved
+  session to one JSON file (mode `0600`); `clai import FILE` adds it as a
+  saved session, under its name made unique or a given one. Use them to
+  archive a session or move it to another machine.
 
 ## Open questions
 

@@ -279,12 +279,34 @@ that does not match the call is rejected; a session task that fails does
 not affect another; version mismatch error.
 
 Status: done, except what needs the TUI (`clai`, `clai new` without `-d`,
-`clai attach`). Decisions: sessions live in memory only; several sessions
+`clai attach`). Decisions: sessions lived in memory only (replaced by
+Session persistence); several sessions
 may share a workspace (`clai new` prints a note); the user file is polled
 every 2 s instead of using `notify`; a slow client is dropped after 4096
 waiting messages. Sessions are tested in-process in `src/server/tests.rs`
 through real clients with scripted providers; `tests/server.rs` runs the
 commands as processes.
+
+### Session persistence
+
+- `session::store`: `session.json` (atomic), `history.jsonl` and
+  `events.jsonl` (appended), format version, a cut last line ignored.
+- The agent journals every history change and allow rule; restores them
+  and repairs a turn left without results.
+- The server lists saved sessions, resumes them on `attach`, `send`,
+  `set_model`; `kill` deletes; `stop` and idle exit keep them saved.
+- `clai export`, `clai import`, `clai chat NAME --model`; protocol 2.
+
+Tests: store round trip, file modes, a cut line, a newer format, repair;
+in-process restart with history and rules, stop during a question, kill,
+a missing model and workspace, export and import, idle exit with saved
+sessions; a binary test of chat, stop, resume, export, import.
+
+Status: done. Decisions: every server session is saved; resume is lazy;
+`kill` deletes the files; an interrupted turn is not continued. A clean
+stop cancels the turn with the reason `the server stopped`; after a crash,
+calls without results get `not run or interrupted: …`. A session whose
+task fails becomes `saved` again instead of being removed.
 
 ### TUI core
 

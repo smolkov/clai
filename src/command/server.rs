@@ -11,6 +11,7 @@ use tokio_util::sync::CancellationToken;
 use crate::client::{Client, Connect, runtime, unexpected};
 use crate::config::{Environment, LoadOptions};
 use crate::error::{Error, Result};
+use crate::log;
 use crate::output::write_stdout;
 use crate::protocol::{Payload, Request};
 use crate::server::{self, Options, runtime_dir};
@@ -70,8 +71,14 @@ fn foreground(config: Option<&Path>, detached: bool) -> Result<()> {
         theme: None,
         ..Environment::from_process()
     };
+    let sessions_dir = log::state_dir()
+        .ok_or_else(|| {
+            Error::Usage("cannot save sessions: neither XDG_STATE_HOME nor HOME is set".to_owned())
+        })?
+        .join("sessions");
     let options = Options::new(
         runtime_dir(),
+        sessions_dir,
         LoadOptions {
             config_file: config.map(Path::to_path_buf),
             workspace: PathBuf::new(),
@@ -132,7 +139,7 @@ fn status(config: Option<&Path>) -> Result<()> {
     });
     match result {
         Ok(status) => write_stdout(&format!(
-            "running, pid {}, {} {}, version {}\n",
+            "running, pid {}, {} {} ({} running, {} busy), version {}\n",
             status.pid,
             status.sessions,
             if status.sessions == 1 {
@@ -140,6 +147,8 @@ fn status(config: Option<&Path>) -> Result<()> {
             } else {
                 "sessions"
             },
+            status.running,
+            status.busy,
             status.version
         )),
         Err(Error::NoServer) => {
@@ -153,15 +162,16 @@ fn status(config: Option<&Path>) -> Result<()> {
 fn stop(config: Option<&Path>, force: bool) -> Result<()> {
     runtime()?.block_on(async {
         let mut client = Client::connect(&Connect::cli(config, false)).await?;
-        let sessions = match client.request(Request::Status).await? {
-            Payload::Status(status) => status.sessions,
+        // Sessions stay saved; only work in progress is interrupted.
+        let busy = match client.request(Request::Status).await? {
+            Payload::Status(status) => status.busy,
             other => return Err(unexpected(&other)),
         };
-        if sessions > 0 && !force && io::stdin().is_terminal() && !confirm(sessions)? {
+        if busy > 0 && !force && io::stdin().is_terminal() && !confirm(busy)? {
             return Err(Error::Failed("not stopped".to_owned()));
         }
         client.request(Request::Stop).await?;
-        // The server closes the connection when it has ended its sessions.
+        // The server closes the connection when it has stopped its sessions.
         let closed = tokio::time::timeout(STOP_TIMEOUT, async {
             while let Ok(Some(_)) = client.next().await {}
         })
@@ -173,12 +183,12 @@ fn stop(config: Option<&Path>, force: bool) -> Result<()> {
     })
 }
 
-fn confirm(sessions: usize) -> Result<bool> {
+fn confirm(busy: usize) -> Result<bool> {
     let mut stderr = io::stderr().lock();
-    let plural = if sessions == 1 { "" } else { "s" };
+    let (plural, verb) = if busy == 1 { ("", "is") } else { ("s", "are") };
     let _ = write!(
         stderr,
-        "stop the server and end {sessions} session{plural}? [y/N] "
+        "{busy} session{plural} {verb} working; stop the server and interrupt them? [y/N] "
     );
     let _ = stderr.flush();
     let mut line = String::new();

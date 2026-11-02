@@ -6,12 +6,12 @@ use std::path::{Path, PathBuf};
 use clap::{Args, ValueHint};
 use clap_complete::ArgValueCompleter;
 
-use crate::client::{unexpected, with_client};
+use crate::client::{Client, unexpected, with_client};
 use crate::complete;
 use crate::config::MODEL_ENV;
 use crate::error::{Error, Result};
 use crate::output::write_stdout;
-use crate::protocol::{Payload, Request};
+use crate::protocol::{Payload, Request, SessionInfo};
 
 #[derive(Debug, Default, Args)]
 pub struct New {
@@ -35,43 +35,51 @@ impl New {
             // Attaching needs the TUI.
             return Err(Error::Unsupported { what: "new" });
         }
-        let workspace = workspace(self.dir.as_deref())?;
-        // `CLAI_MODEL` of this client; the server checks the model.
-        let model = self.model.clone().or_else(|| {
-            std::env::var(MODEL_ENV)
-                .ok()
-                .filter(|v| !v.trim().is_empty())
-        });
-        let request = Request::New {
-            workspace,
-            name: self.name.clone(),
-            model,
-        };
-        let (session, others) = with_client(config, true, async |client| {
-            let session = match client.request(request).await? {
-                Payload::Session { session } => session,
-                other => return Err(unexpected(&other)),
-            };
-            let others: Vec<String> = client
-                .list()
-                .await?
-                .into_iter()
-                .filter(|s| s.path == session.path && s.id != session.id)
-                .map(|s| s.name)
-                .collect();
-            Ok((session, others))
-        })?;
-        if !others.is_empty() {
-            let _ = writeln!(
-                std::io::stderr(),
-                "clai: note: {} also {} in {}; sessions may change the same files",
-                others.join(", "),
-                if others.len() == 1 { "works" } else { "work" },
-                session.workspace
-            );
-        }
+        let request = request(self.name.clone(), self.model.clone(), self.dir.as_deref())?;
+        let session = with_client(config, true, async |client| create(client, request).await)?;
         write_stdout(&format!("{}\n", session.name))
     }
+}
+
+/// The `new` request: `--model` or else this client's `CLAI_MODEL`, which
+/// the server checks; `DIR` or the current directory.
+pub fn request(name: Option<String>, model: Option<String>, dir: Option<&Path>) -> Result<Request> {
+    let model = model.or_else(|| {
+        std::env::var(MODEL_ENV)
+            .ok()
+            .filter(|v| !v.trim().is_empty())
+    });
+    Ok(Request::New {
+        workspace: workspace(dir)?,
+        name,
+        model,
+    })
+}
+
+/// Creates a session; a note on standard error names other sessions in the
+/// same workspace.
+pub async fn create(client: &mut Client, request: Request) -> Result<Box<SessionInfo>> {
+    let session = match client.request(request).await? {
+        Payload::Session { session } => session,
+        other => return Err(unexpected(&other)),
+    };
+    let others: Vec<String> = client
+        .list()
+        .await?
+        .into_iter()
+        .filter(|s| s.path == session.path && s.id != session.id)
+        .map(|s| s.name)
+        .collect();
+    if !others.is_empty() {
+        let _ = writeln!(
+            std::io::stderr(),
+            "clai: note: {} also {} in {}; sessions may change the same files",
+            others.join(", "),
+            if others.len() == 1 { "works" } else { "work" },
+            session.workspace
+        );
+    }
+    Ok(session)
 }
 
 /// `DIR` or the current directory, absolute; it must be a directory.

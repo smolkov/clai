@@ -6,8 +6,8 @@ tool calls the model asks for (read and edit files, run commands) behind
 permission rules, and shows every change and command.
 
 > Status: in development. `clai run` (one task, without the TUI), sessions
-> in the background server (`clai new -d`, `ls`, `send`, `chat`, `kill`,
-> `server`), `clai models` and `clai completion` work; the TUI (`clai`,
+> in the background server, saved and resumed (`clai new -d`, `ls`,
+> `send`, `chat`, `kill`, `export`, `import`, `server`), `clai models` and `clai completion` work; the TUI (`clai`,
 > `clai attach`) and `clai commit` exit with "not implemented yet". See
 > [`todo.md`](todo.md).
 
@@ -39,9 +39,10 @@ Tab then completes commands, options, and the configured models for
 | `clai` | New session in the current directory, with the TUI. |
 | `clai TASK...`, `clai run TASK...` | Run one task without the TUI and exit. |
 | `clai new`, `clai attach`, `clai ls`, `clai kill`, `clai send` | Manage sessions in the background server. |
-| `clai chat` | Answer the questions of sessions in the terminal. |
+| `clai chat` | Chat with a session in the terminal, or answer its questions. |
 | `clai models` | List configured providers and models. |
 | `clai commit` | Print a commit message for the changes in a directory. |
+| `clai export`, `clai import` | Write a session to a file, add one from a file. |
 | `clai server` | Run, stop or check the background server. |
 | `clai completion [SHELL]` | Print the shell code for Tab completion. |
 
@@ -74,18 +75,34 @@ a decision: a permission or limit question.
 clai new -d --name api ~/ws/api       # start a session, print its name
 clai send api "run the tests and fix what fails"
 clai ls                               # name, workspace, model, state, age
-clai chat                             # answer questions as they come
+clai chat                             # new session here, chat in the terminal
+clai chat api                         # chat with a running session
+clai chat --questions                 # only answer questions, of all sessions
 clai chat --list                      # open questions, one per line
 clai chat api allow --id q3           # answer from a script
-clai kill api                         # end it; a running turn is cancelled
+clai kill api                         # end it and delete its saved files
 clai server status                    # running, pid, sessions
-clai server stop                      # end all sessions and the server
+clai server stop                      # stop the server; sessions stay saved
+clai export api api.json              # write a session to one file
+clai import api.json                  # add it again (e.g. on another machine)
 ```
 
-`clai chat` shows each question with the diff or command and reads the
-answer as a line: `y` allow, `a` always (then a rule), `n` deny, `e` deny
+`clai chat` is a plain-text chat: lines you type go to the model, its text
+streams back with one line per tool call. `Ctrl-C` cancels the running
+turn, `Ctrl-D` detaches (the session keeps working), `/help` lists the
+commands (`/cancel`, `/model`, `/detach`, `/kill`). It shows each question
+with the diff or command and reads the answer as a line: `y` allow, `a` always (then a rule), `n` deny, `e` deny
 with a message, `c` cancel the turn; for a limit question `y` continue,
-`n` stop. Sessions live in memory: stopping the server ends them. The
+`n` stop.
+
+Sessions are saved as they go, in `~/.local/state/clai/sessions/`
+(`$XDG_STATE_HOME`), so they survive a server stop, a crash or a reboot.
+`clai ls` shows them as `saved`, and `clai chat NAME` (or `send`) resumes
+one with its whole conversation and the rules you allowed. A turn that was
+running is interrupted, not continued. If its model is gone from the
+configuration, resume with `clai chat NAME --model PROVIDER/MODEL`. The
+files hold the conversation, including file contents and command output,
+so they are readable only by you; API keys are never saved. The
 server reloads `config.toml` when it changes; new sessions use the new
 file. Tab completion knows session names.
 

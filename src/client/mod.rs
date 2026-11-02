@@ -153,6 +153,13 @@ impl Client {
             .map_err(|e| Error::Failed(format!("server: {e}")))
     }
 
+    /// The events and notices read while waiting for responses. A request
+    /// sent after `attach` returns after the whole replayed log, so this
+    /// then holds all of it.
+    pub fn take_backlog(&mut self) -> Vec<ServerMessage> {
+        self.backlog.drain(..).collect()
+    }
+
     async fn read(&mut self) -> Result<ServerMessage> {
         match protocol::read(&mut self.reader).await {
             Ok(Some(message)) => Ok(message),

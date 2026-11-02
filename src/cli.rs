@@ -11,6 +11,8 @@ use crate::command::attach::Attach;
 use crate::command::chat::Chat;
 use crate::command::commit::Commit;
 use crate::command::completion::Completion;
+use crate::command::export::Export;
+use crate::command::import::Import;
 use crate::command::kill::Kill;
 use crate::command::ls::Ls;
 use crate::command::models::Models;
@@ -79,8 +81,12 @@ pub enum Command {
     Kill(Kill),
     /// Send a message to a session without attaching.
     Send(Send),
-    /// Answer questions of sessions in the terminal, without the TUI.
+    /// Chat with a session in the terminal, or answer questions of sessions.
     Chat(Chat),
+    /// Write a session to a file.
+    Export(Export),
+    /// Add a saved session from a file written by `clai export`.
+    Import(Import),
     /// List configured providers and models.
     Models(Models),
     /// Print a commit message for the changes in a directory.

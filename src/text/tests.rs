@@ -467,3 +467,64 @@ fn chat_style_has_colour_and_view() {
     assert!(text.contains("    \x1b[32m+new\x1b[0m\n"), "{text}");
     assert!(text.contains("    \x1b[36m@@ -1 +1 @@\x1b[0m\n"), "{text}");
 }
+
+#[test]
+fn conversation_streams() {
+    let mut c = Conversation::new(true, false);
+    let call = |state, result: Option<&str>| {
+        SessionEvent::ToolCall(ToolCallEvent {
+            id: "c1".into(),
+            name: "read_file".into(),
+            state,
+            summary: (state == CallState::Running).then(|| "a.rs".to_owned()),
+            arguments: json!({"path": "a.rs"}),
+            output: None,
+            result: result.map(|t| CallResult {
+                text: t.into(),
+                is_error: false,
+            }),
+        })
+    };
+    c.sent("hi");
+    let mut out = String::new();
+    for event in [
+        SessionEvent::UserMessage { text: "hi".into() },
+        SessionEvent::TextDelta {
+            text: "Let me ".into(),
+        },
+        SessionEvent::TextDelta {
+            text: "look.".into(),
+        },
+        call(CallState::Running, None),
+        call(CallState::Done, Some("x\ny\n")),
+        SessionEvent::TextDelta {
+            text: "Done".into(),
+        },
+        SessionEvent::TextDone {
+            text: "Done".into(),
+        },
+        SessionEvent::Notice {
+            text: "turn cancelled".into(),
+        },
+    ] {
+        out.push_str(&c.event(&event, false));
+    }
+    assert_eq!(
+        out,
+        "Let me look.\n✓ read_file a.rs — 2 lines\nDone\nclai: turn cancelled\n"
+    );
+    // Messages from the log and from other clients are shown.
+    assert_eq!(
+        c.event(&SessionEvent::UserMessage { text: "hi".into() }, true),
+        "> hi\n"
+    );
+    assert_eq!(
+        c.event(&SessionEvent::TextDelta { text: "a".into() }, false),
+        "a"
+    );
+    assert!(c.mid_line());
+    assert_eq!(
+        c.event(&SessionEvent::UserMessage { text: "x".into() }, false),
+        "\n> x\n"
+    );
+}

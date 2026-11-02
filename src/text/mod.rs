@@ -3,6 +3,7 @@
 //! `clai chat`.
 
 mod asker;
+mod conversation;
 mod dialog;
 mod events;
 mod question;
@@ -11,6 +12,7 @@ mod question;
 mod tests;
 
 pub use asker::LineAsker;
+pub use conversation::Conversation;
 pub use dialog::{Dialog, Step};
 pub use events::Renderer;
 pub use question::{Style, full_content, has_more, render_question, render_question_styled};

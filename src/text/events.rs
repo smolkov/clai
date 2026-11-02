@@ -50,7 +50,8 @@ impl Renderer {
                     self.summaries.insert(call.id.clone(), summary.clone());
                 }
                 if call.state.is_final() {
-                    out.push_str(&self.call_line(call));
+                    let summary = self.summaries.get(&call.id).map(String::as_str);
+                    out.push_str(&tool_line(call, summary, self.unicode));
                     out.push('\n');
                 }
                 out
@@ -84,33 +85,27 @@ impl Renderer {
         }
         text
     }
+}
 
-    /// `✓ read_file src/main.rs (lines 1–40) — 40 lines`
-    fn call_line(&self, call: &ToolCallEvent) -> String {
-        let summary = self
-            .summaries
-            .get(&call.id)
-            .cloned()
-            .unwrap_or_else(|| main_argument(&call.arguments));
-        let result = call
-            .result
-            .as_ref()
-            .map(|r| short_result(&call.name, call.state, &r.text))
-            .unwrap_or_default();
-        let dash = if self.unicode { "—" } else { "-" };
-        let mut line = format!("{} {}", marker(call.state, self.unicode), call.name);
-        if !summary.is_empty() {
-            line.push(' ');
-            line.push_str(&cut(&summary, RESULT_CHARS, self.unicode));
-        }
-        if !result.is_empty() {
-            line.push_str(&format!(
-                " {dash} {}",
-                cut(&result, RESULT_CHARS, self.unicode)
-            ));
-        }
-        line
+/// `✓ read_file src/main.rs (lines 1–40) — 40 lines`, for a call in its
+/// final state; `summary` from its earlier events.
+pub fn tool_line(call: &ToolCallEvent, summary: Option<&str>, unicode: bool) -> String {
+    let summary = summary.map_or_else(|| main_argument(&call.arguments), str::to_owned);
+    let result = call
+        .result
+        .as_ref()
+        .map(|r| short_result(&call.name, call.state, &r.text))
+        .unwrap_or_default();
+    let dash = if unicode { "—" } else { "-" };
+    let mut line = format!("{} {}", marker(call.state, unicode), call.name);
+    if !summary.is_empty() {
+        line.push(' ');
+        line.push_str(&cut(&summary, RESULT_CHARS, unicode));
     }
+    if !result.is_empty() {
+        line.push_str(&format!(" {dash} {}", cut(&result, RESULT_CHARS, unicode)));
+    }
+    line
 }
 
 /// The argument that says most about a call the tool did not summarize
