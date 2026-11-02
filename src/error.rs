@@ -46,6 +46,10 @@ pub enum Error {
     #[error("exit code {0}")]
     Exit(u8),
 
+    /// No server runs, and the command does not start one.
+    #[error("no server is running")]
+    NoServer,
+
     /// The API key of a provider could not be read.
     #[error("provider {provider}: {message}")]
     ApiKey { provider: String, message: String },
@@ -58,6 +62,7 @@ impl Error {
             Error::Unsupported { .. }
             | Error::Io { .. }
             | Error::ApiKey { .. }
+            | Error::NoServer
             | Error::Failed(_) => 1,
             Error::Exit(code) => *code,
             Error::Config(_) | Error::NoUserConfig { .. } | Error::Usage(_) => 2,

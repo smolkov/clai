@@ -3,12 +3,15 @@
 use std::path::Path;
 
 use clap::Args;
+use clap_complete::ArgValueCompleter;
 
+use crate::complete;
 use crate::error::{Error, Result};
 
 #[derive(Debug, Args)]
 pub struct Attach {
     /// Session name.
+    #[arg(add = ArgValueCompleter::new(complete::sessions))]
     pub name: Option<String>,
 }
 

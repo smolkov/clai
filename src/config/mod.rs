@@ -285,6 +285,12 @@ pub fn user_config_path(env: &Environment) -> Option<PathBuf> {
 
 /// Loads and validates the configuration.
 pub fn load(options: &LoadOptions) -> Result<Config, Error> {
+    let (user_path, user_text) = read_user_file(options)?;
+    load_with_user_text(&user_path, &user_text, options)
+}
+
+/// The path and text of the user file.
+pub fn read_user_file(options: &LoadOptions) -> Result<(PathBuf, String), Error> {
     let user_path = match &options.config_file {
         Some(path) => path.clone(),
         None => user_config_path(&options.env).ok_or_else(|| {
@@ -301,7 +307,16 @@ pub fn load(options: &LoadOptions) -> Result<Config, Error> {
         }
         Err(e) => return Err(read_error(&user_path, &e)),
     };
+    Ok((user_path, user_text))
+}
 
+/// Loads the configuration with the user file's text given, e.g. the last
+/// valid one the server kept (see `spec/config.md`, "Reloading").
+pub fn load_with_user_text(
+    user_path: &Path,
+    user_text: &str,
+    options: &LoadOptions,
+) -> Result<Config, Error> {
     let project_path = options.workspace.join(".clai").join("config.toml");
     let project_text = match fs::read_to_string(&project_path) {
         Ok(text) => Some(text),
@@ -310,8 +325,8 @@ pub fn load(options: &LoadOptions) -> Result<Config, Error> {
     };
 
     let user = FileCtx {
-        path: &user_path,
-        text: &user_text,
+        path: user_path,
+        text: user_text,
     };
     let project = project_text.as_deref().map(|text| FileCtx {
         path: &project_path,

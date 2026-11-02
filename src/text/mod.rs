@@ -1,8 +1,9 @@
 //! Plain-text output of a session for terminals and scripts: tool lines,
-//! notices, questions and answers read as lines. Used by `clai run`, later
-//! by `clai chat`.
+//! notices, questions and answers read as lines. Used by `clai run` and
+//! `clai chat`.
 
 mod asker;
+mod dialog;
 mod events;
 mod question;
 
@@ -10,8 +11,9 @@ mod question;
 mod tests;
 
 pub use asker::LineAsker;
+pub use dialog::{Dialog, Step};
 pub use events::Renderer;
-pub use question::render_question;
+pub use question::{Style, full_content, has_more, render_question, render_question_styled};
 
 use crate::agent::CallState;
 use crate::config::Symbols;

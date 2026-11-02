@@ -6,8 +6,9 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use futures_util::future::BoxFuture;
 
-use crate::agent::{Answer, Asker, Question, QuestionKind, Reply};
+use crate::agent::{Asker, Question, Reply};
 
+use super::dialog::{Dialog, Step};
 use super::question::render_question;
 
 type Input = Arc<Mutex<Box<dyn BufRead + Send>>>;
@@ -79,85 +80,22 @@ impl LineAsker {
     /// Shows the question and reads until there is an answer.
     fn dialog(&self, question: &Question) -> Reply {
         self.write(&render_question(question, &self.place, self.unicode));
+        let mut dialog = Dialog::new(question.clone(), false);
         loop {
-            let Some(line) = self.read("> ") else {
+            let Some(line) = self.read(dialog.prompt()) else {
                 return Reply::NoOne;
             };
-            let answer = match &question.kind {
-                QuestionKind::Permission(p) => match line.to_ascii_lowercase().as_str() {
-                    "y" | "allow" => Some(Answer::Allow),
-                    "n" | "deny" => Some(Answer::Deny),
-                    "c" | "cancel" => Some(Answer::Cancel),
-                    "e" => match self.read("message> ") {
-                        None => return Reply::NoOne,
-                        Some(text) if text.is_empty() => None,
-                        Some(text) => Some(Answer::DenyMessage { text }),
-                    },
-                    "a" | "always" => match self.rules(&p.proposals) {
-                        Rules::Eof => return Reply::NoOne,
-                        Rules::Back => None,
-                        Rules::Chosen(rules) => Some(Answer::AllowAlways { rules }),
-                    },
-                    _ => {
-                        self.write("  answer y, a, n, e or c\n");
-                        None
-                    }
-                },
-                QuestionKind::Limit(_) => match line.to_ascii_lowercase().as_str() {
-                    "y" | "continue" => Some(Answer::Continue),
-                    "n" | "stop" => Some(Answer::Stop),
-                    "c" | "cancel" => Some(Answer::Cancel),
-                    _ => {
-                        self.write("  answer y, n or c\n");
-                        None
-                    }
-                },
-            };
-            if let Some(answer) = answer {
-                return Reply::Answer {
-                    answer,
-                    by: BY.to_owned(),
-                };
+            match dialog.line(&line) {
+                Step::Again(text) => self.write(&text),
+                Step::Answer(answer) => {
+                    return Reply::Answer {
+                        answer,
+                        by: BY.to_owned(),
+                    };
+                }
+                // Not offered without a pager.
+                Step::View => {}
             }
         }
     }
-
-    /// Lists the proposals and reads a number or a typed rule.
-    fn rules(&self, proposals: &[Vec<String>]) -> Rules {
-        let mut list = String::new();
-        for (i, rules) in proposals.iter().enumerate() {
-            list.push_str(&format!("  {}  {}\n", i + 1, rules.join(" + ")));
-        }
-        self.write(&list);
-        let prompt = if proposals.is_empty() {
-            "rule> ".to_owned()
-        } else {
-            "rule [1]> ".to_owned()
-        };
-        let Some(line) = self.read(&prompt) else {
-            return Rules::Eof;
-        };
-        if line.is_empty() {
-            return match proposals.first() {
-                Some(rules) => Rules::Chosen(rules.clone()),
-                None => Rules::Back,
-            };
-        }
-        if let Ok(n) = line.parse::<usize>() {
-            return match n.checked_sub(1).and_then(|i| proposals.get(i)) {
-                Some(rules) => Rules::Chosen(rules.clone()),
-                None => {
-                    self.write(&format!("  no rule {n}\n"));
-                    Rules::Back
-                }
-            };
-        }
-        Rules::Chosen(vec![line])
-    }
-}
-
-enum Rules {
-    Chosen(Vec<String>),
-    Back,
-    Eof,
 }

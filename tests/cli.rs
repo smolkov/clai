@@ -15,6 +15,7 @@ fn clai(name: &str, args: &[&str]) -> (Output, PathBuf) {
         .env("HOME", state.join("home"))
         .env("XDG_CONFIG_HOME", state.join("config"))
         .env("XDG_STATE_HOME", &state)
+        .env("XDG_RUNTIME_DIR", state.join("run"))
         .env_remove("CLAI_LOG")
         .env_remove("CLAI_MODEL")
         .output()
@@ -49,10 +50,10 @@ fn unknown_option_exits_2() {
 
 #[test]
 fn unbuilt_command_exits_1() {
-    let (out, state) = clai("ls", &["ls"]);
+    let (out, state) = clai("attach", &["attach"]);
     assert_eq!(out.status.code(), Some(1));
     assert!(out.stdout.is_empty());
-    assert_eq!(stderr(&out), "clai: 'ls' is not implemented yet\n");
+    assert_eq!(stderr(&out), "clai: 'attach' is not implemented yet\n");
     let log = std::fs::read_to_string(state.join("clai/clai.log")).unwrap();
     assert!(log.contains("not implemented"));
 }
@@ -74,7 +75,7 @@ fn unwritable_log_only_warns() {
     let file = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("state-is-a-file");
     std::fs::write(&file, "").unwrap();
     let out = Command::new(env!("CARGO_BIN_EXE_clai"))
-        .arg("ls")
+        .arg("attach")
         .env("XDG_STATE_HOME", &file)
         .output()
         .unwrap();
@@ -85,16 +86,16 @@ fn unwritable_log_only_warns() {
         "{err}"
     );
     assert!(
-        err.ends_with("clai: 'ls' is not implemented yet\n"),
+        err.ends_with("clai: 'attach' is not implemented yet\n"),
         "{err}"
     );
 }
 
 #[test]
 fn config_before_command() {
-    let (out, _) = clai("config-before", &["--config", "c.toml", "ls"]);
+    let (out, _) = clai("config-before", &["--config", "c.toml", "attach"]);
     assert_eq!(out.status.code(), Some(1));
-    assert_eq!(stderr(&out), "clai: 'ls' is not implemented yet\n");
+    assert_eq!(stderr(&out), "clai: 'attach' is not implemented yet\n");
 }
 
 #[test]

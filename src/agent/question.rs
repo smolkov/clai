@@ -32,7 +32,7 @@ pub const PERMISSION_CHOICES: [Choice; 5] = [
 pub const LIMIT_CHOICES: [Choice; 3] = [Choice::Continue, Choice::Stop, Choice::Cancel];
 
 /// Requests and tool calls a turn has used so far.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TurnInfo {
     /// Number of the turn in the session, from 1.
     pub number: u64,
@@ -40,10 +40,13 @@ pub struct TurnInfo {
     pub tool_calls: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Question {
-    /// `q1`, `q2`, … in the session.
+    /// `q1`, `q2`, …; unique in the server (see [`crate::agent::Agent::share_question_ids`]).
     pub id: String,
+    /// The session that asks; filled in by the session, empty in `clai run`.
+    #[serde(default)]
+    pub session: SessionRef,
     /// Seconds since 1970 when it opened.
     pub opened: u64,
     pub turn: TurnInfo,
@@ -54,15 +57,23 @@ pub struct Question {
     pub kind: QuestionKind,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum QuestionKind {
     Permission(Box<Permission>),
     Limit(Limit),
 }
 
+/// The session a question belongs to.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionRef {
+    pub name: String,
+    /// As shown: `~/ws/rust/clai`.
+    pub workspace: String,
+}
+
 /// A tool call that asks.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Permission {
     pub call: CallInfo,
     pub details: Details,
@@ -76,7 +87,7 @@ pub struct Permission {
     pub text: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CallInfo {
     pub tool: Tool,
     /// The call's id from the model.
@@ -86,7 +97,7 @@ pub struct CallInfo {
 }
 
 /// A turn that used up its budget.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Limit {
     pub max_requests: u32,
     pub max_tool_calls: u32,
@@ -139,7 +150,7 @@ pub enum Reply {
 }
 
 /// How a question was closed.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "closed", rename_all = "snake_case")]
 pub enum Closed {
     Answered { answer: Answer, by: String },

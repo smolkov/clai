@@ -24,12 +24,16 @@ Statements marked **(assumption)** need a decision from the user.
 - One server per user and machine. Clients reach it over a Unix domain
   socket at `$XDG_RUNTIME_DIR/clai/server.sock` (fallback
   `/tmp/clai-$UID/server.sock`). The socket directory has mode `0700`, so
-  only the user can connect. **(assumption)**
+  only the user can connect; a directory that belongs to another user or is
+  a link is refused. A lock file `server.lock` next to the socket makes sure
+  only one server runs.
 - The server is started on demand: a client that finds no server starts one
-  in the background and then connects. `clai server` runs it in the
-  foreground, for debugging.
+  in the background and then connects. It first loads the configuration
+  itself, so an invalid one is reported by the client (exit `2`) instead of
+  a server that does not start. A started server leaves the terminal's
+  session and ignores `SIGHUP`; `clai server` runs it in the foreground, for
+  debugging, where `Ctrl-C`, `SIGTERM` and `SIGHUP` stop it.
 - The server exits when it has had no sessions and no clients for 60 s.
-  **(assumption)**
 - The server is a local, single-user process. It never listens on a network
   port.
 - The server must not crash (see `agent.md`, "Never crash"). An error in one
@@ -55,11 +59,18 @@ Statements marked **(assumption)** need a decision from the user.
   directory unless given), a provider and model from the configuration
   (`default_model` unless given), and a name. The default name is the
   workspace directory name, with `-2`, `-3`, … added if it is taken.
-  Names are unique per server.
+  Names are unique per server. A name is one word: at most 64 characters,
+  no spaces or control characters, not starting with `-`.
+- **Several sessions in one workspace** are allowed. They can change the
+  same files, so `clai new` prints a note on standard error naming the other
+  sessions in that workspace.
 - **Working and waiting:** see [Background work](#background-work).
 - **Kill:** ends the session. A running turn is cancelled first (same as
-  cancelling in the TUI). Attached TUIs show "session ended" and offer the
-  session list.
+  cancelling in the TUI). Attached clients get `ended`; TUIs show "session
+  ended" and offer the session list.
+- **Failure:** if a session's task fails (a bug, a panic), the session
+  sends `error` and `ended` with reason `failed` and is removed; other
+  sessions go on.
 - Each session keeps its own history, provider and model, allow rules and
   limits. The provider and model can be changed at any time from the TUI
   (see `spec/tui.md`, "Model picker"). Allow
@@ -126,9 +137,9 @@ server.
 - A session has at most one open question at a time, because tool calls run
   one after another.
 - When a question opens, it is sent to every attached client that declared,
-  when attaching, that it can answer. Clients that only watch (e.g. a
+  when connecting, that it can answer. Clients that only watch (e.g. a
   second TUI in read-only mode, or `clai ls`) see that the session is
-  `waiting` and why, but get no choices. **(assumption)**
+  `waiting` and why: they get the question with an empty `choices` list.
 - A client that attaches while a question is open receives it at once, as
   part of the session's state.
 - A question stays open until it is answered or the turn is cancelled. It
@@ -138,7 +149,11 @@ server.
   with the answer and the client that gave it (e.g. `tui pts/3`,
   `clai chat`), to all clients; they remove the prompt and show the
   outcome in the conversation. A later answer to the same question is
-  rejected with `already answered by tui pts/3`.
+  rejected with `already answered by tui pts/3`. Answers that arrive at the
+  same time are checked one after another, in the order the server got
+  them.
+- Question ids (`q1`, `q2`, …) are numbered across all sessions of a
+  server, so an id names one question. An answer still names its session.
 
 ### Content
 
@@ -147,7 +162,7 @@ Every question has:
 | Field | Meaning |
 |-------|---------|
 | `id` | Unique on the server; an answer names it. |
-| `session` | Session name and workspace. |
+| `session` | Session name and workspace (as shown, `~/ws/rust/clai`). |
 | `kind` | `permission` or `limit`. |
 | `opened` | Time the question opened. |
 | `turn` | Number of the turn, and how many model requests and tool calls it has used. |
@@ -218,15 +233,12 @@ Sessions are managed with `clai`, `clai new`, `clai attach`, `clai ls`,
 ## Persistence
 
 Sessions live only as long as the server. If the server stops, its sessions
-end; a later server starts empty. **(assumption, see open questions)**
+end (`ended` with reason `server stopped`); a later server starts empty.
+Nothing is saved to disk.
 
 ## Open questions
 
-1. Should sessions be saved to disk, so they survive a server restart or
-   reboot and can be resumed?
-2. Should a detached session that waits for an answer notify the user
+1. Should a detached session that waits for an answer notify the user
    (desktop notification, terminal bell in other attached TUIs)?
-3. Is a limit on the number of sessions running at the same time wanted, to
+2. Is a limit on the number of sessions running at the same time wanted, to
    bound API cost?
-4. Should several sessions be allowed in the same workspace? They could
-   overwrite each other's file changes.

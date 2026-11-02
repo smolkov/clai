@@ -597,12 +597,17 @@ terminal. **(assumption)**
 ## Reloading
 
 The server reads the configuration when it starts and again when the user
-file changes. **(assumption)**
+file changes. It checks the file's modification time and size every 2 s;
+an editor that replaces the file is noticed the same way.
 
 - A valid new configuration applies to new sessions and to the model pickers
-  at once.
+  at once; every client gets the notice `config_reloaded`.
 - An invalid new configuration is rejected; the server keeps the previous one
-  and shows the errors in all attached TUIs.
+  and sends the errors to every client (`config_rejected`), which shows
+  them. A server never starts with an invalid configuration.
+- `CLAI_MODEL` and `CLAI_THEME` are read by each client, not by the server:
+  `clai new` sends its `--model` or `CLAI_MODEL` to the server, which
+  checks it.
 - A running session keeps its provider and model even if they were removed or
   changed in the configuration; its next model change must pick a model that
   exists. The TUI marks such a model as "not in config".

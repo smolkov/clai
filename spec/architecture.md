@@ -114,9 +114,8 @@ clai/
 │   ├── command/                one file per command, with its arguments and `run`
 │   │   ├── mod.rs              `Command`: name, run
 │   │   └── run.rs, new.rs, attach.rs, ls.rs, kill.rs, send.rs,
-│   │       models.rs, commit.rs, server.rs, completion.rs
-    │       commit.rs            git changes, commit message   planned
-│   │       chat.rs                                            planned
+│   │       chat.rs, models.rs, commit.rs, server.rs, completion.rs
+│   │       commit.rs            git changes, commit message   planned
 │   ├── config/                 Config (config.md)
 │   │   ├── mod.rs              files, precedence, validation
 │   │   ├── file.rs             TOML files as written
@@ -161,14 +160,20 @@ clai/
 │   │   ├── prompt.rs           system prompt, today's date
 │   │   ├── system_prompt.md    system prompt text
 │   │   └── tests.rs            turns against a scripted provider
-│   ├── session/                session actor, event log, questions       planned
-│   ├── protocol/               messages, framing, handshake              planned
-│   ├── server/                 socket, registry, idle exit               planned
-│   ├── client/                 connect, start server, event stream       planned
+│   ├── session/                Session (sessions.md)
+│   │   ├── mod.rs              the actor: state, queue, event log, questions
+│   │   └── outbox.rs           messages to one client, slow-client limit
+│   ├── protocol/               messages, framing, handshake; tests.rs
+│   ├── server/                 Server (sessions.md, "Server")
+│   │   ├── mod.rs              socket, registry, requests, idle exit, reload
+│   │   ├── paths.rs            runtime directory and its mode
+│   │   └── tests.rs            the server in-process with scripted providers
+│   ├── client/                 connect, start the server, requests, events
 │   ├── tui/                    full-screen interface                     planned
 │   ├── text/                   plain-text output for clai run and clai chat
 │   │   ├── events.rs           tool lines, notices, the final answer
-│   │   ├── question.rs         questions as text
+│   │   ├── question.rs         questions as text, colour, pager hint
+│   │   ├── dialog.rs           answering a question line by line
 │   │   ├── asker.rs            `LineAsker`: answers read as lines
 │   │   └── tests.rs
 │   ├── output.rs               writing command results to standard output
@@ -179,6 +184,7 @@ clai/
     ├── cli.rs, completion.rs, models.rs
     ├── live.rs                 against real APIs, ignored by default
     ├── run.rs                  clai run against a local server
+    ├── server.rs               the server and session commands as processes
     ├── configs.rs              the sample configurations load or fail as expected
     ├── configs/                sample configurations: valid/, invalid/ (with .err), project/
     └── fixtures/               recorded SSE streams per adapter
@@ -213,21 +219,34 @@ need the network. Build output goes to `target/`, the spec book to
 ## Protocol
 
 Clients and the server exchange JSON messages over the Unix socket, one
-message per line. **(assumption, see [`implementation.md`](../implementation.md))**
-The first message in each direction is a handshake with the protocol
-version; a mismatch ends the connection with an error that tells the user to
-restart the server (see [`sessions.md`](sessions.md), "Server").
+message per line (at most 16 MiB). Every message is an object with a
+`type`. The first message in each direction is `hello` with the protocol
+version (now `1`); on a mismatch the server sends `error` and closes the
+connection, and the message tells the user to restart the server with
+`clai server stop` (see [`sessions.md`](sessions.md), "Server"). The code
+is in `src/protocol/`.
 
 Message kinds:
 
 | Direction | Kind | Content |
 |-----------|------|---------|
-| client → server | `hello` | Protocol version; client kind (`tui`, `chat`, `cli`, `bridge`) and name (e.g. `tui pts/3`); whether it answers questions. |
-| client → server | `request` | Session commands: `new`, `list`, `kill`, `rename`, `attach`, `detach`, `send` (message), `set_model`, `cancel`. Each has an id and gets one `response`. |
-| client → server | `answer` | Question id, choice, and the rule or text the choice needs (see [`sessions.md`](sessions.md), "Answers"). |
-| server → client | `response` | Result or error of one request, with the request's id. |
-| server → client | `event` | Something that happened in an attached session (see below). |
-| server → client | `notice` | Server-wide: configuration reloaded or rejected, server stopping. |
+| client → server | `hello` | Protocol version; client kind (`tui`, `chat`, `cli`, `bridge`) and name (e.g. `tui pts/3`, `clai chat`), which is shown as who answered; whether it answers questions. |
+| client → server | `request` | An id and a command: `new`, `list`, `kill`, `rename`, `attach`, `detach`, `send` (message), `set_model`, `cancel`, `answer`, `status`, `stop`. Each gets exactly one `response`. Sessions are named by their current name. |
+| server → client | `hello` | Protocol version and the server's PID. |
+| server → client | `response` | The request's id and its `result`: `ok` with a payload (`done`, a session, the session list, the status) or `error` with a message, marked `usage` when the request itself was wrong (the command then exits `2`). |
+| server → client | `event` | Something that happened in an attached session, with the session's id, and `replay` when it is part of the log sent on attach (see below). |
+| server → client | `notice` | Server-wide: `config_reloaded`, `config_rejected` (with the errors), `session_created`, `stopping`. |
+| server → client | `error` | The connection cannot go on: wrong version, a message that is not valid. |
+
+An answer is the `answer` request: session, question id, choice, and the
+rule or text the choice needs (see [`sessions.md`](sessions.md),
+"Answers"). Its response comes when the session has decided: `ok` if the
+answer counted, otherwise an error with the reason (`already answered by
+tui pts/3`, a rule that does not allow the call); the question then stays
+open.
+
+The `attach` response carries the session's info, including its open
+question; then come the log and the live events, in this order.
 
 Session events, in the order they happen:
 
@@ -241,12 +260,12 @@ Session events, in the order they happen:
 | `usage` | Tokens of a request, context size. |
 | `error` | A provider or session error that ended a request or turn. |
 | `turn_end` | The turn ended: done, cancelled, limit reached or failed. |
-| `model_changed`, `renamed`, `ended` | Session settings and lifetime. |
+| `model_changed`, `renamed`, `ended` | Session settings and lifetime; `ended` has a reason: `killed`, `failed`, `server stopped`. |
 
 On `attach`, the session first sends its event log, then live events, so a
 client that attaches late shows the same conversation as one that was there
-from the start (see [`tui.md`](tui.md), "Switching sessions"). **(assumption:
-the log is kept in memory for the session's lifetime)**
+from the start (see [`tui.md`](tui.md), "Switching sessions"). The log is
+kept in memory, whole, for the session's lifetime.
 
 All texts in messages are UTF-8 and carry no colour or layout; clients
 render them. A client that does not know an event kind of the same protocol
@@ -289,9 +308,10 @@ version is a bug, not an expected case; a new kind needs a new version.
   for cancellation happen at the same time, so cancelling works at any
   point.
 - Clients are independent of each other and of the sessions: a client that
-  reads slowly gets its events late but never blocks the session. If its
-  buffer overflows, the server drops the connection and the client
-  reattaches and replays the log. **(assumption)**
+  reads slowly gets its events late but never blocks the session. If more
+  than 4096 live messages wait for it, the server drops the connection and
+  the client reattaches and replays the log. Responses and the replayed log
+  are not counted.
 
 ## Trust boundaries
 
@@ -335,5 +355,3 @@ server (see [`agent.md`](../agent.md), "Never crash").
 
 1. Should the event log be bounded (e.g. by size), with older events only
    kept as history for the model, to limit server memory for long sessions?
-2. Should sessions be saved to disk? That would make the event log the
-   on-disk format too (see [`sessions.md`](sessions.md), open question 1).

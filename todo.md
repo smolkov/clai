@@ -22,7 +22,7 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [x] Model references with short form.
 - [x] API keys from env or `api_key_cmd`, never shown.
 - [x] `clai models`, `--json`.
-- [ ] Reload on file change (moved to Server and sessions).
+- [x] Reload on file change (done in Server and sessions).
 - [x] Glob syntax check of rule patterns (done in Tools and permissions).
 - [x] `[permissions.allow|ask|deny]` tables, `[[permissions.rules]]`,
       `extra_dirs` tables (done in Tools and permissions).
@@ -32,7 +32,7 @@ Milestones and their order: [`implementation.md`](implementation.md).
 
 - [x] `clai completion [SHELL]` with dynamic completion (`COMPLETE=<shell>`).
 - [x] `--model` completes configured models; paths for `--config`, `-C`, `DIR`.
-- [ ] Session names for `attach`, `kill`, `send` (Server and sessions).
+- [x] Session names for `attach`, `kill`, `send`, `chat` (Server and sessions).
 
 ## Providers
 
@@ -57,7 +57,8 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [x] `run_command`: process group, timeout, cancellation, background
       processes stopped.
 - [x] Questions and answers as data, checked by the loop (Agent loop).
-- [ ] Questions on the wire and the TUI prompt (Server, TUI).
+- [x] Questions on the wire (Server and sessions).
+- [ ] The TUI prompt (TUI core).
 
 ## Agent loop
 
@@ -71,8 +72,8 @@ Milestones and their order: [`implementation.md`](implementation.md).
       `ContextTooLong`.
 - [x] Session events (serde), live `run_command` output.
 - [x] System prompt with workspace, extra dirs, platform, date.
-- [ ] Model change during a turn (Server and sessions).
-- [ ] Deserializing questions and events in clients (Server and sessions).
+- [x] Model change during a turn (Server and sessions).
+- [x] Deserializing questions and events in clients (Server and sessions).
 
 ## One-shot mode
 
@@ -83,12 +84,29 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [x] Questions on the terminal (`LineAsker`); policies without one.
 - [x] Exit codes; `Ctrl-C` (130), `SIGTERM` and `SIGHUP` cancel the turn.
 - [x] End-to-end tests against a local `openai-compatible` server.
-- [ ] Colour and the `v` pager in question text (with `clai chat`).
+- [x] Colour and the `v` pager in question text (done in `clai chat`).
 - [ ] An end-to-end test of terminal questions through a pseudo-terminal.
+
+## Server and sessions
+
+- [x] Protocol: one JSON message per line, `hello` with the version,
+      requests and responses, events with `replay`, notices.
+- [x] Server: socket in a `0700` runtime directory, lock against a second
+      server, start on demand, idle exit after 60 s, `stop`, `status`.
+- [x] Session actor: state, message queue, event log replayed on attach,
+      questions to answering clients, first answer counts, `kill`,
+      `rename`, `set_model`; a failed session ends alone.
+- [x] Configuration reload (polled every 2 s), notices to clients.
+- [x] `clai new -d`, `ls`, `kill`, `send`, `chat` (interactive, `--list`,
+      script form), `server`, `server stop`, `server status`.
+- [x] Tests: in-process server with scripted providers; the commands as
+      processes against a local model server.
+- [ ] `clai`, `clai new` and `clai attach` with the TUI (TUI core).
+- [ ] An end-to-end test of `clai chat` through a pseudo-terminal (colour,
+      pager).
 
 ## Next milestones
 
-- [ ] Server and sessions
 - [ ] TUI core
 - [ ] TUI sessions and settings
 - [ ] Commit (needs `spec/commit.md`)

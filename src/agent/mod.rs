@@ -14,7 +14,8 @@ mod stream;
 #[cfg(test)]
 mod tests;
 
-use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
@@ -27,10 +28,10 @@ pub use events::{
     CallResult, CallState, EndReason, EventSink, SessionEvent, State, ToolCallEvent, TurnEnd,
 };
 pub use history::History;
-pub use prompt::{system_prompt, today};
+pub use prompt::{now_secs, system_prompt, today};
 pub use question::{
     Answer, Asker, CallInfo, Choice, Closed, LIMIT_CHOICES, Limit, PERMISSION_CHOICES, Permission,
-    PolicyAsker, Question, QuestionKind, Reply, TurnInfo,
+    PolicyAsker, Question, QuestionKind, Reply, SessionRef, TurnInfo,
 };
 
 use stream::{StreamEnd, Streamed};
@@ -51,16 +52,38 @@ pub struct Setup {
     pub system: String,
 }
 
+/// The provider and model of a session. The session can change them while
+/// a turn runs; the change applies from the next request.
+#[derive(Clone)]
+pub struct ModelHandle(Arc<Mutex<(Arc<dyn Provider>, Model)>>);
+
+impl ModelHandle {
+    pub fn new(provider: Arc<dyn Provider>, model: Model) -> ModelHandle {
+        ModelHandle(Arc::new(Mutex::new((provider, model))))
+    }
+
+    pub fn get(&self) -> (Arc<dyn Provider>, Model) {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    pub fn set(&self, provider: Arc<dyn Provider>, model: Model) {
+        *self.0.lock().unwrap_or_else(PoisonError::into_inner) = (provider, model);
+    }
+}
+
 /// The state of a session that turns work on.
 pub struct Agent {
-    provider: Arc<dyn Provider>,
-    model: Model,
+    model: ModelHandle,
     limits: Limits,
     env: Env,
     system: String,
     history: History,
     turns: u64,
-    questions: u64,
+    /// The last question number; shared by all sessions of a server.
+    questions: Arc<AtomicU64>,
 }
 
 /// Requests and tool calls: in the current budget, and in the whole turn.
@@ -110,15 +133,25 @@ struct CallIn {
 impl Agent {
     pub fn new(setup: Setup) -> Agent {
         Agent {
-            provider: setup.provider,
-            model: setup.model,
+            model: ModelHandle::new(setup.provider, setup.model),
             limits: setup.limits,
             env: setup.env,
             system: setup.system,
             history: History::default(),
             turns: 0,
-            questions: 0,
+            questions: Arc::new(AtomicU64::new(0)),
         }
+    }
+
+    /// Numbers questions from a counter shared with other agents, so that
+    /// question ids are unique in the server.
+    pub fn share_question_ids(&mut self, counter: Arc<AtomicU64>) {
+        self.questions = counter;
+    }
+
+    /// The handle to change the provider and model.
+    pub fn model(&self) -> ModelHandle {
+        self.model.clone()
     }
 
     pub fn history(&self) -> &History {
@@ -186,15 +219,16 @@ impl Agent {
             budget.requests += 1;
             budget.total_requests += 1;
 
+            let (provider, model) = self.model.get();
             let request = Request {
-                model: self.model.id.clone(),
+                model: model.id.clone(),
                 system: self.system.clone(),
                 messages: self.history.messages().to_vec(),
                 tools: tools::specs(),
-                max_output_tokens: self.model.max_output_tokens,
-                temperature: self.model.temperature,
+                max_output_tokens: model.max_output_tokens,
+                temperature: model.temperature,
             };
-            let stream = self.provider.stream(request, cancel.child_token());
+            let stream = provider.stream(request, cancel.child_token());
             let answer = stream::collect(stream, events, cancel).await;
             if let Some((input, output)) = answer.usage {
                 budget.input_tokens += input;
@@ -214,7 +248,7 @@ impl Agent {
                 StreamEnd::Failed(e) => {
                     self.history.push(Role::Assistant, answer.text_only());
                     events.emit(SessionEvent::Error {
-                        message: self.error_message(e),
+                        message: error_message(&model, e),
                     });
                     return EndReason::Failed;
                 }
@@ -245,17 +279,6 @@ impl Agent {
             if let Some(stop) = stop {
                 return stop.reason();
             }
-        }
-    }
-
-    fn error_message(&self, e: &ProviderError) -> String {
-        match e.kind {
-            ErrorKind::ContextTooLong => format!(
-                "the conversation is too long for {} ({} tokens); start a new session",
-                self.model.display_name,
-                tools::group(usize::try_from(self.model.context_window).unwrap_or(usize::MAX))
-            ),
-            _ => e.message.clone(),
         }
     }
 
@@ -496,9 +519,10 @@ impl Agent {
         choices: &[Choice],
         kind: QuestionKind,
     ) -> Question {
-        self.questions += 1;
+        let number = self.questions.fetch_add(1, Ordering::Relaxed) + 1;
         Question {
-            id: format!("q{}", self.questions),
+            id: format!("q{number}"),
+            session: SessionRef::default(),
             opened: prompt::now_secs(),
             turn: TurnInfo {
                 number: self.turns,
@@ -509,6 +533,17 @@ impl Agent {
             choices: choices.to_vec(),
             kind,
         }
+    }
+}
+
+fn error_message(model: &Model, e: &ProviderError) -> String {
+    match e.kind {
+        ErrorKind::ContextTooLong => format!(
+            "the conversation is too long for {} ({} tokens); start a new session",
+            model.display_name,
+            tools::group(usize::try_from(model.context_window).unwrap_or(usize::MAX))
+        ),
+        _ => e.message.clone(),
     }
 }
 

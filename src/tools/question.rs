@@ -1,20 +1,20 @@
 //! What a tool shows in a permission question (see `spec/tools.md`,
 //! "Questions"). The same data goes to every client.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::permissions::{Area, PartDecision, RedirectDecision, Resolved};
 
 use super::output::{FULL_BYTES, cap_bytes};
 
 /// A path as the model wrote it and as it was resolved.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PathDetails {
     pub written: String,
     /// Relative to the workspace, or absolute.
     pub resolved: String,
     /// `workspace`, `extra_dir` or `outside`.
-    pub area: &'static str,
+    pub area: String,
 }
 
 impl PathDetails {
@@ -26,13 +26,14 @@ impl PathDetails {
                 Area::Workspace(_) => "workspace",
                 Area::Extra { .. } => "extra_dir",
                 Area::Outside => "outside",
-            },
+            }
+            .to_owned(),
         }
     }
 }
 
 /// Large texts in a question, cut at 1 MiB.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Text {
     pub text: String,
     pub cut: bool,
@@ -48,7 +49,7 @@ impl Text {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "tool", rename_all = "snake_case")]
 pub enum Details {
     ReadFile {

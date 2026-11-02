@@ -4,7 +4,7 @@
 use std::fmt;
 use std::path::Path;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::config::{Action, Pattern, Permissions, Rule, Tool};
 
@@ -14,7 +14,7 @@ use super::shell::{self, Part, Script, Word};
 use super::workspace::{Resolved, Workspace};
 
 /// Why a call is allowed, asked about or denied.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Reason {
     Rule {
@@ -58,7 +58,7 @@ impl fmt::Display for Reason {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Decision {
     pub action: Action,
     pub reason: Reason,
@@ -103,7 +103,7 @@ impl Decision {
 }
 
 /// The result for one part of a command.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PartDecision {
     pub text: String,
     #[serde(skip)]
@@ -114,7 +114,7 @@ pub struct PartDecision {
 }
 
 /// A file a command reads or writes through a redirection.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RedirectDecision {
     /// As written.
     pub target: String,
@@ -127,7 +127,7 @@ pub struct RedirectDecision {
 }
 
 /// The result for a whole command line.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CommandDecision {
     /// The strictest result of the parts and redirections.
     pub decision: Decision,

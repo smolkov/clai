@@ -8,7 +8,11 @@ use std::ffi::OsStr;
 use clap::builder::StyledStr;
 use clap_complete::CompletionCandidate;
 
+use std::time::Duration;
+
+use crate::client::{Client, Connect};
 use crate::config::{self, Config, Environment, LoadOptions};
+use crate::protocol::SessionInfo;
 
 /// `--model`: every configured `provider/model`, described by its model id.
 ///
@@ -30,6 +34,40 @@ pub fn models(current: &OsStr) -> Vec<CompletionCandidate> {
         Ok(config) => model_candidates(&config, current),
         Err(_) => Vec::new(),
     }
+}
+
+/// Session names of a running server; never starts one, and gives up
+/// after a short time.
+pub fn sessions(current: &OsStr) -> Vec<CompletionCandidate> {
+    let Some(current) = current.to_str() else {
+        return Vec::new();
+    };
+    let Ok(runtime) = crate::client::runtime() else {
+        return Vec::new();
+    };
+    let options = Connect::cli(None, false);
+    let listed = runtime.block_on(async {
+        tokio::time::timeout(Duration::from_secs(1), async {
+            Client::connect(&options).await?.list().await
+        })
+        .await
+    });
+    match listed {
+        Ok(Ok(sessions)) => session_candidates(&sessions, current),
+        _ => Vec::new(),
+    }
+}
+
+/// Sessions whose name starts with `prefix`, described by their workspace.
+pub fn session_candidates(sessions: &[SessionInfo], prefix: &str) -> Vec<CompletionCandidate> {
+    sessions
+        .iter()
+        .filter(|s| s.name.starts_with(prefix))
+        .map(|s| {
+            CompletionCandidate::new(s.name.clone())
+                .help(Some(StyledStr::from(s.workspace.clone())))
+        })
+        .collect()
 }
 
 /// Models whose reference starts with `prefix`, in config order.
@@ -86,5 +124,27 @@ mod tests {
         assert_eq!(values("lo"), ["local/qwen=qwen3-coder:30b"]);
         assert!(values("x").is_empty());
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn session_names_by_prefix() {
+        let info = |name: &str| SessionInfo {
+            id: 1,
+            name: name.into(),
+            workspace: "~/ws".into(),
+            path: PathBuf::from("/ws"),
+            model: "a/b".into(),
+            state: crate::agent::State::Idle,
+            created: 0,
+            queued: 0,
+            question: None,
+        };
+        let sessions = [info("clai"), info("clai-2"), info("docs")];
+        let names: Vec<String> = session_candidates(&sessions, "cl")
+            .iter()
+            .map(|c| c.get_value().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, ["clai", "clai-2"]);
+        assert!(session_candidates(&sessions, "x").is_empty());
     }
 }

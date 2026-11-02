@@ -1,0 +1,659 @@
+//! A session as an actor (see `spec/sessions.md`): one task owns its agent,
+//! state, message queue, event log and open question. Clients reach it
+//! through a [`SessionHandle`]; it publishes events to every attached
+//! client.
+
+mod outbox;
+
+use std::collections::{HashMap, VecDeque};
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use futures_util::future::BoxFuture;
+use tokio::sync::{mpsc, oneshot};
+use tokio::task::{JoinError, JoinHandle};
+use tokio_util::sync::CancellationToken;
+
+use crate::agent::{
+    Agent, Answer, Asker, Closed, EventSink, ModelHandle, Question, Reply, SessionEvent,
+    SessionRef, State,
+};
+use crate::config::Model;
+use crate::protocol::{ErrorReply, Outcome, Payload, ServerMessage, SessionInfo};
+use crate::provider::Provider;
+
+pub use outbox::{ClientId, MAX_QUEUED, Outbox, OutboxReceiver};
+
+const GONE: &str = "the session has ended";
+
+/// What a new session starts with.
+pub struct Spec {
+    pub id: u64,
+    pub name: String,
+    /// The workspace as shown: `~/ws/rust/clai`.
+    pub place: String,
+    pub path: PathBuf,
+    /// `provider/model`.
+    pub model: String,
+    pub agent: Agent,
+    /// Seconds since 1970.
+    pub created: u64,
+}
+
+/// Commands to a session.
+enum Msg {
+    Attach {
+        outbox: Outbox,
+        answers: bool,
+        /// The id of the attach request; the session sends its response
+        /// before the log, so the client gets them in order.
+        request: u64,
+    },
+    Detach {
+        client: ClientId,
+    },
+    Send {
+        text: String,
+    },
+    Cancel,
+    SetModel {
+        model: String,
+        provider: Arc<dyn Provider>,
+        config: Model,
+    },
+    Rename {
+        name: String,
+    },
+    Answer {
+        question: String,
+        answer: Answer,
+        by: String,
+        reply: oneshot::Sender<Result<(), String>>,
+    },
+    Info {
+        reply: oneshot::Sender<SessionInfo>,
+    },
+    Kill {
+        reason: String,
+        reply: oneshot::Sender<()>,
+    },
+}
+
+/// From the agent's asker to the session.
+enum AskMsg {
+    Ask {
+        question: String,
+        reply: oneshot::Sender<Reply>,
+    },
+    Rejected {
+        question: String,
+        message: String,
+    },
+}
+
+/// The way to a running session. Cheap to clone; every call fails with
+/// "the session has ended" once it has.
+#[derive(Clone)]
+pub struct SessionHandle {
+    pub id: u64,
+    tx: mpsc::UnboundedSender<Msg>,
+}
+
+impl SessionHandle {
+    fn send(&self, msg: Msg) -> Result<(), String> {
+        self.tx.send(msg).map_err(|_| GONE.to_owned())
+    }
+
+    /// Attaches a client: the session sends the response to request
+    /// `request`, then its event log, then live events.
+    pub fn attach(&self, outbox: Outbox, answers: bool, request: u64) -> Result<(), String> {
+        self.send(Msg::Attach {
+            outbox,
+            answers,
+            request,
+        })
+    }
+
+    pub fn detach(&self, client: ClientId) {
+        let _ = self.send(Msg::Detach { client });
+    }
+
+    /// A user message: starts a turn, or is queued while one runs.
+    pub fn message(&self, text: String) -> Result<(), String> {
+        self.send(Msg::Send { text })
+    }
+
+    pub fn cancel(&self) -> Result<(), String> {
+        self.send(Msg::Cancel)
+    }
+
+    pub fn set_model(
+        &self,
+        model: String,
+        provider: Arc<dyn Provider>,
+        config: Model,
+    ) -> Result<(), String> {
+        self.send(Msg::SetModel {
+            model,
+            provider,
+            config,
+        })
+    }
+
+    pub fn rename(&self, name: String) -> Result<(), String> {
+        self.send(Msg::Rename { name })
+    }
+
+    /// Answers question `question`; `Ok` once the answer counted, `Err`
+    /// with the reason it did not.
+    pub async fn answer(&self, question: String, answer: Answer, by: String) -> Result<(), String> {
+        let (reply, rx) = oneshot::channel();
+        self.send(Msg::Answer {
+            question,
+            answer,
+            by,
+            reply,
+        })?;
+        rx.await.unwrap_or_else(|_| Err(GONE.to_owned()))
+    }
+
+    pub async fn info(&self) -> Option<SessionInfo> {
+        let (reply, rx) = oneshot::channel();
+        self.send(Msg::Info { reply }).ok()?;
+        rx.await.ok()
+    }
+
+    /// Ends the session, cancelling a running turn first; returns when it
+    /// has ended.
+    pub async fn kill(&self, reason: &str) {
+        let (reply, rx) = oneshot::channel();
+        if self
+            .send(Msg::Kill {
+                reason: reason.to_owned(),
+                reply,
+            })
+            .is_ok()
+        {
+            let _ = rx.await;
+        }
+    }
+}
+
+/// Starts the session task. `on_end` runs once it has ended, however it
+/// ended (killed, failed, or a bug in the task itself).
+pub fn spawn(spec: Spec, on_end: impl FnOnce(u64) + Send + 'static) -> SessionHandle {
+    let (tx, rx) = mpsc::unbounded_channel();
+    let id = spec.id;
+    let actor = Actor::new(spec, rx);
+    let task = tokio::spawn(actor.run());
+    tokio::spawn(async move {
+        if let Err(e) = task.await {
+            tracing::error!(session = id, "session task failed: {e}");
+        }
+        on_end(id);
+    });
+    SessionHandle { id, tx }
+}
+
+/// Answers questions with what clients send, through the session task.
+struct SessionAsker {
+    tx: mpsc::UnboundedSender<AskMsg>,
+}
+
+impl Asker for SessionAsker {
+    fn ask<'a>(&'a self, question: &'a Question) -> BoxFuture<'a, Reply> {
+        let (reply, rx) = oneshot::channel();
+        let sent = self.tx.send(AskMsg::Ask {
+            question: question.id.clone(),
+            reply,
+        });
+        Box::pin(async move {
+            if sent.is_err() {
+                return std::future::pending().await;
+            }
+            // The session never answers by itself; if it is gone, the
+            // turn is being cancelled anyway.
+            match rx.await {
+                Ok(reply) => reply,
+                Err(_) => std::future::pending().await,
+            }
+        })
+    }
+
+    fn reject(&self, question: &Question, _by: &str, message: &str) {
+        let _ = self.tx.send(AskMsg::Rejected {
+            question: question.id.clone(),
+            message: message.to_owned(),
+        });
+    }
+}
+
+struct Turn {
+    join: JoinHandle<Agent>,
+    cancel: CancellationToken,
+}
+
+struct Client {
+    outbox: Outbox,
+    answers: bool,
+}
+
+/// An answer waiting for the agent to ask, or for its verdict.
+struct Pending {
+    question: String,
+    answer: Answer,
+    by: String,
+    reply: oneshot::Sender<Result<(), String>>,
+}
+
+enum Wake {
+    Msg(Option<Msg>),
+    Ask(Option<AskMsg>),
+    Event(SessionEvent),
+    TurnDone(Result<Agent, JoinError>),
+}
+
+enum Flow {
+    Go,
+    Stop,
+}
+
+struct Actor {
+    id: u64,
+    name: String,
+    place: String,
+    path: PathBuf,
+    model: String,
+    created: u64,
+    model_handle: ModelHandle,
+    /// `None` while a turn has it.
+    agent: Option<Agent>,
+    turn: Option<Turn>,
+    state: State,
+    queue: VecDeque<String>,
+    log: Vec<SessionEvent>,
+    clients: HashMap<ClientId, Client>,
+    /// The open question, as the clients got it.
+    open: Option<Question>,
+    /// The agent waits for an answer to this question.
+    asking: Option<(String, oneshot::Sender<Reply>)>,
+    /// Answers in the order they came; the first is being checked when
+    /// `checking` is set.
+    answers: VecDeque<Pending>,
+    checking: Option<Pending>,
+    /// Closed questions and why, for late answers.
+    closed: HashMap<String, String>,
+    rx: mpsc::UnboundedReceiver<Msg>,
+    ask_rx: mpsc::UnboundedReceiver<AskMsg>,
+    events: mpsc::UnboundedReceiver<SessionEvent>,
+    sink: EventSink,
+    asker: Arc<SessionAsker>,
+}
+
+impl Actor {
+    fn new(spec: Spec, rx: mpsc::UnboundedReceiver<Msg>) -> Actor {
+        let (sink, events) = EventSink::channel();
+        let (ask_tx, ask_rx) = mpsc::unbounded_channel();
+        Actor {
+            id: spec.id,
+            name: spec.name,
+            place: spec.place,
+            path: spec.path,
+            model: spec.model,
+            created: spec.created,
+            model_handle: spec.agent.model(),
+            agent: Some(spec.agent),
+            turn: None,
+            state: State::Idle,
+            queue: VecDeque::new(),
+            log: Vec::new(),
+            clients: HashMap::new(),
+            open: None,
+            asking: None,
+            answers: VecDeque::new(),
+            checking: None,
+            closed: HashMap::new(),
+            rx,
+            ask_rx,
+            events,
+            sink,
+            asker: Arc::new(SessionAsker { tx: ask_tx }),
+        }
+    }
+
+    async fn run(mut self) {
+        loop {
+            let wake = tokio::select! {
+                msg = self.rx.recv() => Wake::Msg(msg),
+                msg = self.ask_rx.recv() => Wake::Ask(msg),
+                Some(event) = self.events.recv() => Wake::Event(event),
+                done = join(&mut self.turn) => Wake::TurnDone(done),
+            };
+            let flow = match wake {
+                Wake::Msg(Some(msg)) => self.handle(msg).await,
+                // Every handle is gone: the server is stopping.
+                Wake::Msg(None) => {
+                    self.end("server stopped").await;
+                    Flow::Stop
+                }
+                Wake::Ask(Some(msg)) => {
+                    self.handle_ask(msg);
+                    Flow::Go
+                }
+                Wake::Ask(None) => Flow::Go,
+                Wake::Event(event) => {
+                    self.publish(event);
+                    Flow::Go
+                }
+                Wake::TurnDone(done) => {
+                    self.turn = None;
+                    self.turn_done(done)
+                }
+            };
+            if let Flow::Stop = flow {
+                return;
+            }
+        }
+    }
+
+    async fn handle(&mut self, msg: Msg) -> Flow {
+        match msg {
+            Msg::Attach {
+                outbox,
+                answers,
+                request,
+            } => self.attach(outbox, answers, request),
+            Msg::Detach { client } => {
+                self.clients.remove(&client);
+            }
+            Msg::Send { text } => {
+                self.queue.push_back(text);
+                self.next_turn();
+            }
+            Msg::Cancel => {
+                if let Some(turn) = &self.turn {
+                    turn.cancel.cancel();
+                }
+            }
+            Msg::SetModel {
+                model,
+                provider,
+                config,
+            } => {
+                self.model_handle.set(provider, config);
+                self.model.clone_from(&model);
+                self.publish(SessionEvent::ModelChanged { model });
+            }
+            Msg::Rename { name } => {
+                self.name.clone_from(&name);
+                if let Some(question) = &mut self.open {
+                    question.session.name.clone_from(&name);
+                }
+                self.publish(SessionEvent::Renamed { name });
+            }
+            Msg::Answer {
+                question,
+                answer,
+                by,
+                reply,
+            } => self.answer(Pending {
+                question,
+                answer,
+                by,
+                reply,
+            }),
+            Msg::Info { reply } => {
+                let _ = reply.send(self.info());
+            }
+            Msg::Kill { reason, reply } => {
+                self.end(&reason).await;
+                let _ = reply.send(());
+                return Flow::Stop;
+            }
+        }
+        Flow::Go
+    }
+
+    fn info(&self) -> SessionInfo {
+        SessionInfo {
+            id: self.id,
+            name: self.name.clone(),
+            workspace: self.place.clone(),
+            path: self.path.clone(),
+            model: self.model.clone(),
+            state: self.state,
+            created: self.created,
+            queued: self.queue.len(),
+            question: self.open.clone(),
+        }
+    }
+
+    fn attach(&mut self, outbox: Outbox, answers: bool, request: u64) {
+        outbox.send_always(ServerMessage::Response {
+            id: request,
+            result: Outcome::Ok(Payload::Session {
+                session: Box::new(self.info()),
+            }),
+        });
+        for event in &self.log {
+            outbox.send_always(ServerMessage::Event {
+                session: self.id,
+                replay: true,
+                event: for_client(event, answers),
+            });
+        }
+        self.clients.insert(outbox.id, Client { outbox, answers });
+    }
+
+    /// Adds an event to the log and sends it to every attached client.
+    fn publish(&mut self, mut event: SessionEvent) {
+        match &mut event {
+            SessionEvent::State { state } => self.state = *state,
+            SessionEvent::Question(question) => {
+                question.session = SessionRef {
+                    name: self.name.clone(),
+                    workspace: self.place.clone(),
+                };
+                self.open = Some((**question).clone());
+            }
+            SessionEvent::QuestionClosed { id, closed } => {
+                self.question_closed(id, closed);
+            }
+            _ => {}
+        }
+        for client in self.clients.values() {
+            client.outbox.send(ServerMessage::Event {
+                session: self.id,
+                replay: false,
+                event: for_client(&event, client.answers),
+            });
+        }
+        self.log.push(event);
+    }
+
+    fn question_closed(&mut self, id: &str, closed: &Closed) {
+        if self.open.as_ref().is_some_and(|q| q.id == id) {
+            self.open = None;
+        }
+        self.asking = None;
+        let why = match closed {
+            Closed::Answered { by, .. } => format!("already answered by {by}"),
+            Closed::NoOne => "the question was closed".to_owned(),
+            Closed::Cancelled => "the question was closed: the turn was cancelled".to_owned(),
+        };
+        if let Some(pending) = self.checking.take() {
+            let counted = matches!(closed, Closed::Answered { by, .. } if *by == pending.by)
+                && pending.question == id;
+            let _ = pending
+                .reply
+                .send(if counted { Ok(()) } else { Err(why.clone()) });
+        }
+        for pending in self.answers.drain(..) {
+            let _ = pending.reply.send(Err(why.clone()));
+        }
+        self.closed.insert(id.to_owned(), why);
+    }
+
+    fn answer(&mut self, pending: Pending) {
+        let open = self.open.as_ref().map(|q| q.id.as_str());
+        let asked = self.asking.as_ref().map(|(id, _)| id.as_str());
+        if open != Some(pending.question.as_str()) && asked != Some(pending.question.as_str()) {
+            let why = self
+                .closed
+                .get(&pending.question)
+                .cloned()
+                .unwrap_or_else(|| match open {
+                    Some(open) => format!(
+                        "{} is not the open question; the open question is {open}",
+                        pending.question
+                    ),
+                    None => format!("{} has no open question", self.name),
+                });
+            let _ = pending.reply.send(Err(why));
+            return;
+        }
+        self.answers.push_back(pending);
+        self.deliver();
+    }
+
+    /// Gives the first waiting answer to the agent, if it is asking and no
+    /// other answer is being checked.
+    fn deliver(&mut self) {
+        if self.checking.is_some() {
+            return;
+        }
+        let Some((asked, _)) = &self.asking else {
+            return;
+        };
+        let Some(position) = self.answers.iter().position(|p| p.question == *asked) else {
+            return;
+        };
+        let (Some(pending), Some((_, reply))) = (self.answers.remove(position), self.asking.take())
+        else {
+            return;
+        };
+        let _ = reply.send(Reply::Answer {
+            answer: pending.answer.clone(),
+            by: pending.by.clone(),
+        });
+        self.checking = Some(pending);
+    }
+
+    fn handle_ask(&mut self, msg: AskMsg) {
+        match msg {
+            AskMsg::Ask { question, reply } => {
+                self.asking = Some((question, reply));
+                self.deliver();
+            }
+            AskMsg::Rejected { question, message } => {
+                if let Some(pending) = self.checking.take_if(|p| p.question == question) {
+                    let _ = pending.reply.send(Err(message));
+                }
+            }
+        }
+    }
+
+    /// Starts a turn with the next queued message, if none runs.
+    fn next_turn(&mut self) {
+        if self.turn.is_some() {
+            return;
+        }
+        let Some(mut agent) = self.agent.take() else {
+            return;
+        };
+        let Some(text) = self.queue.pop_front() else {
+            self.agent = Some(agent);
+            return;
+        };
+        let cancel = CancellationToken::new();
+        let sink = self.sink.clone();
+        let asker = self.asker.clone();
+        let token = cancel.clone();
+        let join = tokio::spawn(async move {
+            agent.run_turn(text, &sink, asker.as_ref(), token).await;
+            agent
+        });
+        self.turn = Some(Turn { join, cancel });
+    }
+
+    fn turn_done(&mut self, done: Result<Agent, JoinError>) -> Flow {
+        self.drain_events();
+        match done {
+            Ok(agent) => {
+                self.agent = Some(agent);
+                self.next_turn();
+                Flow::Go
+            }
+            Err(e) => {
+                tracing::error!(session = %self.name, "turn task failed: {e}");
+                self.publish(SessionEvent::Error {
+                    message: format!("the session failed: {}", join_error(&e)),
+                });
+                self.finish("failed");
+                Flow::Stop
+            }
+        }
+    }
+
+    fn drain_events(&mut self) {
+        while let Ok(event) = self.events.try_recv() {
+            self.publish(event);
+        }
+    }
+
+    /// Cancels a running turn, waits for it, and ends the session.
+    async fn end(&mut self, reason: &str) {
+        if let Some(turn) = self.turn.take() {
+            turn.cancel.cancel();
+            let done = turn.join.await;
+            self.drain_events();
+            if let Err(e) = done {
+                tracing::error!(session = %self.name, "turn task failed: {e}");
+            }
+        }
+        self.finish(reason);
+    }
+
+    fn finish(&mut self, reason: &str) {
+        for pending in self.answers.drain(..).chain(self.checking.take()) {
+            let _ = pending.reply.send(Err(GONE.to_owned()));
+        }
+        self.publish(SessionEvent::Ended {
+            reason: reason.to_owned(),
+        });
+        tracing::info!(session = %self.name, reason, "session ended");
+    }
+}
+
+/// The event as a client gets it: clients that only watch see a question
+/// without choices.
+fn for_client(event: &SessionEvent, answers: bool) -> SessionEvent {
+    match event {
+        SessionEvent::Question(question) if !answers => {
+            let mut question = question.clone();
+            question.choices.clear();
+            SessionEvent::Question(question)
+        }
+        other => other.clone(),
+    }
+}
+
+async fn join(turn: &mut Option<Turn>) -> Result<Agent, JoinError> {
+    match turn {
+        Some(turn) => (&mut turn.join).await,
+        None => std::future::pending().await,
+    }
+}
+
+fn join_error(e: &JoinError) -> String {
+    if e.is_panic() {
+        "internal error (panic); see the log".to_owned()
+    } else {
+        e.to_string()
+    }
+}
+
+/// The error reply for a request to a session that has ended.
+pub fn gone() -> ErrorReply {
+    ErrorReply::failed(GONE)
+}

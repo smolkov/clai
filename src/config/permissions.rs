@@ -101,6 +101,14 @@ impl Serialize for Tool {
     }
 }
 
+impl<'de> Deserialize<'de> for Tool {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Tool, D::Error> {
+        let name = String::deserialize(d)?;
+        Tool::from_name(&name)
+            .ok_or_else(|| serde::de::Error::custom(format!("unknown tool `{name}`")))
+    }
+}
+
 impl fmt::Display for Tool {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.name())

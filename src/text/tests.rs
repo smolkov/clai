@@ -185,13 +185,14 @@ fn path(p: &str) -> PathDetails {
     PathDetails {
         written: p.into(),
         resolved: p.into(),
-        area: "workspace",
+        area: "workspace".into(),
     }
 }
 
 fn permission(details: Details, proposals: Vec<Vec<String>>) -> Question {
     Question {
         id: "q1".into(),
+        session: Default::default(),
         opened: 0,
         turn: TurnInfo {
             number: 1,
@@ -388,6 +389,7 @@ async fn line_answers() {
 async fn limit_answers_and_rejections() {
     let q = Question {
         id: "q2".into(),
+        session: Default::default(),
         opened: 0,
         turn: TurnInfo {
             number: 1,
@@ -426,4 +428,42 @@ async fn limit_answers_and_rejections() {
         out.text(),
         "  not accepted: the rules do not allow this call\n"
     );
+}
+
+#[test]
+fn chat_style_has_colour_and_view() {
+    let style = Style {
+        name: "docs".into(),
+        place: "~/ws".into(),
+        unicode: true,
+        colour: true,
+        pager: true,
+    };
+    let q = permission(new_file(45), vec![]);
+    assert!(has_more(&q));
+    let text = render_question_styled(&q, &style);
+    assert!(text.starts_with("── docs · ~/ws · q1 ──\n"), "{text}");
+    assert!(text.contains("… 5 more lines, [v] view all\n"), "{text}");
+    let mut dialog = Dialog::new(q.clone(), true);
+    assert_eq!(dialog.line("v"), Step::View);
+    let mut no_pager = Dialog::new(q, false);
+    assert!(matches!(no_pager.line("v"), Step::Again(_)));
+
+    let edit = permission(
+        Details::EditFile {
+            path: path("a.rs"),
+            diff: crate::tools::Text::new("@@ -1 +1 @@\n-old\n+new\n".into()),
+            first_line: 1,
+            last_line: 1,
+            occurrences: 1,
+            size: 3,
+            modified: None,
+        },
+        vec![],
+    );
+    assert!(!has_more(&edit));
+    let text = render_question_styled(&edit, &style);
+    assert!(text.contains("    \x1b[31m-old\x1b[0m\n"), "{text}");
+    assert!(text.contains("    \x1b[32m+new\x1b[0m\n"), "{text}");
+    assert!(text.contains("    \x1b[36m@@ -1 +1 @@\x1b[0m\n"), "{text}");
 }

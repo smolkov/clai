@@ -4,14 +4,14 @@
 use std::fmt;
 use std::sync::Arc;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::mpsc;
 
 use super::question::{Closed, Question};
 
 /// What a session is doing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum State {
     Idle,
@@ -20,7 +20,7 @@ pub enum State {
 }
 
 /// The state of a tool call.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CallState {
     /// Streamed by the model, not checked yet.
@@ -44,7 +44,7 @@ impl CallState {
 }
 
 /// The result of a tool call, as shown to the user.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CallResult {
     /// The whole result, up to 1 MiB.
     pub text: String,
@@ -52,7 +52,7 @@ pub struct CallResult {
 }
 
 /// One change of a tool call.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ToolCallEvent {
     /// The call's id from the model.
     pub id: String,
@@ -72,7 +72,7 @@ pub struct ToolCallEvent {
 }
 
 /// How a turn ended.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EndReason {
     Done,
@@ -82,7 +82,7 @@ pub enum EndReason {
 }
 
 /// The end of a turn, with what it used.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TurnEnd {
     pub reason: EndReason,
     pub requests: u32,
@@ -91,7 +91,7 @@ pub struct TurnEnd {
     pub output_tokens: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum SessionEvent {
     State {
@@ -127,6 +127,18 @@ pub enum SessionEvent {
         message: String,
     },
     TurnEnd(TurnEnd),
+    /// The session's model changed; applies from the next request.
+    ModelChanged {
+        /// `provider/model`.
+        model: String,
+    },
+    Renamed {
+        name: String,
+    },
+    /// The session ended: `killed`, `server stopped`, `failed`.
+    Ended {
+        reason: String,
+    },
 }
 
 /// Where the loop sends its events. Sending never blocks for long; events

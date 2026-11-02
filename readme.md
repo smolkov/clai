@@ -5,9 +5,11 @@ a task in plain language; `clai` sends it to a large language model, runs the
 tool calls the model asks for (read and edit files, run commands) behind
 permission rules, and shows every change and command.
 
-> Status: in development. `clai run` (one task, without the TUI),
-> `clai models` and `clai completion` work; the other commands exit with
-> "not implemented yet". See [`todo.md`](todo.md).
+> Status: in development. `clai run` (one task, without the TUI), sessions
+> in the background server (`clai new -d`, `ls`, `send`, `chat`, `kill`,
+> `server`), `clai models` and `clai completion` work; the TUI (`clai`,
+> `clai attach`) and `clai commit` exit with "not implemented yet". See
+> [`todo.md`](todo.md).
 
 ## Build
 
@@ -37,6 +39,7 @@ Tab then completes commands, options, and the configured models for
 | `clai` | New session in the current directory, with the TUI. |
 | `clai TASK...`, `clai run TASK...` | Run one task without the TUI and exit. |
 | `clai new`, `clai attach`, `clai ls`, `clai kill`, `clai send` | Manage sessions in the background server. |
+| `clai chat` | Answer the questions of sessions in the terminal. |
 | `clai models` | List configured providers and models. |
 | `clai commit` | Print a commit message for the changes in a directory. |
 | `clai server` | Run, stop or check the background server. |
@@ -59,6 +62,36 @@ or running commands that the rules do not allow; in scripts such calls are
 denied unless `--yes` is given. `deny` rules always apply. Exit codes: `0`
 done, `1` failed or stopped, `2` usage or configuration error, `130`
 `Ctrl-C`.
+
+## Sessions in the background
+
+Sessions run in a background server, one per user, which the first session
+command starts and which exits after 60 s without sessions and clients. A
+session keeps working while no one watches it, and waits only when it needs
+a decision: a permission or limit question.
+
+```sh
+clai new -d --name api ~/ws/api       # start a session, print its name
+clai send api "run the tests and fix what fails"
+clai ls                               # name, workspace, model, state, age
+clai chat                             # answer questions as they come
+clai chat --list                      # open questions, one per line
+clai chat api allow --id q3           # answer from a script
+clai kill api                         # end it; a running turn is cancelled
+clai server status                    # running, pid, sessions
+clai server stop                      # end all sessions and the server
+```
+
+`clai chat` shows each question with the diff or command and reads the
+answer as a line: `y` allow, `a` always (then a rule), `n` deny, `e` deny
+with a message, `c` cancel the turn; for a limit question `y` continue,
+`n` stop. Sessions live in memory: stopping the server ends them. The
+server reloads `config.toml` when it changes; new sessions use the new
+file. Tab completion knows session names.
+
+The socket is `$XDG_RUNTIME_DIR/clai/server.sock` (or
+`/tmp/clai-$UID/server.sock`), in a directory only you can read. Details:
+[`spec/sessions.md`](spec/sessions.md).
 
 ## Configuration
 

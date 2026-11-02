@@ -93,7 +93,7 @@ Chosen for: pure Rust, works with a static musl build, maintained.
 | TUI | `ratatui`, `crossterm` |
 | Markdown | `pulldown-cmark` |
 | Syntax highlighting | `syntect` (pure-Rust regex backend) |
-| Config file watching | `notify` |
+| Config file watching | none: the server polls the file's time and size |
 | Paths | `dirs` or reading `XDG_*` directly |
 | Shell completion | `clap_complete` with `unstable-dynamic` |
 | Tests | `tempfile`, `insta` (snapshots of encoded requests and TUI frames) |
@@ -258,8 +258,7 @@ Status: done. `src/command/run.rs` drives the agent loop; `src/text/`
 
 ### Server and sessions
 
-- `protocol`: length-prefixed or newline-delimited JSON messages with a
-  version handshake **(proposal: newline-delimited JSON)**.
+- `protocol`: newline-delimited JSON messages with a version handshake.
 - `server`: socket in `$XDG_RUNTIME_DIR/clai/` with mode `0700`, start on
   demand, `clai server` foreground, idle exit after 60 s, `stop`,
   `status`.
@@ -278,6 +277,14 @@ Tests: server in a temp runtime dir; several sessions in parallel with the
 clients; `clai chat` in script form with a stale `--id`; an `always` rule
 that does not match the call is rejected; a session task that fails does
 not affect another; version mismatch error.
+
+Status: done, except what needs the TUI (`clai`, `clai new` without `-d`,
+`clai attach`). Decisions: sessions live in memory only; several sessions
+may share a workspace (`clai new` prints a note); the user file is polled
+every 2 s instead of using `notify`; a slow client is dropped after 4096
+waiting messages. Sessions are tested in-process in `src/server/tests.rs`
+through real clients with scripted providers; `tests/server.rs` runs the
+commands as processes.
 
 ### TUI core
 
@@ -330,7 +337,6 @@ Needs: `spec/context.md`.
 | Tools and permissions | Open question 5 in `spec/readme.md` (sandbox); open questions in `spec/tools.md`. |
 | Agent loop | Assumptions and open questions in `spec/agent-loop.md`. |
 | One-shot mode | Open question 2 (one-shot first, as proposed here). |
-| Server and sessions | Open questions in `spec/sessions.md`, at least persistence (1) and several sessions in one workspace (4). |
 | Commit | `spec/commit.md`. |
 | Context management | `spec/context.md`. |
 | Release | Open question 4 (platforms). |

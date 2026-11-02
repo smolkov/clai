@@ -36,8 +36,9 @@ Statements marked **(assumption)** need a decision from the user.
   otherwise they fail with exit code `2`.
 - Commands that use sessions (`attach`, `ls`, `kill`, `send`, `chat`, `new`) start
   the server if it is not running (see [`sessions.md`](sessions.md),
-  "Server"). `models`, `commit` and `run` work without the server.
-  **(assumption)**
+  "Server"). `models`, `commit` and `run` work without the server, and
+  `clai server stop`, `clai server status`, `clai chat --list` and the
+  script form of `clai chat` never start one.
 
 - Options of `clai` itself (`--model`, `--name`, `--yes`, `-C`) and a task
   cannot be combined with a command: `clai --model m ls` is an error (exit
@@ -165,9 +166,12 @@ attaches the TUI to it.
 |--------|---------|
 | `-d`, `--detach` | Do not attach; print the session name on standard output. |
 | `--name` | Session name. Default: the workspace directory name, made unique. |
-| `--model` | Model of the session. Default: `default_model`. |
+| `--model` | Model of the session. Default: `CLAI_MODEL`, then `default_model`. |
 
-Fails with `1` if the name is taken.
+Fails with `1` if the name is taken, and with `2` for an invalid name, an
+unknown model or a `DIR` that is not a directory. If other sessions work in
+the same workspace, a note on standard error names them. Until the TUI
+exists, only `clai new -d` is built.
 
 ## clai attach
 
@@ -186,12 +190,17 @@ clai ls [--json]
 ```
 
 Lists the sessions, one per line: name, workspace, provider/model, state
-(`idle`, `working`, `waiting`), age. Sessions waiting for permission are
-marked. No sessions: prints nothing, exit `0`.
+(`idle`, `working`, `waiting`), age. A waiting session ends with `? ` and
+the question's summary. No sessions: prints nothing, exit `0`.
+
+```
+clai    ~/ws/rust/clai  anthropic/sonnet  waiting  12m  ? run_command: cargo test parse
+docs    ~/ws/docs       local/qwen        idle     2h
+```
 
 | Option | Meaning |
 |--------|---------|
-| `--json` | Print a JSON array instead of the table. **(assumption)** |
+| `--json` | Print a JSON array instead of the table: per session `name`, `workspace` (absolute), `model`, `state`, `created` (seconds since 1970), `queued` (messages waiting for the turn) and `question` (`id`, `kind`, `summary`, or `null`). |
 
 ## clai kill
 
@@ -211,7 +220,8 @@ clai send NAME MESSAGE...
 
 Sends `MESSAGE` to session `NAME` as if typed in the TUI and returns at once;
 it does not wait for the answer. `-` reads the message from standard input.
-If a turn is running, the message is queued. **(assumption)**
+If a turn is running, the message is queued. An empty message exits `2`, an
+unknown session `1`.
 
 ## clai chat
 
@@ -226,10 +236,12 @@ Answers questions of sessions in the terminal, without the TUI (see
 connection, in a second terminal, or from a script.
 
 **Interactive** (`clai chat [NAME...]`): attaches as an answering client
-to the named sessions, or to all sessions. It prints each open question and
-each new one as it opens, reads the answer as a line on standard input, and
-keeps running until `Ctrl-C` or end of input. It does not show the
-conversation.
+(named `clai chat`) to the named sessions, or to all sessions, including
+ones created later. It prints each open question and each new one as it
+opens, on standard output, reads the answer as a line on standard input,
+and keeps running until `Ctrl-C` or end of input (exit `0`). It does not
+show the conversation. The keys are those of `clai run`; an answer the
+server does not accept is shown as `not accepted: …` and asked again.
 
 ```
 ── clai · ~/ws/rust/clai · q17 · 12:04 ──────────────────────────────────
@@ -245,10 +257,10 @@ run_command: cargo build && ./deploy.sh staging
 rule [1]>
 ```
 
-- Diffs are shown in full, with colour when standard output is a terminal;
-  new file content is shown up to 40 lines, then `… N more lines, [v] view
-  all`. `v` shows everything through `$PAGER` (default `less`).
-  **(assumption)**
+- Diffs are shown in full, with colour when standard output is a terminal
+  and `NO_COLOR` is not set; new file content is shown up to 40 lines,
+  then `… N more lines, [v] view all`. `v` shows everything through
+  `$PAGER` (default `less`), then asks again.
 - With several sessions, questions are shown one at a time, oldest first.
 - A question answered elsewhere (TUI, other `clai chat`) while shown is
   replaced by `answered in tui pts/3: allow`.
@@ -260,12 +272,14 @@ age, summary. `--json` prints the full questions, with all fields of
 [`sessions.md`](sessions.md), "Content". Exit `0`, also when there are none.
 
 **Script** (`clai chat NAME CHOICE`): answers the open question of
-session `NAME` and exits.
+session `NAME` and exits. The form is chosen by the second word: if it is
+one of the choices below, this is the script form, otherwise the words are
+session names.
 
 | `CHOICE` | Answer |
 |----------|--------|
 | `allow` | Allow once. |
-| `always RULE` | Allow and add `RULE` to the session; must be a rule the server accepts for this call. |
+| `always RULE` | Allow and add `RULE` to the session; must be a rule the server accepts for this call. The words after `always` are joined with spaces. |
 | `deny [MESSAGE...]` | Deny, with an optional message for the model. |
 | `cancel` | Deny and cancel the turn. |
 | `continue`, `stop` | Answer a limit question. |
@@ -278,7 +292,8 @@ session `NAME` and exits.
 
 Exit codes: `1` if the session has no open question, the id does not match,
 the choice does not fit the question, or it was already answered; the
-message says which.
+message says which. `2` for a choice that lacks or has extra words, and
+for `--id` without `NAME CHOICE`.
 
 ## clai models
 
@@ -339,9 +354,13 @@ clai server stop        # stop the running server and end all its sessions
 clai server status      # print whether a server runs, its PID and session count
 ```
 
-`clai server` fails with `1` if a server is already running. `stop` asks for
-confirmation on a terminal when sessions are running; `--force` skips it.
-`status` exits `0` if a server runs and `1` if not. **(assumption)**
+`clai server` fails with `1` if a server is already running, and with `2`
+if the configuration is invalid. `stop` asks for confirmation on a terminal
+when sessions are running; `--force` skips it. It waits until the server
+has ended its sessions, and fails with `1` if no server runs.
+
+`status` prints `running, pid 4242, 2 sessions, version 0.1.0` and exits
+`0`, or prints `not running` and exits `1`.
 
 ## clai completion
 
@@ -372,6 +391,8 @@ exits before doing anything else. So completion knows:
   is not used. If the configuration cannot be loaded, there are no
   candidates and no error. **(assumption)**
 - files for `--config`, directories for `-C` and `DIR`;
-- session names for `attach`, `kill`, `send` and `chat` once sessions exist.
+- session names for `attach`, `kill`, `send` and `chat`, described by
+  their workspace. They come from a running server; completion never starts
+  one and gives up after 1 s.
 
 `COMPLETE` empty or `0` is the same as not set.

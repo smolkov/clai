@@ -14,18 +14,54 @@ const CONTENT_LINES: usize = 40;
 /// Width of the label column.
 const LABEL: usize = 9;
 
+/// How a question is shown.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Style {
+    /// First word of the header: `clai`, or the session name.
+    pub name: String,
+    /// The workspace as shown (`~/ws/rust/clai`).
+    pub place: String,
+    pub unicode: bool,
+    /// ANSI colours for diffs.
+    pub colour: bool,
+    /// Whether `v` shows cut content in a pager.
+    pub pager: bool,
+}
+
+const GREEN: &str = "\x1b[32m";
+const RED: &str = "\x1b[31m";
+const CYAN: &str = "\x1b[36m";
+const RESET: &str = "\x1b[0m";
+
 /// The question and its choices; `place` is the workspace as shown
 /// (`~/ws/rust/clai`).
 pub fn render_question(question: &Question, place: &str, unicode: bool) -> String {
+    render_question_styled(
+        question,
+        &Style {
+            name: "clai".to_owned(),
+            place: place.to_owned(),
+            unicode,
+            colour: false,
+            pager: false,
+        },
+    )
+}
+
+/// The question and its choices, in a given style.
+pub fn render_question_styled(question: &Question, style: &Style) -> String {
+    let unicode = style.unicode;
     let rule = if unicode { "──" } else { "--" };
     let mut out = format!(
-        "{rule} clai {} {place} {} {} {rule}\n",
+        "{rule} {} {} {} {} {} {rule}\n",
+        style.name,
         dot(unicode),
+        style.place,
         dot(unicode),
         question.id
     );
     match &question.kind {
-        QuestionKind::Permission(p) => permission(&mut out, question, p, unicode),
+        QuestionKind::Permission(p) => permission(&mut out, question, p, style),
         QuestionKind::Limit(_) => {
             let _ = writeln!(out, "{}", question.summary);
         }
@@ -43,7 +79,28 @@ fn label(out: &mut String, name: &str, text: &str) {
     let _ = writeln!(out, "  {name:<LABEL$}{text}");
 }
 
-fn permission(out: &mut String, question: &Question, p: &Permission, unicode: bool) {
+/// Whether the question has content that is cut in the text and can be
+/// shown whole with `v`.
+pub fn has_more(question: &Question) -> bool {
+    full_content(question).is_some_and(|text| text.lines().count() > CONTENT_LINES)
+}
+
+/// The new file content of a `write_file` question.
+pub fn full_content(question: &Question) -> Option<&str> {
+    match &question.kind {
+        QuestionKind::Permission(p) => match &p.details {
+            Details::WriteFile {
+                content: Some(content),
+                ..
+            } => Some(&content.text),
+            _ => None,
+        },
+        QuestionKind::Limit(_) => None,
+    }
+}
+
+fn permission(out: &mut String, question: &Question, p: &Permission, style: &Style) {
+    let unicode = style.unicode;
     let _ = writeln!(out, "{}", question.summary);
     match &p.details {
         Details::RunCommand {
@@ -127,7 +184,7 @@ fn permission(out: &mut String, question: &Question, p: &Permission, unicode: bo
             };
             label(out, "file", &format!("{}{times}", where_(path)));
             label(out, "asks", &p.reason_text);
-            block(out, &diff.text);
+            diff_block(out, &diff.text, style.colour);
         }
         Details::WriteFile {
             path,
@@ -148,7 +205,7 @@ fn permission(out: &mut String, question: &Question, p: &Permission, unicode: bo
             }
             label(out, "asks", &p.reason_text);
             if let Some(diff) = diff {
-                block(out, &diff.text);
+                diff_block(out, &diff.text, style.colour);
             }
             if let Some(content) = content {
                 let all: Vec<&str> = content.text.lines().collect();
@@ -156,9 +213,10 @@ fn permission(out: &mut String, question: &Question, p: &Permission, unicode: bo
                 block(out, &shown.join("\n"));
                 if all.len() > CONTENT_LINES {
                     let more = if unicode { "…" } else { "..." };
+                    let view = if style.pager { ", [v] view all" } else { "" };
                     let _ = writeln!(
                         out,
-                        "{more} {} more lines",
+                        "{more} {} more lines{view}",
                         group(all.len() - CONTENT_LINES)
                     );
                 }
@@ -176,7 +234,7 @@ fn permission(out: &mut String, question: &Question, p: &Permission, unicode: bo
 
 /// `src/a.rs`, with `(extra dir)` when it is not in the workspace.
 fn where_(path: &PathDetails) -> String {
-    match path.area {
+    match path.area.as_str() {
         "workspace" => path.resolved.clone(),
         "extra_dir" => format!("{} (extra dir)", path.resolved),
         _ => format!("{} (outside)", path.resolved),
@@ -191,6 +249,29 @@ fn decision(decision: &Decision) -> String {
         Action::Deny => "deny ",
     };
     format!("{action}  {}", decision.reason)
+}
+
+fn diff_block(out: &mut String, text: &str, colour: bool) {
+    if !colour {
+        block(out, text);
+        return;
+    }
+    for line in text.lines() {
+        let colour = if line.starts_with("@@") {
+            CYAN
+        } else if line.starts_with('+') {
+            GREEN
+        } else if line.starts_with('-') {
+            RED
+        } else {
+            ""
+        };
+        if colour.is_empty() {
+            let _ = writeln!(out, "    {line}");
+        } else {
+            let _ = writeln!(out, "    {colour}{line}{RESET}");
+        }
+    }
 }
 
 fn block(out: &mut String, text: &str) {

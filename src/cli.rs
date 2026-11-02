@@ -8,6 +8,7 @@ use clap::{Args, CommandFactory, Parser, Subcommand, ValueHint};
 use clap_complete::ArgValueCompleter;
 
 use crate::command::attach::Attach;
+use crate::command::chat::Chat;
 use crate::command::commit::Commit;
 use crate::command::completion::Completion;
 use crate::command::kill::Kill;
@@ -78,6 +79,8 @@ pub enum Command {
     Kill(Kill),
     /// Send a message to a session without attaching.
     Send(Send),
+    /// Answer questions of sessions in the terminal, without the TUI.
+    Chat(Chat),
     /// List configured providers and models.
     Models(Models),
     /// Print a commit message for the changes in a directory.
