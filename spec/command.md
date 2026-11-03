@@ -76,7 +76,50 @@ clai [--model PROVIDER/MODEL] [--name NAME]
 ```
 
 Same as `clai new` in the current directory: creates a session and attaches
-the TUI to it.
+the TUI to it. This is the main way to use `clai` interactively.
+
+`clai` without a command and without a task always opens the TUI; with a
+task (`clai TASK...`) it is one-shot mode (see [`clai run`](#clai-run)).
+
+| Option | Meaning |
+|--------|---------|
+| `--model` | Model of the new session. Default: `CLAI_MODEL`, then `default_model`. |
+| `--name` | Session name. Default: the workspace directory name, made unique. |
+
+`--yes`, `--no-ask` and `-C` belong to one-shot mode; without a task they
+are an error (exit `2`).
+
+Steps, in this order; each failure exits before the terminal is changed, so
+its message is printed normally:
+
+1. Load the configuration. No user file or an invalid one: the message of
+   [`config.md`](config.md), "Validation", exit `2`.
+2. Check that standard input and standard output are terminals. Otherwise
+   exit `2` with `clai: the TUI needs a terminal; use "clai run TASK" or
+   "clai chat"`.
+3. Connect to the server, starting it if needed (see
+   [`sessions.md`](sessions.md), "Server"). If it cannot start: exit `1`.
+4. Create the session in the current directory. A taken `--name`: exit `1`;
+   an invalid name or unknown `--model`: exit `2`. If other sessions work
+   in the same workspace, the note of [`clai new`](#clai-new) is printed on
+   standard error.
+5. Open the TUI attached to the new session (see [`tui.md`](tui.md)).
+
+The session is created even if the user leaves without sending a message;
+it stays in `clai ls` like any other session. **(assumption)**
+
+When the TUI exits, the terminal is restored first; then one line on
+standard error says how to return, e.g.
+`clai: detached from project; "clai attach project" to return`. **(assumption)**
+
+| Exit | When |
+|------|------|
+| `0` | Detached (`Ctrl-D`, `Ctrl-C` twice, `/detach`, `/quit`), or the session ended (killed). |
+| `1` | The server could not be started or the connection was lost for good; a taken name. |
+| `2` | Invalid options or configuration, no terminal, an invalid name, an unknown model. |
+
+`SIGTERM` and `SIGHUP` restore the terminal and exit with `1`; the session
+keeps running on the server.
 
 ## clai run
 
@@ -161,7 +204,8 @@ clai new [-d] [--name NAME] [--model PROVIDER/MODEL] [DIR]
 ```
 
 Creates a session with workspace `DIR` (default: the current directory) and
-attaches the TUI to it.
+attaches the TUI to it. Without `-d` it follows the steps, messages and exit
+codes of [`clai`](#clai), with `DIR` as the workspace.
 
 | Option | Meaning |
 |--------|---------|
