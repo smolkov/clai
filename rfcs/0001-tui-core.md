@@ -307,6 +307,7 @@ Each step ends with `cargo fmt --all`,
 work can stop after any step.
 
 1. **Terminal**
+   - Status: todo
    - Files: `Cargo.toml`, `src/tui/mod.rs`, `src/tui/terminal.rs`,
      `src/command/new.rs`, `src/command/attach.rs`, `src/lib.rs`
    - Result: Dependencies added; `Guard`, `restore()`, panic hook, signals;
@@ -314,12 +315,14 @@ work can stop after any step.
      on `Ctrl-D` (steps of RFC 0002).
    - Tests: No-terminal exit `2`; `restore()` twice is harmless.
 2. **Connection**
+   - Status: todo
    - Files: `src/client/connection.rs`, `src/client/mod.rs`
    - Result: `Connection` with reader and writer tasks, responses by id,
      `Disconnected`.
    - Tests: Against the in-process server: request while events stream, two
      clients, server stop.
 3. **App and replay**
+   - Status: todo
    - Files: `src/tui/app.rs`, `src/tui/conversation.rs`, `src/tui/view/`
      (header, status)
    - Result: `App::update` and effects; entries from events; replay before
@@ -327,17 +330,20 @@ work can stop after any step.
    - Tests: State tests of replay, deltas, tool call states; snapshot of an
      idle session.
 4. **Markdown and scrolling**
+   - Status: todo
    - Files: `src/tui/markdown.rs`, `src/tui/conversation.rs`,
      `src/tui/view/conversation.rs`
    - Result: Markdown lines, per-entry line cache, visible slice, follow
      mode, "↓ new output", mouse wheel.
    - Tests: Markdown tests; follow-mode tests; 10 000-line timing test.
 5. **Editor**
+   - Status: todo
    - Files: `src/tui/editor.rs`, `src/tui/keys.rs`, `src/tui/view/input.rs`
    - Result: Multi-line input, line keys, history, paste, `//`, sending,
      queued mark.
    - Tests: Editor key tests; send and queued state tests.
 6. **Tool details**
+   - Status: todo
    - Files: `src/tui/conversation.rs`, `src/tui/view/conversation.rs`,
      `src/tui/style.rs`
    - Result: Expand/collapse, diffs, command output cut at
@@ -345,21 +351,25 @@ work can stop after any step.
      `NO_COLOR`.
    - Tests: Snapshots of a diff, cut output, ASCII, `NO_COLOR`.
 7. **Prompts**
+   - Status: todo
    - Files: `src/tui/prompt.rs`, `src/tui/view/prompt.rs`, `src/tui/keys.rs`
    - Result: Permission prompt with `a`/`Tab` widening and `e` message;
      limit prompt; rejected answers; answered elsewhere.
    - Tests: Prompt state tests; snapshots of both prompts.
 8. **Leaving**
+   - Status: todo
    - Files: `src/tui/mod.rs`, `src/tui/app.rs`
    - Result: Cancel, double `Ctrl-C`, `Ctrl-D`, session ended, reconnect for
      10 s, `SIGTERM`/`SIGHUP`, detach line.
    - Tests: State tests of each exit; reconnect keeps view state.
 9. **Commands**
+   - Status: todo
    - Files: `src/tui/app.rs`, `src/tui/view/` (help, confirm)
    - Result: `/help`, `/detach`, `/quit`, `/model ARG`, `/rename`, `/kill`
      with confirmation; others say they come later.
    - Tests: State tests per command.
 10. **Docs**
+   - Status: todo
    - Files: `spec/tui.md`, `spec/command.md`, `spec/architecture.md`,
      `implementation.md`, `todo.md`, `readme.md`, `rfcs/readme.md`
    - Result: Spec changes listed above; milestone status; RFC status `done`.

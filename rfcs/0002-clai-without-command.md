@@ -131,21 +131,25 @@ Built as the first step ("Terminal") of the implementation plan of
 empty screen of that step until the later steps fill it.
 
 1. **Entry**
+   - Status: todo
    - Files: `src/tui/mod.rs`
    - Result: `tui::run(config, Target)`: config, terminal check, connect,
      create or attach, then the guard; `Exit` value.
    - Tests: Unit tests of `Exit` → code and detach line.
 2. **Commands**
+   - Status: todo
    - Files: `src/command/new.rs`, `src/command/attach.rs`
    - Result: `New::run` without `-d` and `Attach::run` call `tui::run`; no
      more `Unsupported`.
    - Tests: Binary tests of the section above.
 3. **Leaving**
+   - Status: todo
    - Files: `src/tui/mod.rs`, `src/main.rs`
    - Result: Detach line after restore; errors kept until restore; exit
      codes.
    - Tests: Renamed session in the detach line.
 4. **Docs**
+   - Status: todo
    - Files: `spec/command.md`, `readme.md`, `todo.md`, `rfcs/readme.md`
    - Result: Remove "Until the TUI exists…"; readme says `clai` opens the
      TUI; RFC status `done`.

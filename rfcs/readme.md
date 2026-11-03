@@ -96,9 +96,12 @@ What is tested and how.
 
 ## Implementation plan
 
-Steps in build order. Each step leaves a working, tested state.
+Steps in build order. Each step leaves a working, tested state. Its
+status is `todo`, `in progress` or `done`; it is updated in the same change
+that builds the step, and a step is `done` only when its tests pass.
 
 1. **Name**
+   - Status: todo
    - Files: Files created or changed
    - Result: What works after it
    - Tests: What is tested
