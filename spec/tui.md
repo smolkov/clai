@@ -24,42 +24,44 @@ Statements marked **(assumption)** need a decision from the user.
 ## Layout
 
 ```
-┌ clai ─ project ─ ~/ws/project ─ anthropic/sonnet ─ 1/3 ●1 ─ 12.3k/200k ─┐
-│                                                                          │
-│ > fix the failing test                                                   │
-│                                                                          │
-│ The test fails because `parse` drops the last line. Let me look.         │
-│                                                                          │
-│ ▸ read_file src/parse.rs                                       ✓ 120 ln │
-│ ▾ edit_file src/parse.rs                                       ? ask    │
-│   - for i in 0..lines.len() - 1 {                                        │
-│   + for i in 0..lines.len() {                                            │
-│                                                                          │
-├──────────────────────────────────────────────────────────────────────────┤
-│ Allow edit of src/parse.rs?  [y] yes  [a] always  [n] no  [e] explain    │
-├──────────────────────────────────────────────────────────────────────────┤
-│ > _                                                                      │
-└ working… 2 requests, 1 tool call ─ Esc cancel ─ Ctrl-D detach ─ ? help ──┘
+> fix the failing test
+
+The test fails because `parse` drops the last line. Let me look.
+
+▸ read_file src/parse.rs                                          ✓ 120 lines
+▾ edit_file src/parse.rs                                                ? ask
+  - for i in 0..lines.len() - 1 {
+  + for i in 0..lines.len() {
+
+──────────────────────────────────────────────────────────────────────────────
+edit_file: src/parse.rs  asks: default for edit_file
+[y] yes  [a] always  [n] no  [e] explain  [Esc] cancel
+──────────────────────────────────────────────────────────────────────────────
+> _
+──────────────────────────────────────────────────────────────────────────────
+  asking · Esc cancel · /help · Ctrl-D detach
+  project · ~/ws/project · anthropic/sonnet · 1/3 ●1 · 12.3k/200k
 ```
 
-From top to bottom:
+There is no box around the screen: the conversation takes the full width, and
+plain lines set off the prompt bar and the input. From top to bottom:
 
 | Area           | Content |
 |----------------|---------|
-| Header         | Program name, session name, workspace path, provider and model (`anthropic/sonnet`), position among all sessions (`1/3`), number of other sessions waiting for an answer (`●1`), context usage (tokens used / limit). |
 | Conversation   | Scrollable history of the session: user messages, model text, tool calls. |
 | Prompt bar     | Shown only while a question (permission or limit) is open; replaces nothing else. |
-| Input          | Multi-line editor for the next user message. |
-| Status line    | Current state (idle, waiting for model, running tool, asking), turn counters, key hints. |
+| Input          | Multi-line editor for the next user message, with a line above and below it. |
+| Status row     | Current state (idle, waiting for model, running tool, asking), turn counters, key hints. |
+| Session row    | Session name, workspace path, provider and model (`anthropic/sonnet`), position among all sessions (`1/3`), number of other sessions waiting for an answer (`●1`), context usage (tokens used / limit). |
 
 The conversation area takes all remaining height. If the terminal is smaller
 than 40 × 10 cells, `clai` shows only a "terminal too small" message until it
-is resized. **(assumption)**
+is resized.
 
 ## Sessions
 
 The TUI shows exactly one session, the attached one. Other sessions keep
-running on the server; the header counts the ones waiting for an answer to a
+running on the server; the session row counts the ones waiting for an answer to a
 question (see [`sessions.md`](sessions.md), "Background work"), so the user
 knows to switch to them.
 
@@ -142,10 +144,14 @@ Changing the model of a running session:
   watched.
 - If the attached session is killed (by this or another client), the TUI
   shows a notice and opens the session list. If no session is left, it
-  offers to start a new one or exit.
+  offers to start a new one or exit. Until the session list exists: the
+  notice, the input is disabled, and any key exits with `0`. The same holds
+  for `clai server stop`; the TUI does not start the server again then.
 - If the connection to the server is lost, the TUI shows "server
-  disconnected", retries for 10 s, then exits with an error; the terminal is
-  restored. **(assumption)**
+  disconnected" and retries every 500 ms for 10 s, starting the server if
+  needed, since sessions are saved. The conversation is rebuilt from the log;
+  scroll position, expanded tool calls and unsent input are kept. After 10 s
+  it exits with an error; the terminal is restored. **(assumption)**
 
 ## Conversation entries
 
@@ -183,6 +189,9 @@ The TUI:
 2. Shows the prompt bar with the reason (`asks: default for edit_file`) and
    the choices.
 3. Takes keys for the prompt bar only, until the user answers or cancels.
+   What answers nothing still works: `PgUp` / `PgDn`, `Ctrl-Home` / `Ctrl-End`
+   and the mouse wheel scroll, to read what is asked, and `Ctrl-D` detaches and
+   leaves the question open for another client. `Ctrl-C` acts like `Esc`.
 
 | Key   | Action |
 |-------|--------|
@@ -202,7 +211,8 @@ waits (see [`sessions.md`](sessions.md), "Background work") and the TUI shows
 the prompt bar:
 
 ```
-│ Turn limit reached (50 requests, 120 tool calls). Continue?  [y] yes  [n] stop │
+Turn limit reached (50 requests, 120 tool calls). Continue?
+[y] yes  [n] stop
 ```
 
 | Key   | Action |
@@ -223,8 +233,9 @@ The prompt takes keys only for the prompt bar, as for permission prompts.
   this session.
 - Pasted text is inserted as is, including newlines (bracketed paste); it is
   not sent until `Enter`.
-- The user may type while a turn runs; the message is sent when the turn ends.
-  **(assumption)**
+- The user may type and send while a turn runs. The message goes to the server
+  at once, which queues it until the turn ends (other clients see the queue
+  too); the TUI shows it as "queued" until the turn that takes it starts.
 - Lines starting with `/` are commands for `clai`, not messages to the model:
 
 | Command    | Action |
@@ -349,6 +360,8 @@ the diff.
 | `Up` / `Down` (conversation focus) | Select the previous / next entry. |
 | `?` (conversation focus) | Show help. |
 
+`Ctrl-Z` does nothing for now: the TUI does not suspend.
+
 While new output arrives, the view follows the end of the conversation,
 unless the user scrolled up; then it stays put and the status line shows
 "↓ new output". `Ctrl-End` resumes following.
@@ -385,12 +398,14 @@ Mouse wheel scrolls the conversation. Mouse capture can be turned off with
 - Input never waits for the network or a tool: the UI runs on its own task and
   receives events from the server over the client connection.
 - Switching to a session with a long history shows its latest page within
-  200 ms; older history loads in the background. **(assumption)**
+  200 ms; older history loads in the background. **(assumption)** The first
+  version replays the whole log before its first frame; paged loading is built
+  if that turns out to be too slow.
 - A session with 10 000 conversation lines scrolls without visible delay.
 
 ## Implementation notes
 
-- Library: `ratatui` with the `crossterm` backend. **(assumption)**
+- Library: `ratatui` with the `crossterm` backend.
 - The TUI only displays state and sends user actions to the server; it does
   not call the provider or run tools itself. The agent loop runs in the
   server and does not depend on the UI, so one-shot mode and tests can run

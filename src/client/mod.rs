@@ -1,6 +1,10 @@
 //! Talking to the server: connect, start it when needed, requests and
 //! responses, the event stream (see `spec/sessions.md`, "Server").
 
+mod connection;
+
+pub use connection::Connection;
+
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -42,6 +46,16 @@ impl Connect {
             kind: ClientKind::Chat,
             name: "clai chat".to_owned(),
             answers,
+            ..Connect::cli(config_file, true)
+        }
+    }
+
+    /// The TUI; `name` is shown as who answered a question (`tui pts/3`).
+    pub fn tui(config_file: Option<&Path>, name: String) -> Connect {
+        Connect {
+            kind: ClientKind::Tui,
+            name,
+            answers: true,
             ..Connect::cli(config_file, true)
         }
     }
@@ -131,11 +145,7 @@ impl Client {
             let message = self.read().await?;
             match message {
                 ServerMessage::Response { id: got, result } if got == id => {
-                    return match result {
-                        Outcome::Ok(payload) => Ok(payload),
-                        Outcome::Error(e) if e.usage => Err(Error::Usage(e.message)),
-                        Outcome::Error(e) => Err(Error::Failed(e.message)),
-                    };
+                    return outcome(result);
                 }
                 ServerMessage::Error { message } => return Err(Error::Failed(message)),
                 other => self.backlog.push_back(other),
@@ -174,6 +184,15 @@ impl Client {
             Payload::Sessions { sessions } => Ok(sessions),
             other => Err(unexpected(&other)),
         }
+    }
+}
+
+/// A response as a result; an error with `usage` is a wrong request.
+fn outcome(result: Outcome) -> Result<Payload> {
+    match result {
+        Outcome::Ok(payload) => Ok(payload),
+        Outcome::Error(e) if e.usage => Err(Error::Usage(e.message)),
+        Outcome::Error(e) => Err(Error::Failed(e.message)),
     }
 }
 

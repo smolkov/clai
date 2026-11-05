@@ -115,7 +115,7 @@ standard error says how to return, e.g.
 | Exit | When |
 |------|------|
 | `0` | Detached (`Ctrl-D`, `Ctrl-C` twice, `/detach`, `/quit`), or the session ended (killed). |
-| `1` | The server could not be started or the connection was lost for good; a taken name. |
+| `1` | The server could not be started or the connection was lost for good; a taken name; `SIGTERM` or `SIGHUP` (the session keeps running). |
 | `2` | Invalid options or configuration, no terminal, an invalid name, an unknown model. |
 
 `SIGTERM` and `SIGHUP` restore the terminal and exit with `1`; the session
@@ -215,8 +215,7 @@ codes of [`clai`](#clai), with `DIR` as the workspace.
 
 Fails with `1` if the name is taken, and with `2` for an invalid name, an
 unknown model or a `DIR` that is not a directory. If other sessions work in
-the same workspace, a note on standard error names them. Until the TUI
-exists, only `clai new -d` is built.
+the same workspace, a note on standard error names them.
 
 ## clai attach
 
@@ -226,7 +225,12 @@ clai attach [NAME]
 
 Attaches the TUI to session `NAME`. Without `NAME`: attaches directly if
 exactly one session exists, opens the session list if there are several, and
-fails with `1` (`no sessions`) if there are none.
+fails with `1` (`no sessions`) if there are none. Until the session list
+exists, several sessions fail with `1` too:
+`clai: several sessions: a, b, c; name one`.
+
+An unknown `NAME` fails with `1`. Configuration and terminal are checked as
+for [`clai`](#clai), before anything else.
 
 ## clai ls
 

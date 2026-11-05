@@ -1,0 +1,744 @@
+//! The entries of the conversation, built from session events, and their
+//! lines on the screen. Each entry caches its lines per width; a change or a
+//! resize clears only what it has to, so that long sessions scroll without
+//! reflowing everything.
+
+use std::collections::HashMap;
+
+use ratatui::style::{Modifier, Style};
+use ratatui::text::{Line, Span};
+use serde_json::Value;
+use unicode_width::UnicodeWidthStr;
+
+use crate::agent::{CallResult, CallState, ToolCallEvent};
+use crate::text::{main_argument, short_result};
+use crate::tools::{Details, group};
+
+use super::markdown;
+use super::style::Look;
+use super::wrap::{Piece, fit, plain, wrap};
+
+/// Live output kept for a running command; the result replaces it.
+const MAX_OUTPUT: usize = 1 << 20;
+/// Cells of a `HH:MM ` prefix.
+const STAMP: usize = 6;
+/// Characters of the short result in a call's summary line.
+const SHORT_RESULT: usize = 24;
+
+/// How much of a tool call is shown.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Expansion {
+    Collapsed,
+    /// With the details, long output cut at `tui.tool_output_lines`.
+    Expanded,
+    /// With the whole result.
+    Full,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ToolCall {
+    pub id: String,
+    pub name: String,
+    pub state: CallState,
+    pub summary: Option<String>,
+    pub arguments: Value,
+    /// Live output of a running command, so far.
+    pub output: String,
+    pub result: Option<CallResult>,
+    /// From the permission question, if the call asked.
+    pub details: Option<Details>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Kind {
+    User(String),
+    /// Markdown.
+    Text(String),
+    Call(Box<ToolCall>),
+    Notice(String),
+    Error(String),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Entry {
+    pub kind: Kind,
+    /// `HH:MM`, when `tui.timestamps` is on and the entry came in live.
+    stamp: Option<String>,
+    /// The lines at the conversation's width; `None` after a change.
+    cache: Option<Vec<Line<'static>>>,
+}
+
+/// What a row of the conversation shows.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Row<'a> {
+    /// The entry it belongs to; `None` for queued messages.
+    pub entry: Option<usize>,
+    /// Whether it is the first row of the entry (not the gap before it).
+    pub first: bool,
+    pub line: Option<&'a Line<'static>>,
+}
+
+#[derive(Debug)]
+pub struct Conversation {
+    pub look: Look,
+    pub entries: Vec<Entry>,
+    /// Messages sent whose `user_message` event has not come yet.
+    pub queued: Vec<String>,
+    /// Given to new entries; see [`Entry`].
+    pub stamp: Option<String>,
+    /// `tui.tool_output_lines`; 0 = no limit.
+    limit: usize,
+    /// `tui.expand_tool_calls`.
+    expand_all: bool,
+    /// What the user chose, by call id; survives a re-attach.
+    expanded: HashMap<String, Expansion>,
+    /// Entries of tool calls by call id.
+    calls: HashMap<String, usize>,
+    /// The text entry deltas go to.
+    open_text: Option<usize>,
+    spinner: usize,
+    width: usize,
+    /// The first row of each entry, with the gap before it.
+    tops: Vec<usize>,
+    queued_lines: Vec<Line<'static>>,
+    queued_top: usize,
+}
+
+impl Conversation {
+    pub fn new(look: Look, limit: usize, expand_all: bool) -> Conversation {
+        Conversation {
+            look,
+            entries: Vec::new(),
+            queued: Vec::new(),
+            stamp: None,
+            limit,
+            expand_all,
+            expanded: HashMap::new(),
+            calls: HashMap::new(),
+            open_text: None,
+            spinner: 0,
+            width: 0,
+            tops: Vec::new(),
+            queued_lines: Vec::new(),
+            queued_top: 0,
+        }
+    }
+
+    /// Forgets the entries before a replay; what the user chose and the
+    /// queued messages stay.
+    pub fn clear(&mut self) {
+        self.entries.clear();
+        self.calls.clear();
+        self.open_text = None;
+        self.tops.clear();
+    }
+
+    fn push(&mut self, kind: Kind) {
+        self.open_text = None;
+        self.entries.push(Entry {
+            kind,
+            stamp: self.stamp.clone(),
+            cache: None,
+        });
+    }
+
+    pub fn notice(&mut self, text: impl Into<String>) {
+        self.push(Kind::Notice(text.into()));
+    }
+
+    pub fn error(&mut self, text: impl Into<String>) {
+        self.push(Kind::Error(text.into()));
+    }
+
+    /// A `user_message` event: the message is not queued any more.
+    pub fn user(&mut self, text: &str) {
+        self.unqueue(text);
+        self.push(Kind::User(text.to_owned()));
+    }
+
+    pub fn unqueue(&mut self, text: &str) {
+        if let Some(at) = self.queued.iter().position(|q| q == text) {
+            self.queued.remove(at);
+        }
+    }
+
+    pub fn text_delta(&mut self, text: &str) {
+        if let Some(entry) = self.open_text.and_then(|i| self.entries.get_mut(i))
+            && let Kind::Text(all) = &mut entry.kind
+        {
+            all.push_str(text);
+            entry.cache = None;
+            return;
+        }
+        self.push(Kind::Text(text.to_owned()));
+        self.open_text = self.entries.len().checked_sub(1);
+    }
+
+    /// The whole text of the block: the source of truth.
+    pub fn text_done(&mut self, text: &str) {
+        match self.open_text.take().and_then(|i| self.entries.get_mut(i)) {
+            Some(entry) => {
+                entry.kind = Kind::Text(text.to_owned());
+                entry.cache = None;
+            }
+            None if !text.is_empty() => self.push(Kind::Text(text.to_owned())),
+            None => {}
+        }
+    }
+
+    /// Ends the text block, if deltas came without their `text_done`.
+    pub fn close_text(&mut self) {
+        self.open_text = None;
+    }
+
+    fn call_mut(&mut self, id: &str) -> Option<&mut Entry> {
+        let at = *self.calls.get(id)?;
+        self.entries.get_mut(at)
+    }
+
+    fn call_state(&self, id: &str) -> Option<CallState> {
+        let entry = self.entries.get(*self.calls.get(id)?)?;
+        match &entry.kind {
+            Kind::Call(call) => Some(call.state),
+            _ => None,
+        }
+    }
+
+    pub fn tool_call(&mut self, event: &ToolCallEvent) {
+        // Some models use an id again; a finished call stays as it is then.
+        let known = self.call_state(&event.id);
+        if known.is_none_or(|state| state.is_final() && !event.state.is_final()) {
+            self.push(Kind::Call(Box::new(ToolCall {
+                id: event.id.clone(),
+                name: event.name.clone(),
+                state: event.state,
+                summary: None,
+                arguments: Value::Null,
+                output: String::new(),
+                result: None,
+                details: None,
+            })));
+            self.calls
+                .insert(event.id.clone(), self.entries.len().saturating_sub(1));
+        }
+        let Some(entry) = self.call_mut(&event.id) else {
+            return;
+        };
+        entry.cache = None;
+        let Kind::Call(call) = &mut entry.kind else {
+            return;
+        };
+        call.state = event.state;
+        if event.summary.is_some() {
+            call.summary.clone_from(&event.summary);
+        }
+        if !event.arguments.is_null() {
+            call.arguments.clone_from(&event.arguments);
+        }
+        if let Some(output) = &event.output
+            && call.output.len() < MAX_OUTPUT
+        {
+            call.output.push_str(output);
+        }
+        if event.result.is_some() {
+            call.result.clone_from(&event.result);
+        }
+    }
+
+    /// What a permission question says about its call.
+    pub fn set_details(&mut self, id: &str, name: &str, details: &Details) {
+        if !self.calls.contains_key(id) {
+            let event = ToolCallEvent {
+                id: id.to_owned(),
+                name: name.to_owned(),
+                state: CallState::Waiting,
+                summary: None,
+                arguments: Value::Null,
+                output: None,
+                result: None,
+            };
+            self.tool_call(&event);
+        }
+        if let Some(entry) = self.call_mut(id) {
+            entry.cache = None;
+            if let Kind::Call(call) = &mut entry.kind {
+                call.details = Some(details.clone());
+            }
+        }
+    }
+
+    pub fn entry_of_call(&self, id: &str) -> Option<usize> {
+        self.calls.get(id).copied()
+    }
+
+    /// Whether a tool call is running.
+    pub fn running_tool(&self) -> bool {
+        self.calls.values().any(|i| {
+            matches!(
+                self.entries.get(*i).map(|e| &e.kind),
+                Some(Kind::Call(call)) if call.state == CallState::Running
+            )
+        })
+    }
+
+    /// The next spinner frame; `true` if a spinner is on the screen.
+    pub fn tick(&mut self) -> bool {
+        self.spinner = self.spinner.wrapping_add(1);
+        let mut any = false;
+        for at in self.calls.values() {
+            if let Some(entry) = self.entries.get_mut(*at)
+                && let Kind::Call(call) = &entry.kind
+                && matches!(call.state, CallState::Pending | CallState::Running)
+            {
+                entry.cache = None;
+                any = true;
+            }
+        }
+        any
+    }
+
+    fn render(&self) -> Render<'_> {
+        Render {
+            look: &self.look,
+            limit: self.limit,
+            expand_all: self.expand_all,
+            expanded: &self.expanded,
+            spinner: self.spinner,
+        }
+    }
+
+    /// Moves a tool call on: collapsed → expanded → whole result (if cut) →
+    /// collapsed. `false` if the entry is no tool call.
+    pub fn toggle(&mut self, entry: usize) -> bool {
+        let Some(Entry {
+            kind: Kind::Call(call),
+            ..
+        }) = self.entries.get(entry)
+        else {
+            return false;
+        };
+        let render = self.render();
+        let next = match render.expansion(call) {
+            Expansion::Collapsed => Expansion::Expanded,
+            Expansion::Expanded if render.is_cut(call) => Expansion::Full,
+            Expansion::Expanded | Expansion::Full => Expansion::Collapsed,
+        };
+        let id = call.id.clone();
+        self.expanded.insert(id, next);
+        if let Some(entry) = self.entries.get_mut(entry) {
+            entry.cache = None;
+        }
+        true
+    }
+
+    /// The messages of the user, oldest first.
+    pub fn user_messages(&self) -> Vec<String> {
+        self.entries
+            .iter()
+            .filter_map(|e| match &e.kind {
+                Kind::User(text) => Some(text.clone()),
+                _ => None,
+            })
+            .chain(self.queued.iter().cloned())
+            .collect()
+    }
+
+    /// Brings the lines of all entries up to date for `width` cells and adds
+    /// up the rows. Only entries without lines are built.
+    pub fn layout(&mut self, width: usize) {
+        if width != self.width {
+            self.width = width;
+            for entry in &mut self.entries {
+                entry.cache = None;
+            }
+        }
+        let built: Vec<(usize, Vec<Line<'static>>)> = {
+            let render = self.render();
+            self.entries
+                .iter()
+                .enumerate()
+                .filter(|(_, e)| e.cache.is_none())
+                .map(|(i, e)| (i, render.entry(e, width)))
+                .collect()
+        };
+        for (i, lines) in built {
+            if let Some(entry) = self.entries.get_mut(i) {
+                entry.cache = Some(lines);
+            }
+        }
+        self.tops.clear();
+        let mut row = 0;
+        for i in 0..self.entries.len() {
+            self.tops.push(row);
+            row += self.gap(i) + self.height(i);
+        }
+        self.queued_top = row;
+        self.queued_lines.clear();
+        let dim = self.look.styles.dim;
+        for text in &self.queued {
+            if !self.entries.is_empty() || !self.queued_lines.is_empty() {
+                self.queued_lines.push(Line::default());
+            }
+            let pieces = [
+                (text.clone(), dim),
+                (" (queued)".to_owned(), dim.add_modifier(Modifier::ITALIC)),
+            ];
+            let first = ("> ".to_owned(), dim);
+            let rest = ("  ".to_owned(), dim);
+            self.queued_lines
+                .extend(wrap(&pieces, width, &first, &rest));
+        }
+    }
+
+    fn gap(&self, i: usize) -> usize {
+        let is_call =
+            |i: usize| matches!(self.entries.get(i).map(|e| &e.kind), Some(Kind::Call(_)));
+        usize::from(i > 0 && !(is_call(i) && is_call(i - 1)))
+    }
+
+    fn height(&self, i: usize) -> usize {
+        self.entries
+            .get(i)
+            .and_then(|e| e.cache.as_ref())
+            .map_or(0, Vec::len)
+    }
+
+    /// All rows, after [`Conversation::layout`].
+    pub fn total(&self) -> usize {
+        self.queued_top + self.queued_lines.len()
+    }
+
+    /// The first row of an entry (after its gap) and its height.
+    pub fn span_of(&self, i: usize) -> Option<(usize, usize)> {
+        let top = self.tops.get(i)?;
+        Some((top + self.gap(i), self.height(i)))
+    }
+
+    /// The entry a row belongs to.
+    pub fn entry_at(&self, row: usize) -> Option<usize> {
+        self.tops.partition_point(|t| *t <= row).checked_sub(1)
+    }
+
+    /// The rows `top..top + height`, as far as there are any. Uses the added
+    /// up rows: its cost does not grow with the length of the session.
+    pub fn rows(&self, top: usize, height: usize) -> Vec<Row<'_>> {
+        let mut rows = Vec::with_capacity(height);
+        for row in top..top + height {
+            if row >= self.total() {
+                break;
+            }
+            if row >= self.queued_top {
+                rows.push(Row {
+                    entry: None,
+                    first: false,
+                    line: self.queued_lines.get(row - self.queued_top),
+                });
+                continue;
+            }
+            let Some(i) = self.entry_at(row) else { break };
+            let Some((start, _)) = self.span_of(i) else {
+                break;
+            };
+            let line = row.checked_sub(start).and_then(|at| {
+                self.entries
+                    .get(i)
+                    .and_then(|e| e.cache.as_ref())
+                    .and_then(|lines| lines.get(at))
+            });
+            rows.push(Row {
+                entry: Some(i),
+                first: row == start,
+                line,
+            });
+        }
+        rows
+    }
+}
+
+/// What the lines of an entry depend on.
+struct Render<'a> {
+    look: &'a Look,
+    limit: usize,
+    expand_all: bool,
+    expanded: &'a HashMap<String, Expansion>,
+    spinner: usize,
+}
+
+impl Render<'_> {
+    fn expansion(&self, call: &ToolCall) -> Expansion {
+        if let Some(chosen) = self.expanded.get(&call.id) {
+            return *chosen;
+        }
+        if self.expand_all || call.state == CallState::Waiting {
+            Expansion::Expanded
+        } else {
+            Expansion::Collapsed
+        }
+    }
+
+    /// Whether the expanded call shows only a part of its details. The
+    /// change or command of an open question is always shown in full.
+    fn is_cut(&self, call: &ToolCall) -> bool {
+        self.limit > 0 && call.state != CallState::Waiting && self.body(call).len() > self.limit
+    }
+
+    fn entry(&self, entry: &Entry, width: usize) -> Vec<Line<'static>> {
+        let inner = if entry.stamp.is_some() {
+            width.saturating_sub(STAMP)
+        } else {
+            width
+        };
+        let mut lines = match &entry.kind {
+            Kind::User(text) => self.user(text, inner),
+            Kind::Text(text) => {
+                let lines = markdown::lines(text, inner, self.look);
+                if lines.is_empty() {
+                    vec![Line::default()]
+                } else {
+                    lines
+                }
+            }
+            Kind::Call(call) => self.call(call, inner),
+            Kind::Notice(text) => plain(text, inner, self.look.styles.dim),
+            Kind::Error(text) => plain(text, inner, self.look.styles.error),
+        };
+        if let (Some(stamp), Some(first)) = (&entry.stamp, lines.first_mut()) {
+            first
+                .spans
+                .insert(0, Span::styled(format!("{stamp} "), self.look.styles.dim));
+        }
+        lines
+    }
+
+    fn user(&self, text: &str, width: usize) -> Vec<Line<'static>> {
+        let style = self.look.styles.user;
+        let prompt = ("> ".to_owned(), style);
+        let more = ("  ".to_owned(), style);
+        let mut lines = Vec::new();
+        for (i, line) in text.split('\n').enumerate() {
+            let first = if i == 0 { &prompt } else { &more };
+            lines.extend(wrap(&[(line.to_owned(), style)], width, first, &more));
+        }
+        lines
+    }
+
+    fn call(&self, call: &ToolCall, width: usize) -> Vec<Line<'static>> {
+        let expansion = self.expansion(call);
+        let mut lines = vec![self.summary(call, expansion, width)];
+        if expansion == Expansion::Collapsed {
+            return lines;
+        }
+        let body = self.body(call);
+        let total = body.len();
+        let shown = if expansion == Expansion::Expanded && self.is_cut(call) {
+            self.limit
+        } else {
+            total
+        };
+        let indent = ("  ".to_owned(), self.look.styles.dim);
+        for piece in body.into_iter().take(shown) {
+            lines.extend(wrap(&[piece], width, &indent, &indent));
+        }
+        if shown < total {
+            let more = format!(
+                "{} {} more lines",
+                self.look.symbols.more,
+                group(total - shown)
+            );
+            lines.extend(wrap(
+                &[(more, self.look.styles.dim)],
+                width,
+                &indent,
+                &indent,
+            ));
+        }
+        lines
+    }
+
+    /// `▸ read_file src/parse.rs            ✓ 120 lines`
+    fn summary(&self, call: &ToolCall, expansion: Expansion, width: usize) -> Line<'static> {
+        let symbols = &self.look.symbols;
+        let styles = &self.look.styles;
+        let marker = if expansion == Expansion::Collapsed {
+            symbols.collapsed
+        } else {
+            symbols.expanded
+        };
+        let (mark, style) = self.state_mark(call);
+        let mark = fit(&mark, width / 2, symbols.more);
+        let summary = call
+            .summary
+            .clone()
+            .unwrap_or_else(|| main_argument(&call.arguments));
+        let name = fit(&call.name, width, symbols.more);
+        let head_width = marker.width() + 1 + name.width();
+        let room = width.saturating_sub(head_width + mark.width() + 2);
+        let summary = fit(
+            summary.lines().next().unwrap_or_default(),
+            room,
+            symbols.more,
+        );
+        let left = head_width + usize::from(!summary.is_empty()) + summary.width();
+        let pad = width.saturating_sub(left + mark.width()).max(1);
+        Line::from(vec![
+            Span::styled(format!("{marker} "), styles.dim),
+            Span::styled(name, styles.text.add_modifier(Modifier::BOLD)),
+            Span::styled(
+                if summary.is_empty() {
+                    String::new()
+                } else {
+                    format!(" {summary}")
+                },
+                styles.text,
+            ),
+            Span::raw(" ".repeat(pad)),
+            Span::styled(mark, style),
+        ])
+    }
+
+    fn state_mark(&self, call: &ToolCall) -> (String, Style) {
+        let symbols = &self.look.symbols;
+        let styles = &self.look.styles;
+        let short = || {
+            let text = call.result.as_ref().map_or("", |r| r.text.as_str());
+            let short = short_result(&call.name, call.state, text);
+            let cut = fit(&short, SHORT_RESULT, symbols.more);
+            if cut.is_empty() {
+                String::new()
+            } else {
+                format!(" {cut}")
+            }
+        };
+        match call.state {
+            CallState::Done => (format!("{}{}", symbols.done, short()), styles.success),
+            CallState::Error => (format!("{}{}", symbols.failed, short()), styles.error),
+            CallState::Denied => (format!("{} denied", symbols.denied), styles.warning),
+            CallState::Cancelled => (format!("{} cancelled", symbols.denied), styles.warning),
+            CallState::Waiting => (format!("{} ask", symbols.waiting), styles.warning),
+            CallState::Pending | CallState::Running => {
+                let frames = symbols.spinner;
+                let frame = frames
+                    .get(self.spinner % frames.len().max(1))
+                    .copied()
+                    .unwrap_or_default();
+                (frame.to_owned(), styles.accent)
+            }
+        }
+    }
+
+    /// The details of an expanded call, one piece per line.
+    fn body(&self, call: &ToolCall) -> Vec<Piece> {
+        let styles = &self.look.styles;
+        let mut out: Vec<Piece> = Vec::new();
+        let string = |key: &str| call.arguments.get(key).and_then(Value::as_str);
+        match &call.details {
+            Some(Details::EditFile { diff, .. }) => self.diff(&mut out, &diff.text),
+            Some(Details::WriteFile { diff, content, .. }) => {
+                if let Some(diff) = diff {
+                    self.diff(&mut out, &diff.text);
+                }
+                if let Some(content) = content {
+                    lines_into(&mut out, &content.text, styles.diff_add);
+                }
+            }
+            Some(Details::RunCommand {
+                command,
+                cwd,
+                parts,
+                redirects,
+                ..
+            }) => {
+                lines_into(&mut out, &format!("$ {command}"), styles.text);
+                out.push((format!("in {cwd}"), styles.dim));
+                if call.state == CallState::Waiting {
+                    for part in parts {
+                        let line = format!("{}  {}", part.text, part.decision.reason);
+                        out.push((line, styles.dim));
+                    }
+                    for r in redirects {
+                        let arrow = if r.write { ">" } else { "<" };
+                        let line = format!("{arrow} {}  {}", r.target, r.decision.reason);
+                        out.push((line, styles.dim));
+                    }
+                }
+            }
+            Some(Details::ReadFile {
+                path,
+                first_line,
+                last_line,
+                ..
+            }) => {
+                let line = format!("{}, lines {first_line}–{last_line}", path.resolved);
+                out.push((line, styles.dim));
+            }
+            Some(Details::ListFiles { path, pattern }) => {
+                out.push((format!("{}, pattern {pattern}", path.resolved), styles.dim));
+            }
+            Some(Details::SearchFiles { path, pattern, .. }) => {
+                out.push((format!("{pattern} in {}", path.resolved), styles.dim));
+            }
+            None => match call.name.as_str() {
+                "edit_file" => {
+                    if let Some(old) = string("old_text") {
+                        for line in old.lines() {
+                            out.push((format!("-{line}"), styles.diff_remove));
+                        }
+                    }
+                    if let Some(new) = string("new_text") {
+                        for line in new.lines() {
+                            out.push((format!("+{line}"), styles.diff_add));
+                        }
+                    }
+                }
+                "write_file" => {
+                    if let Some(content) = string("content") {
+                        lines_into(&mut out, content, styles.diff_add);
+                    }
+                }
+                "run_command" => {
+                    if let Some(command) = string("command") {
+                        lines_into(&mut out, &format!("$ {command}"), styles.text);
+                    }
+                }
+                _ => {}
+            },
+        }
+        let changes = matches!(call.name.as_str(), "edit_file" | "write_file");
+        match &call.result {
+            // An edit is its diff; its result only matters when it failed.
+            Some(result) if result.is_error || !changes => {
+                let style = if result.is_error {
+                    styles.error
+                } else {
+                    styles.text
+                };
+                lines_into(&mut out, &result.text, style);
+            }
+            Some(_) => {}
+            None => lines_into(&mut out, &call.output, styles.text),
+        }
+        out
+    }
+
+    fn diff(&self, out: &mut Vec<Piece>, text: &str) {
+        let styles = &self.look.styles;
+        for line in text.lines() {
+            let style = if line.starts_with("@@") {
+                styles.accent
+            } else if line.starts_with('+') {
+                styles.diff_add
+            } else if line.starts_with('-') {
+                styles.diff_remove
+            } else {
+                styles.text
+            };
+            out.push((line.to_owned(), style));
+        }
+    }
+}
+
+fn lines_into(out: &mut Vec<Piece>, text: &str, style: Style) {
+    for line in text.lines() {
+        out.push((line.to_owned(), style));
+    }
+}

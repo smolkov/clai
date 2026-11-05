@@ -1,7 +1,7 @@
 # `clai` without a command opens the TUI
 
 - RFC: 0002
-- Status: draft
+- Status: accepted
 - Milestone: TUI core (see [`implementation.md`](../implementation.md)),
   the entry point part of [RFC 0001](0001-tui-core.md)
 - Spec: [`spec/command.md`](../spec/command.md), "clai" and "clai new";
@@ -131,25 +131,25 @@ Built as the first step ("Terminal") of the implementation plan of
 empty screen of that step until the later steps fill it.
 
 1. **Entry**
-   - Status: todo
+   - Status: done
    - Files: `src/tui/mod.rs`
    - Result: `tui::run(config, Target)`: config, terminal check, connect,
      create or attach, then the guard; `Exit` value.
    - Tests: Unit tests of `Exit` → code and detach line.
 2. **Commands**
-   - Status: todo
+   - Status: done
    - Files: `src/command/new.rs`, `src/command/attach.rs`
    - Result: `New::run` without `-d` and `Attach::run` call `tui::run`; no
      more `Unsupported`.
    - Tests: Binary tests of the section above.
 3. **Leaving**
-   - Status: todo
+   - Status: done
    - Files: `src/tui/mod.rs`, `src/main.rs`
    - Result: Detach line after restore; errors kept until restore; exit
      codes.
    - Tests: Renamed session in the detach line.
 4. **Docs**
-   - Status: todo
+   - Status: done
    - Files: `spec/command.md`, `readme.md`, `todo.md`, `rfcs/readme.md`
    - Result: Remove "Until the TUI exists…"; readme says `clai` opens the
      TUI; RFC status `done`.
@@ -168,11 +168,14 @@ empty screen of that step until the later steps fill it.
 - **Delete a session that never got a message** when its creating TUI
   exits. Simpler to keep it (like `tmux`); see open questions.
 
-## Open questions
+## Decisions
 
-1. Should an empty session (no message sent) be deleted when the TUI that
-   created it exits, to avoid clutter in `clai ls`?
-2. Should `-C DIR` also work without a task, as the workspace of the new
-   session (today only `clai new DIR` does that)?
-3. Is the detach line wanted, or should `clai` exit silently like `tmux
-   detach` prints `[detached (from session NAME)]`?
+The open questions, as answered when the RFC was accepted:
+
+1. An empty session stays when the TUI that created it exits, like any other.
+2. `-C DIR` stays an error without a task; `clai new DIR` does that.
+3. The detach line is wanted.
+
+The terminal check comes before connecting, so the binary tests cannot reach an
+unknown name or model without a pseudo-terminal; they stay with that test in
+`todo.md`. The line after a session ended is `clai: session NAME ended: REASON`.

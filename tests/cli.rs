@@ -50,10 +50,10 @@ fn unknown_option_exits_2() {
 
 #[test]
 fn unbuilt_command_exits_1() {
-    let (out, state) = clai("attach", &["attach"]);
+    let (out, state) = clai("commit", &["commit"]);
     assert_eq!(out.status.code(), Some(1));
     assert!(out.stdout.is_empty());
-    assert_eq!(stderr(&out), "clai: 'attach' is not implemented yet\n");
+    assert_eq!(stderr(&out), "clai: 'commit' is not implemented yet\n");
     let log = std::fs::read_to_string(state.join("clai/clai.log")).unwrap();
     assert!(log.contains("not implemented"));
 }
@@ -75,7 +75,7 @@ fn unwritable_log_only_warns() {
     let file = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("state-is-a-file");
     std::fs::write(&file, "").unwrap();
     let out = Command::new(env!("CARGO_BIN_EXE_clai"))
-        .arg("attach")
+        .arg("commit")
         .env("XDG_STATE_HOME", &file)
         .output()
         .unwrap();
@@ -86,20 +86,81 @@ fn unwritable_log_only_warns() {
         "{err}"
     );
     assert!(
-        err.ends_with("clai: 'attach' is not implemented yet\n"),
+        err.ends_with("clai: 'commit' is not implemented yet\n"),
         "{err}"
     );
 }
 
 #[test]
 fn config_before_command() {
-    let (out, _) = clai("config-before", &["--config", "c.toml", "attach"]);
+    let (out, _) = clai("config-before", &["--config", "c.toml", "commit"]);
     assert_eq!(out.status.code(), Some(1));
-    assert_eq!(stderr(&out), "clai: 'attach' is not implemented yet\n");
+    assert_eq!(stderr(&out), "clai: 'commit' is not implemented yet\n");
 }
 
 #[test]
 fn top_level_option_with_command_exits_2() {
     let (out, _) = clai("top-with-command", &["--model", "m", "ls"]);
     assert_eq!(out.status.code(), Some(2));
+}
+
+const CONFIG: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/configs/valid/minimal.toml"
+);
+
+/// Standard input of these runs is a pipe: no terminal.
+fn assert_needs_terminal(name: &str, args: &[&str]) {
+    let mut all = vec!["--config", CONFIG];
+    all.extend_from_slice(args);
+    let (out, state) = clai(name, &all);
+    assert_eq!(out.status.code(), Some(2), "{}", stderr(&out));
+    assert_eq!(
+        stderr(&out),
+        "clai: the TUI needs a terminal; use \"clai run TASK\" or \"clai chat\"\n"
+    );
+    // Neither a server nor a session came of it.
+    assert!(!state.join("run/clai/server.sock").exists());
+    assert!(!state.join("run/clai/sessions").exists());
+}
+
+#[test]
+fn tui_commands_need_a_terminal() {
+    assert_needs_terminal("tui-clai", &[]);
+    assert_needs_terminal("tui-new", &["new"]);
+    assert_needs_terminal("tui-attach", &["attach"]);
+    assert_needs_terminal("tui-attach-name", &["attach", "docs"]);
+}
+
+#[test]
+fn clai_without_a_config_explains_it() {
+    let (out, _) = clai("tui-no-config", &[]);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(
+        stderr(&out).starts_with("clai: no configuration file at "),
+        "{}",
+        stderr(&out)
+    );
+}
+
+#[test]
+fn options_of_one_shot_mode_need_a_task() {
+    for (name, args) in [
+        ("tui-yes", &["--yes"][..]),
+        ("tui-no-ask", &["--no-ask"][..]),
+        ("tui-dir", &["-C", "/tmp"][..]),
+    ] {
+        let (out, _) = clai(name, args);
+        assert_eq!(out.status.code(), Some(2), "{args:?}");
+    }
+}
+
+#[test]
+fn new_checks_the_directory_before_the_terminal() {
+    let (out, _) = clai(
+        "tui-no-dir",
+        &["--config", CONFIG, "new", "/no/such/directory"],
+    );
+    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(stderr(&out), "clai: /no/such/directory: not a directory\n");
 }

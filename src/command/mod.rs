@@ -67,12 +67,7 @@ mod tests {
     /// Commands not built yet report their own name.
     #[test]
     fn unbuilt_commands_are_unsupported() {
-        let cases: &[(&[&str], &str)] = &[
-            (&[], "new"),
-            (&["new"], "new"),
-            (&["attach"], "attach"),
-            (&["commit"], "commit"),
-        ];
+        let cases: &[(&[&str], &str)] = &[(&["commit"], "commit")];
         for (args, name) in cases {
             let cli = Cli::parse_args(std::iter::once("clai").chain(args.iter().copied())).unwrap();
             let command = cli.into_command();

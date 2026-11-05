@@ -110,7 +110,7 @@ pub fn tool_line(call: &ToolCallEvent, summary: Option<&str>, unicode: bool) -> 
 
 /// The argument that says most about a call the tool did not summarize
 /// (a denied or failed call).
-fn main_argument(arguments: &Value) -> String {
+pub(crate) fn main_argument(arguments: &Value) -> String {
     ["command", "path", "pattern"]
         .iter()
         .find_map(|key| arguments.get(key).and_then(Value::as_str))
@@ -119,7 +119,7 @@ fn main_argument(arguments: &Value) -> String {
 }
 
 /// What a tool line says about the result.
-fn short_result(tool: &str, state: CallState, text: &str) -> String {
+pub(crate) fn short_result(tool: &str, state: CallState, text: &str) -> String {
     let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
     match (tool, state) {
         ("run_command", _) => lines.last().copied().unwrap_or_default().to_owned(),

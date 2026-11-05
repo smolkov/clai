@@ -173,7 +173,22 @@ clai/
 │   │   ├── paths.rs            runtime directory and its mode
 │   │   └── tests.rs            the server in-process with scripted providers
 │   ├── client/                 connect, start the server, requests, events
-│   ├── tui/                    full-screen interface                     planned
+│   │   └── connection.rs       Connection: reader and writer tasks, for the TUI
+│   ├── tui/                    full-screen interface (tui.md)
+│   │   ├── mod.rs              run: connect, attach, terminal, event loop
+│   │   ├── terminal.rs         setup, restore, panic hook; Guard restores on Drop
+│   │   ├── app.rs              App: all view state; update(Input) -> Vec<Effect>
+│   │   ├── conversation.rs     entries from events, line cache per entry
+│   │   ├── markdown.rs         Markdown as lines
+│   │   ├── wrap.rs             styled text wrapped to terminal cells
+│   │   ├── editor.rs           the input editor
+│   │   ├── prompt.rs           the open question and the keys that answer it
+│   │   ├── keys.rs             key to action, by focus
+│   │   ├── style.rs            styles and symbols (Unicode or ASCII, NO_COLOR)
+│   │   ├── view/               drawing only: conversation, prompt bar, input,
+│   │   │                       status and session rows, popups
+│   │   ├── snapshots/          expected frames (insta)
+│   │   └── tests.rs            state tests and frames with TestBackend
 │   ├── text/                   plain-text output for clai run and clai chat
 │   │   ├── events.rs           tool lines, notices, the final answer
 │   │   ├── ansi.rs             colours, used when the terminal has them

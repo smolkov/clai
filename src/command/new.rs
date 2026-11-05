@@ -12,6 +12,7 @@ use crate::config::MODEL_ENV;
 use crate::error::{Error, Result};
 use crate::output::write_stdout;
 use crate::protocol::{Payload, Request, SessionInfo};
+use crate::tui;
 
 #[derive(Debug, Default, Args)]
 pub struct New {
@@ -31,11 +32,10 @@ pub struct New {
 
 impl New {
     pub fn run(&self, config: Option<&Path>) -> Result<()> {
-        if !self.detach {
-            // Attaching needs the TUI.
-            return Err(Error::Unsupported { what: "new" });
-        }
         let request = request(self.name.clone(), self.model.clone(), self.dir.as_deref())?;
+        if !self.detach {
+            return tui::run(config, tui::Target::New(request));
+        }
         let session = with_client(config, true, async |client| create(client, request).await)?;
         write_stdout(&format!("{}\n", session.name))
     }

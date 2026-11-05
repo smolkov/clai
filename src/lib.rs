@@ -18,3 +18,4 @@ pub mod session;
 pub mod sync;
 pub mod text;
 pub mod tools;
+pub mod tui;

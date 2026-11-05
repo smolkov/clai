@@ -278,8 +278,8 @@ clients; `clai chat` in script form with a stale `--id`; an `always` rule
 that does not match the call is rejected; a session task that fails does
 not affect another; version mismatch error.
 
-Status: done, except what needs the TUI (`clai`, `clai new` without `-d`,
-`clai attach`). Decisions: sessions lived in memory only (replaced by
+Status: done (`clai`, `clai new` without `-d` and `clai attach` came with TUI
+core). Decisions: sessions lived in memory only (replaced by
 Session persistence); several sessions
 may share a workspace (`clai new` prints a note); the user file is polled
 every 2 s instead of using `notify`; a slow client is dropped after 4096
@@ -320,6 +320,13 @@ task fails becomes `saved` again instead of being removed.
 
 Tests: rendering snapshots with ratatui's `TestBackend`; key handling as
 unit tests on the TUI state, without a terminal.
+
+Status: built, see [RFC 0001](rfcs/0001-tui-core.md) and
+[RFC 0002](rfcs/0002-clai-without-command.md); a manual run in kitty or foot is
+open. Decisions: `App` is pure (one input in, effects out) and a thin shell does
+the rest; the TUI talks through `client::Connection`, which never blocks it; a
+whole replay comes before the first frame; messages typed during a turn go to
+the server's queue at once; `unicode-width` is a direct dependency for cells.
 
 ### TUI sessions and settings
 

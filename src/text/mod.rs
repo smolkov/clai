@@ -16,6 +16,7 @@ pub use asker::LineAsker;
 pub use conversation::Conversation;
 pub use dialog::{Dialog, Step};
 pub use events::Renderer;
+pub(crate) use events::{main_argument, short_result};
 pub use question::{Style, full_content, has_more, render_question, render_question_styled};
 
 use std::io::IsTerminal;

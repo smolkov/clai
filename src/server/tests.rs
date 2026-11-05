@@ -17,6 +17,8 @@ use crate::config::Environment;
 use crate::protocol::{ClientKind, Payload, Request, SessionInfo};
 use crate::provider::{Event, EventStream, ProviderError, Request as ProviderRequest, StopReason};
 
+mod connection;
+
 const CONFIG: &str = r#"
 default_model = "fake/one"
 

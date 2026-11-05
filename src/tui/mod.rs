@@ -1,0 +1,397 @@
+//! The full-screen interface, a client of the server (see `spec/tui.md`,
+//! `rfcs/0001-tui-core.md`): this file is the thin shell around [`App`], which
+//! holds all view state. It connects, attaches, sets up the terminal, feeds
+//! inputs to `App::update`, carries out its effects and draws.
+
+mod app;
+mod conversation;
+mod editor;
+mod keys;
+mod markdown;
+mod prompt;
+mod style;
+pub mod terminal;
+mod view;
+mod wrap;
+
+#[cfg(test)]
+mod tests;
+
+use std::collections::HashMap;
+use std::io::{IsTerminal, Write};
+use std::path::Path;
+use std::process::Command;
+use std::time::Duration;
+
+use crossterm::event::{Event, EventStream};
+use futures_util::StreamExt;
+use ratatui::Terminal;
+use ratatui::backend::CrosstermBackend;
+use ratatui::layout::Rect;
+use tokio::signal::unix::{SignalKind, signal};
+use tokio::sync::mpsc;
+use tokio::time::{Instant, MissedTickBehavior, interval_at, sleep, sleep_until};
+
+use crate::client::{Client, Connect, Connection, unexpected};
+use crate::command::new::create;
+use crate::config::{self, Config, Environment, LoadOptions};
+use crate::error::{Error, Result};
+use crate::protocol::{Payload, Request, ServerMessage, SessionInfo};
+use crate::runtime::current_thread;
+use crate::server::runtime_dir;
+
+pub use app::Exit;
+use app::{App, Attachment, Effect, Input, LOST, Settings};
+
+/// How long to wait between two tries to connect again.
+const RECONNECT_EVERY: Duration = Duration::from_millis(500);
+
+/// Which session to show.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Target {
+    /// A `new` request (see `command::new::request`).
+    New(Request),
+    /// A session by name; without one, the only session there is.
+    Attach(Option<String>),
+}
+
+/// Runs the TUI until the user leaves. Every failure before the terminal
+/// changes is an ordinary error (see `spec/command.md`, "clai").
+pub fn run(config: Option<&Path>, target: Target) -> Result<()> {
+    let workspace = match &target {
+        Target::New(Request::New { workspace, .. }) => workspace.clone(),
+        // No project file applies; the session has its own workspace.
+        _ => runtime_dir(),
+    };
+    let loaded = config::load(&LoadOptions {
+        config_file: config.map(Path::to_path_buf),
+        workspace,
+        env: Environment::from_process(),
+    })?;
+    check_terminal(
+        std::io::stdin().is_terminal(),
+        std::io::stdout().is_terminal(),
+    )?;
+    let connect = Connect::tui(config, client_name());
+    let exit = current_thread()?.block_on(async {
+        let mut client = Client::connect(&connect).await?;
+        let name = session_name(&mut client, target).await?;
+        let attached = attach(client, &name).await?;
+        terminal::install_panic_hook();
+        let guard = terminal::Guard::new(loaded.tui.mouse)?;
+        let exit = event_loop(
+            settings(&loaded, &connect),
+            &loaded,
+            connect.clone(),
+            attached,
+        )
+        .await;
+        // Restored before anything is printed, also after an error.
+        drop(guard);
+        exit
+    })?;
+    finish(&exit)
+}
+
+fn check_terminal(stdin: bool, stdout: bool) -> Result<()> {
+    if stdin && stdout {
+        Ok(())
+    } else {
+        Err(Error::Usage(
+            "the TUI needs a terminal; use \"clai run TASK\" or \"clai chat\"".to_owned(),
+        ))
+    }
+}
+
+/// The line after leaving, and the exit code.
+fn finish(exit: &Exit) -> Result<()> {
+    if let Some(line) = exit_line(exit) {
+        let _ = writeln!(std::io::stderr(), "{line}");
+    }
+    exit_result(exit)
+}
+
+/// What is printed on standard error after the terminal is restored.
+fn exit_line(exit: &Exit) -> Option<String> {
+    match exit {
+        Exit::Detached { name } => Some(format!(
+            "clai: detached from {name}; \"clai attach {name}\" to return"
+        )),
+        Exit::Ended { name, reason } => Some(format!("clai: session {name} ended: {reason}")),
+        Exit::Lost | Exit::Signal => None,
+    }
+}
+
+fn exit_result(exit: &Exit) -> Result<()> {
+    match exit {
+        Exit::Detached { .. } | Exit::Ended { .. } => Ok(()),
+        Exit::Lost => Err(Error::Failed("server disconnected".to_owned())),
+        Exit::Signal => Err(Error::Exit(1)),
+    }
+}
+
+/// `tui pts/3`, from the terminal of standard input; `tui` if it has none.
+fn client_name() -> String {
+    let tty = nix::unistd::ttyname(std::io::stdin()).ok();
+    let tty = tty.as_deref().map(|path| {
+        let path = path.strip_prefix("/dev").unwrap_or(path);
+        path.strip_prefix("/").unwrap_or(path).display().to_string()
+    });
+    tty.map_or_else(|| "tui".to_owned(), |tty| format!("tui {tty}"))
+}
+
+/// The name of the session to attach to; creates it for [`Target::New`].
+async fn session_name(client: &mut Client, target: Target) -> Result<String> {
+    match target {
+        Target::New(request) => Ok(create(client, request).await?.name),
+        Target::Attach(Some(name)) => Ok(name),
+        Target::Attach(None) => only_session(&client.list().await?),
+    }
+}
+
+/// The one session; until the session list exists, several are an error.
+fn only_session(sessions: &[SessionInfo]) -> Result<String> {
+    match sessions {
+        [] => Err(Error::Failed("no sessions".to_owned())),
+        [session] => Ok(session.name.clone()),
+        several => {
+            let names: Vec<&str> = several.iter().map(|s| s.name.as_str()).collect();
+            Err(Error::Failed(format!(
+                "several sessions: {}; name one",
+                names.join(", ")
+            )))
+        }
+    }
+}
+
+/// A client attached to a session, with the replayed log.
+struct Attached {
+    client: Client,
+    attachment: Attachment,
+}
+
+/// Attaches; the `list` after it is answered after the whole log, so the
+/// backlog then holds all of it and the session's current question.
+async fn attach(mut client: Client, name: &str) -> Result<Attached> {
+    let session = match client
+        .request(Request::Attach {
+            session: name.to_owned(),
+        })
+        .await?
+    {
+        Payload::Session { session } => *session,
+        other => return Err(unexpected(&other)),
+    };
+    let sessions = client.list().await?;
+    let backlog: Vec<ServerMessage> = client.take_backlog();
+    Ok(Attached {
+        client,
+        attachment: Attachment {
+            session,
+            sessions,
+            backlog,
+        },
+    })
+}
+
+fn settings(config: &Config, connect: &Connect) -> Settings {
+    let tui = &config.tui;
+    let terminal = crate::text::Terminal::detect(tui.symbols);
+    let mut windows = HashMap::new();
+    for (provider, p) in &config.providers {
+        for (model, m) in &p.models {
+            windows.insert(format!("{provider}/{model}"), m.context_window);
+        }
+    }
+    Settings {
+        look: style::Look::new(terminal.unicode, terminal.colour),
+        client: connect.name.clone(),
+        tool_output_lines: usize::try_from(tui.tool_output_lines).unwrap_or(usize::MAX),
+        expand_tool_calls: tui.expand_tool_calls,
+        scroll_lines: usize::from(tui.scroll_lines),
+        timestamps: tui.timestamps.then(local_offset),
+        windows,
+    }
+}
+
+/// The offset of local time from UTC in seconds, from `date`: the standard
+/// library has no local time, and it is not worth a dependency.
+fn local_offset() -> i64 {
+    Command::new("date")
+        .arg("+%z")
+        .output()
+        .ok()
+        .and_then(|out| parse_offset(String::from_utf8_lossy(&out.stdout).trim()))
+        .unwrap_or(0)
+}
+
+/// `+0530` in seconds.
+fn parse_offset(text: &str) -> Option<i64> {
+    let digits = text.strip_prefix(['+', '-'])?;
+    let hours: i64 = digits.get(..2)?.parse().ok()?;
+    let minutes: i64 = digits.get(2..4)?.parse().ok()?;
+    let seconds = hours * 3600 + minutes * 60;
+    Some(if text.starts_with('-') {
+        -seconds
+    } else {
+        seconds
+    })
+}
+
+/// What the helper tasks report to the loop.
+enum Report {
+    Input(Input),
+    Attached(Box<Attached>),
+}
+
+/// One try to get back to the session: starts the server if needed.
+async fn reconnect(connect: Connect, id: u64, name: String) -> Result<Attached> {
+    let mut client = Client::connect(&connect).await?;
+    let sessions = client.list().await?;
+    // By id, in case it was renamed meanwhile.
+    let current = sessions
+        .iter()
+        .find(|s| s.id == id)
+        .or_else(|| sessions.iter().find(|s| s.name == name))
+        .ok_or_else(|| Error::Failed(format!("no session named {name}")))?
+        .name
+        .clone();
+    attach(client, &current).await
+}
+
+async fn next_message(connection: &mut Option<Connection>) -> Option<ServerMessage> {
+    match connection {
+        Some(connection) => connection.next().await,
+        None => std::future::pending().await,
+    }
+}
+
+async fn event_loop(
+    settings: Settings,
+    config: &Config,
+    connect: Connect,
+    attached: Attached,
+) -> Result<Exit> {
+    let drawing = Error::io("drawing the screen");
+    let backend = CrosstermBackend::new(std::io::stdout());
+    let mut screen = Terminal::new(backend).map_err(&drawing)?;
+    screen.clear().map_err(&drawing)?;
+    let Attached { client, attachment } = attached;
+    let mut connection = Some(Connection::spawn(client));
+    let mut app = App::new(settings, attachment, std::time::Instant::now());
+    let (reports, mut incoming) = mpsc::unbounded_channel();
+
+    let mut terminal_events = EventStream::new();
+    let mut terminate = signal(SignalKind::terminate()).map_err(Error::io("signal handler"))?;
+    let mut hangup = signal(SignalKind::hangup()).map_err(Error::io("signal handler"))?;
+    let second = Duration::from_secs(1);
+    let mut ticks = interval_at(Instant::now() + second, second);
+    ticks.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    let frame_time = Duration::from_secs(1) / u32::from(config.tui.max_fps.max(1));
+
+    // A whole replay is applied before this first frame.
+    draw(&mut screen, &mut app)?;
+    let mut dirty = false;
+    let mut last_frame = Instant::now();
+    loop {
+        let input = tokio::select! {
+            event = terminal_events.next() => match event {
+                Some(Ok(event)) => terminal_input(event),
+                Some(Err(source)) => return Err(Error::Io {
+                    context: "reading the terminal".to_owned(),
+                    source,
+                }),
+                // No terminal any more: as after `SIGHUP`.
+                None => return Ok(Exit::Signal),
+            },
+            message = next_message(&mut connection) => match message {
+                Some(message) => Some(Input::Server(message)),
+                None => {
+                    connection = None;
+                    Some(Input::Disconnected)
+                }
+            },
+            Some(report) = incoming.recv() => match report {
+                Report::Input(input) => Some(input),
+                Report::Attached(attached) => {
+                    let Attached { client, attachment } = *attached;
+                    connection = Some(Connection::spawn(client));
+                    Some(Input::Attached(Box::new(attachment)))
+                }
+            },
+            () = sleep_until(last_frame + frame_time), if dirty => {
+                draw(&mut screen, &mut app)?;
+                dirty = false;
+                last_frame = Instant::now();
+                None
+            }
+            _ = ticks.tick() => Some(Input::Tick),
+            _ = terminate.recv() => return Ok(Exit::Signal),
+            _ = hangup.recv() => return Ok(Exit::Signal),
+        };
+        let Some(input) = input else { continue };
+        app.now = std::time::Instant::now();
+        for effect in app.update(input) {
+            match effect {
+                Effect::Redraw => dirty = true,
+                Effect::Exit(exit) => return Ok(exit),
+                Effect::Request(request) => send(&mut connection, request, &reports),
+                Effect::Reconnect => {
+                    let (connect, reports) = (connect.clone(), reports.clone());
+                    let (id, name) = (app.session.id, app.session.name.clone());
+                    tokio::spawn(async move {
+                        sleep(RECONNECT_EVERY).await;
+                        let report = match reconnect(connect, id, name).await {
+                            Ok(attached) => Report::Attached(Box::new(attached)),
+                            Err(e) => {
+                                tracing::info!("connecting again: {e}");
+                                Report::Input(Input::ReconnectFailed)
+                            }
+                        };
+                        let _ = reports.send(report);
+                    });
+                }
+            }
+        }
+    }
+}
+
+/// Sends a request; its response comes back as an input, in its own time.
+fn send(
+    connection: &mut Option<Connection>,
+    request: Request,
+    reports: &mpsc::UnboundedSender<Report>,
+) {
+    let response = connection.as_mut().map(|c| c.request(request.clone()));
+    let reports = reports.clone();
+    tokio::spawn(async move {
+        let result = match response {
+            Some(response) => match response.await {
+                Ok(result) => result.map_err(|e| e.to_string()),
+                Err(_) => Err(LOST.to_owned()),
+            },
+            None => Err(LOST.to_owned()),
+        };
+        let _ = reports.send(Report::Input(Input::Response { request, result }));
+    });
+}
+
+fn terminal_input(event: Event) -> Option<Input> {
+    match event {
+        Event::Key(key) => Some(Input::Key(key)),
+        Event::Paste(text) => Some(Input::Paste(text)),
+        Event::Mouse(mouse) => Some(Input::Mouse(mouse)),
+        Event::Resize(..) => Some(Input::Resize),
+        Event::FocusGained | Event::FocusLost => None,
+    }
+}
+
+fn draw(screen: &mut Terminal<CrosstermBackend<std::io::Stdout>>, app: &mut App) -> Result<()> {
+    let drawing = Error::io("drawing the screen");
+    let size = screen.size().map_err(&drawing)?;
+    app.layout(Rect::new(0, 0, size.width, size.height));
+    screen
+        .draw(|frame| view::draw(app, frame))
+        .map_err(&drawing)?;
+    Ok(())
+}

@@ -1,7 +1,7 @@
 # TUI core
 
 - RFC: 0001
-- Status: draft
+- Status: accepted
 - Milestone: TUI core (see [`implementation.md`](../implementation.md))
 - Spec: [`spec/tui.md`](../spec/tui.md), [`spec/sessions.md`](../spec/sessions.md),
   [`spec/command.md`](../spec/command.md) (`clai`, `clai new`, `clai attach`),
@@ -138,8 +138,9 @@ standard input, or `tui` if that fails, and declares `answers: true`.
 
 ### Attach and replay
 
-- `attach` is answered after the replayed log; events with `replay: true`
-  build the conversation without redraws, then one frame is drawn at the end.
+- `attach` is answered before the replayed log; the answer to a `list` after it
+  comes after the log (see "Decisions"). Events with `replay: true` build the
+  conversation without redraws, then one frame is drawn at the end.
   A whole replay is applied before the first frame **(proposal)**; the
   "latest page in 200 ms, older history in the background" assumption is
   measured on a long session and only built if the full replay is too slow.
@@ -307,7 +308,7 @@ Each step ends with `cargo fmt --all`,
 work can stop after any step.
 
 1. **Terminal**
-   - Status: todo
+   - Status: done
    - Files: `Cargo.toml`, `src/tui/mod.rs`, `src/tui/terminal.rs`,
      `src/command/new.rs`, `src/command/attach.rs`, `src/lib.rs`
    - Result: Dependencies added; `Guard`, `restore()`, panic hook, signals;
@@ -315,14 +316,14 @@ work can stop after any step.
      on `Ctrl-D` (steps of RFC 0002).
    - Tests: No-terminal exit `2`; `restore()` twice is harmless.
 2. **Connection**
-   - Status: todo
+   - Status: done
    - Files: `src/client/connection.rs`, `src/client/mod.rs`
    - Result: `Connection` with reader and writer tasks, responses by id,
      `Disconnected`.
    - Tests: Against the in-process server: request while events stream, two
      clients, server stop.
 3. **App and replay**
-   - Status: todo
+   - Status: done
    - Files: `src/tui/app.rs`, `src/tui/conversation.rs`, `src/tui/view/`
      (header, status)
    - Result: `App::update` and effects; entries from events; replay before
@@ -330,20 +331,20 @@ work can stop after any step.
    - Tests: State tests of replay, deltas, tool call states; snapshot of an
      idle session.
 4. **Markdown and scrolling**
-   - Status: todo
+   - Status: done
    - Files: `src/tui/markdown.rs`, `src/tui/conversation.rs`,
      `src/tui/view/conversation.rs`
    - Result: Markdown lines, per-entry line cache, visible slice, follow
      mode, "↓ new output", mouse wheel.
    - Tests: Markdown tests; follow-mode tests; 10 000-line timing test.
 5. **Editor**
-   - Status: todo
+   - Status: done
    - Files: `src/tui/editor.rs`, `src/tui/keys.rs`, `src/tui/view/input.rs`
    - Result: Multi-line input, line keys, history, paste, `//`, sending,
      queued mark.
    - Tests: Editor key tests; send and queued state tests.
 6. **Tool details**
-   - Status: todo
+   - Status: done
    - Files: `src/tui/conversation.rs`, `src/tui/view/conversation.rs`,
      `src/tui/style.rs`
    - Result: Expand/collapse, diffs, command output cut at
@@ -351,25 +352,25 @@ work can stop after any step.
      `NO_COLOR`.
    - Tests: Snapshots of a diff, cut output, ASCII, `NO_COLOR`.
 7. **Prompts**
-   - Status: todo
+   - Status: done
    - Files: `src/tui/prompt.rs`, `src/tui/view/prompt.rs`, `src/tui/keys.rs`
    - Result: Permission prompt with `a`/`Tab` widening and `e` message;
      limit prompt; rejected answers; answered elsewhere.
    - Tests: Prompt state tests; snapshots of both prompts.
 8. **Leaving**
-   - Status: todo
+   - Status: done
    - Files: `src/tui/mod.rs`, `src/tui/app.rs`
    - Result: Cancel, double `Ctrl-C`, `Ctrl-D`, session ended, reconnect for
      10 s, `SIGTERM`/`SIGHUP`, detach line.
    - Tests: State tests of each exit; reconnect keeps view state.
 9. **Commands**
-   - Status: todo
+   - Status: done
    - Files: `src/tui/app.rs`, `src/tui/view/` (help, confirm)
    - Result: `/help`, `/detach`, `/quit`, `/model ARG`, `/rename`, `/kill`
      with confirmation; others say they come later.
    - Tests: State tests per command.
 10. **Docs**
-   - Status: todo
+   - Status: in progress (only the manual run in kitty or foot is open)
    - Files: `spec/tui.md`, `spec/command.md`, `spec/architecture.md`,
      `implementation.md`, `todo.md`, `readme.md`, `rfcs/readme.md`
    - Result: Spec changes listed above; milestone status; RFC status `done`.
@@ -386,15 +387,41 @@ work can stop after any step.
 | Snapshot churn from layout tweaks. | Few, focused snapshots; state tests carry the behaviour. |
 | Full replay of a very long session is slow. | Measured; the event-log bound in `todo.md` and paged loading are the fallbacks. |
 
-## Open questions
+## Decisions
 
-1. Header `1/3 ●1` needs the state of other sessions. Proposal: show the
-   position and waiting count from a `list` on attach, refreshed every 2 s
-   in this milestone; a server notice for session state changes (protocol
-   3) comes with the session list. Alternative: add the notice now.
-2. `Ctrl-Z`: suspend the TUI (restore, `SIGTSTP`, set up again on
-   `SIGCONT`) now, or ignore it?
-3. While the session is killed or not loaded: exit on any key (proposed),
-   or offer "new session / exit" as the spec says for "no session left"?
-4. `/rename` and `/kill` are cheap to build now; keep them in this
-   milestone or move them with `/sessions` to the next?
+The open questions, as answered when the RFC was accepted:
+
+1. Header `1/3 ●1`: from `list` on attach and every 2 s. A server notice
+   (protocol 3) comes with the session list.
+2. `Ctrl-Z` is ignored in this milestone.
+3. A session that ended: a notice, the input disabled, any key exits with `0`.
+4. `/rename` and `/kill` stay in this milestone.
+
+Found while building, all within the design above:
+
+- `attach` is answered *before* the replayed log, not after it as "Attach and
+  replay" first said. The TUI sends `list` after it, as `clai chat` does: that
+  answer comes after the whole log, so the backlog then holds all of it. The
+  open question comes from the `list`, not from the log, which may hold a
+  question that a restart closed without a trace.
+- `Effect::Reconnect` and `Input::ReconnectFailed` were added, so that the 10 s
+  of retrying are decided in `App` and tested without a server.
+- New files: `src/tui/wrap.rs` (wrapping to cells, so entry heights are exact)
+  and `src/tui/view/popup.rs` (help and the `/kill` confirmation).
+  `unicode-width` is a direct dependency, in the version ratatui uses.
+- While a prompt is open, scrolling keys and the wheel still work (a long diff
+  must be readable before answering), `Ctrl-D` detaches (the question stays open
+  for another client, and the session's point is to wait), and `Ctrl-C` acts
+  like `Esc`.
+- `Enter` on a selected call steps: collapsed, expanded, whole result (only if
+  it was cut), collapsed. The diff of an open question is never cut.
+- After `clai server stop` the session has ended (`server stopped`) and the TUI
+  does not start the server again; it only does that when the connection is lost
+  without that event, as in a crash.
+- A finished call whose id comes again starts a new entry: some models reuse ids.
+- Layout changed after the first build, at the user's request: no box around
+  the screen and no header. Plain lines set off the prompt bar and the input;
+  the header's content moved to a second footer row (`spec/tui.md`, "Layout").
+- `tui.timestamps` applies to entries that came in live: the log has no times.
+  Local time comes from the offset `date +%z` gives at startup; the standard
+  library has none and it is not worth a dependency.

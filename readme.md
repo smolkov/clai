@@ -5,11 +5,12 @@ a task in plain language; `clai` sends it to a large language model, runs the
 tool calls the model asks for (read and edit files, run commands) behind
 permission rules, and shows every change and command.
 
-> Status: in development. `clai run` (one task, without the TUI), sessions
-> in the background server, saved and resumed (`clai new -d`, `ls`,
-> `send`, `chat`, `kill`, `export`, `import`, `server`), `clai models` and `clai completion` work; the TUI (`clai`,
-> `clai attach`) and `clai commit` exit with "not implemented yet". See
-> [`todo.md`](todo.md).
+> Status: in development. The TUI (`clai`, `clai new`, `clai attach`), `clai run`
+> (one task, without the TUI), sessions in the background server, saved and
+> resumed (`ls`, `send`, `chat`, `kill`, `export`, `import`, `server`),
+> `clai models` and `clai completion` work; `clai commit` exits with "not
+> implemented yet". The session list, model picker and themes of the TUI come
+> next. See [`todo.md`](todo.md).
 
 ## Build
 
@@ -48,6 +49,34 @@ Tab then completes commands, options, and the configured models for
 
 All options and exit codes: [`spec/command.md`](spec/command.md).
 
+## The TUI
+
+`clai` creates a session in the current directory and opens the full-screen
+interface; `clai new [DIR]` does the same for `DIR`, and `clai attach NAME`
+returns to a session. Leaving only detaches: the session keeps running.
+
+| Key | Action |
+|-----|--------|
+| `Enter` | Send the message; also while a turn runs (it is queued). |
+| `Alt-Enter`, `Shift-Enter` | New line. `Shift-Enter` needs a terminal that reports it. |
+| `Up` / `Down` | Earlier messages of the session. |
+| `Esc`, `Ctrl-C` | Cancel the running turn; without one, `Ctrl-C` clears the input. |
+| `Ctrl-C` twice, `Ctrl-D` on empty input | Detach. |
+| `PgUp` / `PgDn`, mouse wheel | Scroll. `Ctrl-Home` / `Ctrl-End`: start / end, and follow again. |
+| `Tab` | Switch to the conversation: `Up` / `Down` select, `Enter` expands a tool call, `?` shows help. |
+
+A tool call that needs permission opens a prompt: `y` yes, `a` always (`Tab`
+widens the rule, `Enter` confirms), `n` no, `e` no with a message to the model,
+`Esc` no and cancel the turn. A turn at its limit asks `y` continue, `n` stop.
+
+Commands: `/help`, `/model PROVIDER/MODEL`, `/rename NAME`, `/kill`, `/detach`,
+`/quit`. A message that starts with `/` is written `//…`.
+
+Without a terminal the TUI exits with `2`; use `clai run` or `clai chat`.
+`[tui]` in the configuration has `symbols`, `mouse` (off: the terminal's own
+text selection works), `tool_output_lines`, `expand_tool_calls`, `timestamps`,
+`scroll_lines` and `max_fps`; `NO_COLOR` turns colours off.
+
 ## Running a task
 
 ```sh
@@ -73,6 +102,7 @@ a decision: a permission or limit question.
 
 ```sh
 clai new -d --name api ~/ws/api       # start a session, print its name
+clai attach api                       # open it in the TUI
 clai send api "run the tests and fix what fails"
 clai ls                               # name, workspace, model, state, age
 clai chat                             # new session here, chat in the terminal

@@ -122,5 +122,5 @@ Sections that do not apply may be left out.
 
 | RFC | Title | Status |
 |-----|-------|--------|
-| [0001](0001-tui-core.md) | TUI core | draft |
-| [0002](0002-clai-without-command.md) | `clai` without a command opens the TUI | draft |
+| [0001](0001-tui-core.md) | TUI core | accepted |
+| [0002](0002-clai-without-command.md) | `clai` without a command opens the TUI | accepted |

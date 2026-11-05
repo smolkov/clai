@@ -58,7 +58,7 @@ Milestones and their order: [`implementation.md`](implementation.md).
       processes stopped.
 - [x] Questions and answers as data, checked by the loop (Agent loop).
 - [x] Questions on the wire (Server and sessions).
-- [ ] The TUI prompt (TUI core).
+- [x] The TUI prompt (done in TUI core).
 
 ## Agent loop
 
@@ -106,7 +106,7 @@ Milestones and their order: [`implementation.md`](implementation.md).
       `/` commands, `Ctrl-C` cancel, `Ctrl-D` detach); the old mode is
       `clai chat --questions`.
 - [ ] Line editing with history in `clai chat` (e.g. `rustyline`).
-- [ ] `clai`, `clai new` and `clai attach` with the TUI (TUI core).
+- [x] `clai`, `clai new` and `clai attach` with the TUI (done in TUI core).
 - [ ] An end-to-end test of `clai chat` through a pseudo-terminal (colour,
       pager).
 
@@ -121,6 +121,26 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [x] Tests: store, in-process restarts, binary resume.
 - [ ] Bound the event log (in memory and on disk) for very long sessions.
 
+## TUI core
+
+- [x] Terminal setup and restore: panic hook, `SIGTERM`, `SIGHUP`, `Guard`.
+- [x] `client::Connection`: reader and writer tasks, responses by id.
+- [x] `App::update` and effects; entries from events; replay before the first
+      frame; header and status line; `1/3 ●1` from `list` every 2 s.
+- [x] Markdown, per-entry line cache, visible slice, follow mode, mouse wheel.
+- [x] Input editor: multi-line, line keys, history, paste, `//`, queued mark.
+- [x] Tool details: diffs, cut output, selection, symbols, `NO_COLOR`.
+- [x] Permission and limit prompts; rejected answers; answered elsewhere.
+- [x] Cancel, double `Ctrl-C`, `Ctrl-D`, session ended, reconnect for 10 s.
+- [x] `/help`, `/detach`, `/quit`, `/model ARG`, `/rename`, `/kill`.
+- [x] `clai`, `clai new`, `clai attach`; exit codes and the detach line.
+- [ ] Manual run in kitty or foot (`Shift-Enter`, mouse); then RFC 0001 and 0002
+      to `done`.
+- [ ] A pseudo-terminal end-to-end test in the test suite (start, `Ctrl-D`,
+      detach line, session still in `clai ls`).
+- [ ] Measure the full replay on a long session; paged loading if too slow.
+- [ ] `Ctrl-Z` suspends (restore, `SIGTSTP`, set up again on `SIGCONT`).
+
 ## Refactoring
 
 - [x] A: `Choice::name`, `text::ansi`, `text::Terminal`, `sync::lock`,
@@ -134,8 +154,8 @@ Milestones and their order: [`implementation.md`](implementation.md).
 
 ## Next milestones
 
-- [ ] TUI core
-- [ ] TUI sessions and settings
+- [ ] TUI sessions and settings (with a server notice for session state
+      changes, protocol 3, in place of polling `list`)
 - [ ] Commit (needs `spec/commit.md`)
 - [ ] Context management (needs `spec/context.md`)
 - [ ] Release
