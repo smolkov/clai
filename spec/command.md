@@ -251,7 +251,7 @@ old     ~/ws/old        local/qwen        saved    3d
 
 | Option | Meaning |
 |--------|---------|
-| `--json` | Print a JSON array instead of the table: per session `name`, `workspace` (absolute), `model`, `state`, `created` (seconds since 1970), `queued` (messages waiting for the turn) and `question` (`id`, `kind`, `summary`, or `null`). |
+| `--json` | Print a JSON array instead of the table: per session `name`, `workspace` (absolute), `model`, `state`, `created` (seconds since 1970), `queued` (messages waiting for the turn), `question` (`id`, `kind`, `summary`, or `null`), and `input_tokens` and `output_tokens` (used so far, see [`tui.md`](tui.md), "Token counters"). |
 
 ## clai kill
 
@@ -350,8 +350,9 @@ The test passes now.
   accept is shown as `not accepted: …` and asked again. A question answered
   elsewhere closes with `answered in tui pts/3: allow`.
 - Commands: `/cancel` cancels the running turn, `/model [PROVIDER/MODEL]`
-  shows or changes the model, `/detach` leaves, `/kill` ends the session
-  and leaves, `/help` lists them.
+  shows or changes the model, `/usage` prints the tokens used
+  (`tokens: in 45.1k, out 3.2k; context 12.3k`), `/detach` leaves, `/kill` ends
+  the session and leaves, `/help` lists them.
 - `Ctrl-C` cancels the running turn. With no running turn it prints a hint;
   a second `Ctrl-C` within 1 s detaches.
 - `Ctrl-D` (end of input) detaches; the session keeps running and `clai

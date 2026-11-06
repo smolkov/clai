@@ -95,7 +95,7 @@ impl Conversation {
                 let line = format!("clai: error: {message}");
                 format!("{}{}\n", self.break_line(), self.paint(RED, &line))
             }
-            SessionEvent::ModelChanged { model } => self.note(&format!("model is now {model}")),
+            SessionEvent::ModelChanged { model, .. } => self.note(&format!("model is now {model}")),
             SessionEvent::Renamed { name } => self.note(&format!("session renamed to {name}")),
             SessionEvent::Ended { reason } => self.note(&format!("session ended: {reason}")),
             SessionEvent::State { .. }

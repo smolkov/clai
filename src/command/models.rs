@@ -7,6 +7,7 @@ use clap::Args;
 use crate::config::{self, Config, Environment, KeyStatus, LoadOptions};
 use crate::error::{Error, Result};
 use crate::output::write_stdout;
+use crate::text::short_tokens;
 
 #[derive(Debug, Args)]
 pub struct Models {
@@ -107,28 +108,4 @@ pub fn render_json(config: &Config, getenv: impl Fn(&str) -> Option<String>) -> 
     let mut text = serde_json::to_string_pretty(&models).unwrap_or_else(|_| "[]".to_owned());
     text.push('\n');
     text
-}
-
-/// `32768` → `32k`, `1000000` → `1M`; rounded down.
-fn short_tokens(n: u64) -> String {
-    if n >= 1_000_000 {
-        format!("{}M", n / 1_000_000)
-    } else if n >= 1000 {
-        format!("{}k", n / 1000)
-    } else {
-        n.to_string()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn tokens() {
-        assert_eq!(short_tokens(999), "999");
-        assert_eq!(short_tokens(32768), "32k");
-        assert_eq!(short_tokens(200_000), "200k");
-        assert_eq!(short_tokens(1_000_000), "1M");
-    }
 }

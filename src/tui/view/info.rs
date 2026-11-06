@@ -1,9 +1,11 @@
 //! The session row of the footer: session, workspace, model, position among
-//! the sessions, others waiting, context usage.
+//! the sessions, others waiting, context usage, tokens used. The tokens come
+//! last, so that they are the first thing cut on a narrow terminal.
 
+use crate::text::tokens;
 use crate::tui::app::App;
 
-/// `project · ~/ws/project · anthropic/sonnet · 1/3 ●1 · 12.3k/200k`
+/// `project · ~/ws/project · anthropic/sonnet · 1/3 ●1 · 12.3k/200k · in 45.1k out 3.2k`
 pub fn text(app: &App) -> String {
     let symbols = &app.settings.look.symbols;
     let session = &app.session;
@@ -19,38 +21,18 @@ pub fn text(app: &App) -> String {
         }
         parts.push(part);
     }
-    if let Some(window) = app.context_window() {
-        parts.push(format!("{}/{}", tokens(app.context_tokens), tokens(window)));
+    match app.context_window() {
+        Some(window) => parts.push(format!("{}/{}", tokens(app.context_tokens), tokens(window))),
+        // A model the server does not list: the size without a limit.
+        None if app.context_tokens > 0 => parts.push(tokens(app.context_tokens)),
+        None => {}
+    }
+    if let Some(usage) = app.usage {
+        parts.push(format!(
+            "in {} out {}",
+            tokens(usage.input_tokens),
+            tokens(usage.output_tokens)
+        ));
     }
     parts.join(&format!(" {} ", symbols.separator))
-}
-
-/// `950`, `12.3k`, `200k`, `1.2M`.
-pub fn tokens(n: u64) -> String {
-    let short = |value: u64, unit: u64, name: &str| {
-        let tenths = value * 10 / unit;
-        if tenths.is_multiple_of(10) {
-            format!("{}{name}", tenths / 10)
-        } else {
-            format!("{}.{}{name}", tenths / 10, tenths % 10)
-        }
-    };
-    match n {
-        0..=999 => n.to_string(),
-        1_000..=999_999 => short(n, 1_000, "k"),
-        _ => short(n, 1_000_000, "M"),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::tokens;
-
-    #[test]
-    fn token_counts() {
-        assert_eq!(tokens(950), "950");
-        assert_eq!(tokens(12_345), "12.3k");
-        assert_eq!(tokens(200_000), "200k");
-        assert_eq!(tokens(1_250_000), "1.2M");
-    }
 }

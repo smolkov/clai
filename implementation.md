@@ -331,7 +331,8 @@ the server's queue at once; `unicode-width` is a direct dependency for cells.
 ### TUI sessions and settings
 
 - Session list, switching with kept view state, `Ctrl-N`/`Ctrl-P`.
-- Model picker and model change of a running session.
+- Model picker and model change of a running session (built, see
+  [RFC 0003](rfcs/0003-session-improvements.md)).
 - Command list with filtering and completion; all `/` commands.
 - `[tui]` settings, themes, `NO_COLOR`, `CLAI_THEME`, ASCII symbols,
   syntax highlighting, live reload.

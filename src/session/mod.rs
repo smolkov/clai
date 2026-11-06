@@ -4,6 +4,7 @@
 //! client.
 
 mod outbox;
+mod questions;
 pub mod store;
 
 use std::collections::{HashMap, VecDeque};
@@ -15,12 +16,14 @@ use tokio::task::{JoinError, JoinHandle};
 use tokio_util::sync::CancellationToken;
 
 use crate::agent::{
-    Agent, Answer, Asker, CancelReason, Closed, EventSink, ModelHandle, Question, Reply,
-    SessionEvent, SessionRef, State,
+    Agent, Answer, Asker, CancelReason, EventSink, ModelHandle, Question, Reply, SessionEvent,
+    SessionRef, State,
 };
 use crate::config::Model;
-use crate::protocol::{ErrorReply, Outcome, Payload, ServerMessage, SessionInfo};
+use crate::protocol::{ErrorReply, Outcome, Payload, ServerMessage, SessionInfo, TokenTotals};
 use crate::provider::Provider;
+
+use questions::{Pending, Questions};
 
 pub use outbox::{ClientId, MAX_QUEUED, Outbox, OutboxReceiver};
 pub use store::{Meta, Store};
@@ -245,14 +248,6 @@ struct Client {
     answers: bool,
 }
 
-/// An answer waiting for the agent to ask, or for its verdict.
-struct Pending {
-    question: String,
-    answer: Answer,
-    by: String,
-    reply: oneshot::Sender<Result<(), String>>,
-}
-
 enum Wake {
     Msg(Option<Msg>),
     Ask(Option<AskMsg>),
@@ -280,16 +275,7 @@ struct Actor {
     queue: VecDeque<String>,
     log: Vec<SessionEvent>,
     clients: HashMap<ClientId, Client>,
-    /// The open question, as the clients got it.
-    open: Option<Question>,
-    /// The agent waits for an answer to this question.
-    asking: Option<(String, oneshot::Sender<Reply>)>,
-    /// Answers in the order they came; the first is being checked when
-    /// `checking` is set.
-    answers: VecDeque<Pending>,
-    checking: Option<Pending>,
-    /// Closed questions and why, for late answers.
-    closed: HashMap<String, String>,
+    questions: Questions,
     rx: mpsc::UnboundedReceiver<Msg>,
     ask_rx: mpsc::UnboundedReceiver<AskMsg>,
     events: mpsc::UnboundedReceiver<SessionEvent>,
@@ -313,9 +299,15 @@ impl Actor {
         // A turn a stopped server left open gets results for its calls.
         agent.repair();
         let queue = spec.meta.queued.iter().cloned().collect();
+        // The log is the truth: this covers a session of an older `clai`, and a
+        // crash between writing an event and writing the meta.
+        let meta = Meta {
+            usage: TokenTotals::of_log(&spec.log),
+            ..spec.meta
+        };
         Actor {
             id: spec.id,
-            meta: spec.meta,
+            meta,
             store: spec.store,
             save_failed: false,
             model_handle: agent.model(),
@@ -326,11 +318,7 @@ impl Actor {
             queue,
             log: spec.log,
             clients: HashMap::new(),
-            open: None,
-            asking: None,
-            answers: VecDeque::new(),
-            checking: None,
-            closed: HashMap::new(),
+            questions: Questions::default(),
             rx,
             ask_rx,
             events,
@@ -402,17 +390,18 @@ impl Actor {
                 provider,
                 config,
             } => {
+                // The same name may come with a reloaded configuration.
                 self.model_handle.set(provider, config);
-                self.meta.model.clone_from(&model);
-                self.save_meta();
-                self.publish(SessionEvent::ModelChanged { model });
+                if model != self.meta.model {
+                    let from = std::mem::replace(&mut self.meta.model, model.clone());
+                    self.save_meta();
+                    self.publish(SessionEvent::ModelChanged { from, model });
+                }
             }
             Msg::Rename { name } => {
                 self.meta.name.clone_from(&name);
                 self.save_meta();
-                if let Some(question) = &mut self.open {
-                    question.session.name.clone_from(&name);
-                }
+                self.questions.rename(&name);
                 self.publish(SessionEvent::Renamed { name });
             }
             Msg::Answer {
@@ -420,12 +409,15 @@ impl Actor {
                 answer,
                 by,
                 reply,
-            } => self.answer(Pending {
-                question,
-                answer,
-                by,
-                reply,
-            }),
+            } => self.questions.answer(
+                Pending {
+                    question,
+                    answer,
+                    by,
+                    reply,
+                },
+                &self.meta.name,
+            ),
             Msg::Info { reply } => {
                 let _ = reply.send(self.info());
             }
@@ -447,17 +439,12 @@ impl Actor {
     }
 
     fn info(&self) -> SessionInfo {
-        SessionInfo {
-            id: self.id,
-            name: self.meta.name.clone(),
-            workspace: self.meta.place.clone(),
-            path: self.meta.workspace.clone(),
-            model: self.meta.model.clone(),
-            state: self.state,
-            created: self.meta.created,
-            queued: self.queue.len(),
-            question: self.open.clone(),
-        }
+        self.meta.info(
+            self.id,
+            self.state,
+            self.queue.len(),
+            self.questions.current().cloned(),
+        )
     }
 
     fn attach(&mut self, outbox: Outbox, answers: bool, request: u64) {
@@ -486,10 +473,10 @@ impl Actor {
                     name: self.meta.name.clone(),
                     workspace: self.meta.place.clone(),
                 };
-                self.open = Some((**question).clone());
+                self.questions.opened((**question).clone());
             }
             SessionEvent::QuestionClosed { id, closed } => {
-                self.question_closed(id, closed);
+                self.questions.closed(id, closed);
             }
             _ => {}
         }
@@ -500,7 +487,13 @@ impl Actor {
                 event: for_client(&event, client.answers),
             });
         }
+        // First the event, then the meta: after a crash between the two, the
+        // log has the count and the next resume sums it.
         self.save_event(&event);
+        if matches!(event, SessionEvent::Usage { .. }) {
+            self.meta.usage.count(&event);
+            self.save_meta();
+        }
         self.log.push(event);
     }
 
@@ -518,7 +511,8 @@ impl Actor {
         self.saved(result);
     }
 
-    /// Writes `session.json` with the current name, model, turns and queue.
+    /// Writes `session.json` with the current name, model, turns, queue and
+    /// token totals.
     fn save_meta(&mut self) {
         let Some(store) = &self.store else {
             return;
@@ -555,86 +549,11 @@ impl Actor {
         self.log.push(event);
     }
 
-    fn question_closed(&mut self, id: &str, closed: &Closed) {
-        if self.open.as_ref().is_some_and(|q| q.id == id) {
-            self.open = None;
-        }
-        self.asking = None;
-        let why = match closed {
-            Closed::Answered { by, .. } => format!("already answered by {by}"),
-            Closed::NoOne => "the question was closed".to_owned(),
-            Closed::Cancelled => "the question was closed: the turn was cancelled".to_owned(),
-        };
-        if let Some(pending) = self.checking.take() {
-            let counted = matches!(closed, Closed::Answered { by, .. } if *by == pending.by)
-                && pending.question == id;
-            let _ = pending
-                .reply
-                .send(if counted { Ok(()) } else { Err(why.clone()) });
-        }
-        for pending in self.answers.drain(..) {
-            let _ = pending.reply.send(Err(why.clone()));
-        }
-        self.closed.insert(id.to_owned(), why);
-    }
-
-    fn answer(&mut self, pending: Pending) {
-        let open = self.open.as_ref().map(|q| q.id.as_str());
-        let asked = self.asking.as_ref().map(|(id, _)| id.as_str());
-        if open != Some(pending.question.as_str()) && asked != Some(pending.question.as_str()) {
-            let why = self
-                .closed
-                .get(&pending.question)
-                .cloned()
-                .unwrap_or_else(|| match open {
-                    Some(open) => format!(
-                        "{} is not the open question; the open question is {open}",
-                        pending.question
-                    ),
-                    None => format!("{} has no open question", self.meta.name),
-                });
-            let _ = pending.reply.send(Err(why));
-            return;
-        }
-        self.answers.push_back(pending);
-        self.deliver();
-    }
-
-    /// Gives the first waiting answer to the agent, if it is asking and no
-    /// other answer is being checked.
-    fn deliver(&mut self) {
-        if self.checking.is_some() {
-            return;
-        }
-        let Some((asked, _)) = &self.asking else {
-            return;
-        };
-        let Some(position) = self.answers.iter().position(|p| p.question == *asked) else {
-            return;
-        };
-        let (Some(pending), Some((_, reply))) = (self.answers.remove(position), self.asking.take())
-        else {
-            return;
-        };
-        let _ = reply.send(Reply::Answer {
-            answer: pending.answer.clone(),
-            by: pending.by.clone(),
-        });
-        self.checking = Some(pending);
-    }
-
     fn handle_ask(&mut self, msg: AskMsg) {
         match msg {
             AskMsg::SaveFailed(e) => self.save_failed(&e),
-            AskMsg::Ask { question, reply } => {
-                self.asking = Some((question, reply));
-                self.deliver();
-            }
-            AskMsg::Rejected { question, message } => {
-                if let Some(pending) = self.checking.take_if(|p| p.question == question) {
-                    let _ = pending.reply.send(Err(message));
-                }
-            }
+            AskMsg::Ask { question, reply } => self.questions.ask(question, reply),
+            AskMsg::Rejected { question, message } => self.questions.rejected(&question, message),
         }
     }
 
@@ -710,9 +629,7 @@ impl Actor {
     }
 
     fn finish(&mut self, reason: &str) {
-        for pending in self.answers.drain(..).chain(self.checking.take()) {
-            let _ = pending.reply.send(Err(GONE.to_owned()));
-        }
+        self.questions.end(GONE);
         self.publish(SessionEvent::Ended {
             reason: reason.to_owned(),
         });

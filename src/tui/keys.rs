@@ -31,6 +31,8 @@ pub enum Action {
     /// `Enter` in the conversation.
     Toggle,
     Help,
+    /// `Ctrl-O`.
+    ModelPicker,
     Nothing,
 }
 
@@ -63,6 +65,7 @@ pub fn action(key: KeyEvent, focus: Focus) -> Action {
         KeyCode::Esc => return Action::Cancel,
         KeyCode::Char('c') if ctrl(key) => return Action::Interrupt,
         KeyCode::Char('d') if ctrl(key) => return Action::Detach,
+        KeyCode::Char('o') if ctrl(key) => return Action::ModelPicker,
         KeyCode::Tab | KeyCode::BackTab => return Action::SwitchFocus,
         _ => {}
     }

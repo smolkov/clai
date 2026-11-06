@@ -6,6 +6,7 @@
 mod conversation;
 mod info;
 mod input;
+mod picker;
 mod popup;
 pub mod prompt;
 mod status;
@@ -111,10 +112,13 @@ pub fn draw(app: &App, frame: &mut Frame<'_>) {
     footer_row(buffer, areas.status, &status::text(app), look);
     footer_row(buffer, areas.info, &info::text(app), look);
     match cursor(app, &areas) {
-        Some((x, y)) if app.dialog.is_none() => frame.set_cursor_position((x, y)),
+        Some((x, y)) if app.dialog.is_none() && app.picker.is_none() => {
+            frame.set_cursor_position((x, y));
+        }
         _ => {}
     }
     popup::draw(app, frame, size);
+    picker::draw(app, frame, size);
 }
 
 fn cursor(app: &App, areas: &Areas) -> Option<(u16, u16)> {

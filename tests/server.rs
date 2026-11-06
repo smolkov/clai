@@ -27,6 +27,15 @@ fn say(text: &str) -> String {
     format!("data: {chunk}\n\ndata: {end}\n\ndata: [DONE]\n\n")
 }
 
+/// A text answer that reports its tokens.
+fn say_counted(text: &str, input: u64, output: u64) -> String {
+    let chunk = json!({"choices": [{"index": 0, "delta": {"content": text}}]});
+    let end = json!({"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]});
+    let usage = json!({"choices": [],
+        "usage": {"prompt_tokens": input, "completion_tokens": output}});
+    format!("data: {chunk}\n\ndata: {end}\n\ndata: {usage}\n\ndata: [DONE]\n\n")
+}
+
 /// An answer that writes a file.
 fn write_file(id: &str, path: &str) -> String {
     let arguments = json!({"path": path, "content": "hi\n"}).to_string();
@@ -511,4 +520,47 @@ fn sessions_are_saved_and_resumed() {
         .unwrap()
         .count();
     assert_eq!(files, 0);
+}
+
+#[test]
+fn token_totals_in_ls_and_chat() {
+    let port = model_server(vec![
+        say_counted("first", 45_000, 3_000),
+        say_counted("second", 100, 200),
+    ]);
+    let env = Env::new("totals", port);
+
+    let mut chat = Live::start(&env, &["chat", "--new", "--name", "s"]);
+    chat.expect("clai: attached to s (");
+    chat.send("/usage");
+    chat.expect("clai: tokens: in 0, out 0; context 0");
+    chat.send("one");
+    chat.expect("first");
+    chat.send("two");
+    chat.expect("second");
+    let s = env.wait_for("the turn to end", |s| s["state"] == "idle");
+    assert_eq!(s["input_tokens"], 45_100);
+    assert_eq!(s["output_tokens"], 3_200);
+    chat.send("/usage");
+    chat.expect("clai: tokens: in 45.1k, out 3.2k; context 300");
+    let (status, seen) = chat.finish();
+    assert_eq!(status, Some(0), "{seen}");
+
+    // After attaching again, the replayed log gives the same count.
+    let mut chat = Live::start(&env, &["chat", "s"]);
+    chat.expect("second");
+    chat.send("/usage");
+    chat.expect("clai: tokens: in 45.1k, out 3.2k; context 300");
+    let (status, seen) = chat.finish();
+    assert_eq!(status, Some(0), "{seen}");
+
+    // The table stays as it is.
+    let out = env.run(&["ls"]);
+    let table = text(&out.stdout);
+    assert!(
+        !table.contains("45.1k") && !table.contains("45100"),
+        "{table}"
+    );
+    let out = env.run(&["kill", "s"]);
+    assert_eq!(code(&out), Some(0), "{}", text(&out.stderr));
 }

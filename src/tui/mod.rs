@@ -8,6 +8,7 @@ mod conversation;
 mod editor;
 mod keys;
 mod markdown;
+mod picker;
 mod prompt;
 mod style;
 pub mod terminal;

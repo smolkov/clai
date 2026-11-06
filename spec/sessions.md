@@ -245,9 +245,15 @@ stop, a crash or a reboot. `clai run` sessions are not saved.
 
   | File | Content | Written |
   |------|---------|---------|
-  | `session.json` | Format version, `clai` version, name, workspace, `provider/model`, created and updated time, number of turns, queued messages. | Replaced atomically (temporary file, then rename) on every change. |
+  | `session.json` | Format version, `clai` version, name, workspace, `provider/model`, created and updated time, number of turns, queued messages, tokens used (`usage`). | Replaced atomically (temporary file, then rename) on every change. |
   | `history.jsonl` | What the model sees: each message (text, tool calls, tool results), full tool outputs that were cut for the model, and allow rules added by `always` answers (as text). | Appended as the agent adds them. |
   | `events.jsonl` | What clients see: the event log. Streamed text is kept as whole blocks (`text_done`), a command's live output only as the call's final result; `ended` is not kept. | Appended as events happen. |
+
+  Token totals are written after each model request. On resume they are summed
+  from the log, which is the truth: this covers a session of an older `clai` (it
+  lists zero until it is first resumed) and a crash between writing the event
+  and writing `session.json`. A missing `usage` means zero, so the format stays
+  `1`. A resume that changes the model logs `model_changed`.
 
   The configuration is not saved: it is read again on resume. One JSON
   value per line; a last line cut by a crash is left out when loading. A

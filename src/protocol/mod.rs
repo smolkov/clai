@@ -14,7 +14,7 @@ use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWrite, AsyncWr
 use crate::agent::{Answer, Question, SessionEvent, State};
 
 /// The protocol version; a new message or event kind needs a new one.
-pub const VERSION: u32 = 2;
+pub const VERSION: u32 = 3;
 
 /// The longest message accepted, in bytes.
 pub const MAX_LINE: usize = 16 << 20;
@@ -118,6 +118,8 @@ pub enum Request {
         name: Option<String>,
     },
     Status,
+    /// The models of the server's configuration.
+    Models,
     /// Stops the server; running sessions stop and stay saved.
     Stop,
 }
@@ -187,9 +189,65 @@ impl ErrorReply {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Payload {
     Done,
-    Session { session: Box<SessionInfo> },
-    Sessions { sessions: Vec<SessionInfo> },
+    Session {
+        session: Box<SessionInfo>,
+    },
+    Sessions {
+        sessions: Vec<SessionInfo>,
+    },
     Status(Status),
+    Models {
+        models: Vec<ModelInfo>,
+        /// The user config file the server reads.
+        config: PathBuf,
+    },
+}
+
+/// A configured model, in config order.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ModelInfo {
+    /// `provider/model`.
+    pub model: String,
+    pub provider: String,
+    pub name: String,
+    pub id: String,
+    pub context_window: u64,
+    pub default: bool,
+    /// The key's status as in `clai models --json`; `api_key_cmd` is not run.
+    pub key: String,
+}
+
+/// Tokens a session has used, summed over its requests from `usage` events
+/// (see `spec/sessions.md`, "Persistence"). Input counts the history again with
+/// each request, so this is neither the context size nor a bill.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TokenTotals {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+}
+
+impl TokenTotals {
+    /// Adds a `usage` event; other events change nothing.
+    pub fn count(&mut self, event: &SessionEvent) {
+        if let SessionEvent::Usage {
+            input_tokens,
+            output_tokens,
+            ..
+        } = event
+        {
+            self.input_tokens = self.input_tokens.saturating_add(*input_tokens);
+            self.output_tokens = self.output_tokens.saturating_add(*output_tokens);
+        }
+    }
+
+    /// The sum over a session's log.
+    pub fn of_log(log: &[SessionEvent]) -> TokenTotals {
+        let mut totals = TokenTotals::default();
+        for event in log {
+            totals.count(event);
+        }
+        totals
+    }
 }
 
 /// A session as `clai ls` and the session list show it.
@@ -209,6 +267,7 @@ pub struct SessionInfo {
     pub queued: usize,
     /// The open question, if the session waits.
     pub question: Option<Question>,
+    pub usage: TokenTotals,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

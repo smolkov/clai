@@ -1,7 +1,7 @@
 # Session improvements
 
 - RFC: 0003
-- Status: draft
+- Status: done
 - Milestone: the model picker of "TUI sessions and settings" (see
   [`implementation.md`](../implementation.md)); part B of "Refactoring" in
   [`todo.md`](../todo.md)
@@ -249,49 +249,50 @@ Written when the RFC is accepted.
 ## Implementation plan
 
 1. **`Meta::info` and `Registry`**
-   - Status: todo
+   - Status: done
    - Files: `src/session/store.rs`, `src/session/mod.rs`,
      `src/server/registry.rs`, `src/server/mod.rs`, `src/server/requests.rs`
    - Result: One way to build `SessionInfo` and to look up a session. No change of
      behaviour.
    - Tests: Existing tests unchanged; unit tests of `Registry`.
 2. **`Questions`**
-   - Status: todo
+   - Status: done
    - Files: `src/session/questions.rs`, `src/session/mod.rs`
    - Result: The actor delegates questions. No change of behaviour.
    - Tests: Existing tests unchanged; unit tests of `Questions`.
 3. **Totals in the session**
-   - Status: todo
+   - Status: done
    - Files: `src/session/store.rs`, `src/session/mod.rs`, `src/protocol/mod.rs`,
      `src/command/ls.rs`
    - Result: `usage` in `session.json` and `SessionInfo`; `clai ls --json`.
    - Tests: Totals section above.
 4. **Counters in the clients**
-   - Status: todo
+   - Status: done
    - Files: `src/text/`, `src/tui/app.rs`, `src/tui/view/info.rs`,
      `src/command/chat/talk.rs`, `src/command/models.rs`
    - Result: The TUI session row and `/usage`; a row without a known window.
    - Tests: TUI tests above; updated frame snapshots.
 5. **Model change fixes**
-   - Status: todo
+   - Status: done
    - Files: `src/agent/events.rs`, `src/session/mod.rs`, `src/server/requests.rs`,
      `src/tui/app.rs`
    - Result: `from`, correct replay, saved sessions logged, no notice for the same
      model.
    - Tests: Replay and server tests above.
 6. **`models` request**
-   - Status: todo
+   - Status: done
    - Files: `src/protocol/mod.rs`, `src/server/requests.rs`, `src/tui/app.rs`
    - Result: Protocol `3`; the TUI takes context windows from the server.
    - Tests: Protocol round trips; the request before and after a reload.
 7. **Model picker**
-   - Status: todo
+   - Status: done
    - Files: `src/tui/picker.rs`, `src/tui/app.rs`, `src/tui/keys.rs`,
-     `src/tui/view/picker.rs`, `src/tui/view/popup.rs`, `src/tui/view/mod.rs`
+     `src/tui/view/picker.rs`, `src/tui/view/popup.rs`, `src/tui/view/mod.rs`,
+     `src/tui/style.rs`
    - Result: `Ctrl-O` and `/model` open the picker.
    - Tests: Picker tests above.
 8. **Docs**
-   - Status: todo
+   - Status: done
    - Files: `spec/`, `readme.md`, `implementation.md`, `todo.md`, `rfcs/readme.md`
    - Result: Spec changes above; refactoring items and the picker ticked; status
      `done`.
@@ -315,12 +316,28 @@ Written when the RFC is accepted.
 
 ## Open questions
 
-1. **Does "model change" include the picker?** This RFC assumes yes. Without it,
-   steps 6 and 7 go, along with the new request and the protocol bump; the fixes
-   stay, and the windows stay client-side.
-2. **Which refactoring points?** This RFC takes the three that the session work
-   touches. Should the rest of B be added (agent split, shared chat answering,
-   `paths`, `signals`)?
-3. **Where should the counter show?** This RFC has the TUI, `clai chat` `/usage` and
-   `clai ls --json`. Should it also be a column in the `clai ls` table, or a line
-   at the end of `clai run`?
+Answered when the RFC was accepted, each as this RFC assumed:
+
+1. **Does "model change" include the picker?** Yes.
+2. **Which refactoring points?** The three that the session work touches; the
+   rest of B stays in `todo.md`.
+3. **Where should the counter show?** The TUI, `clai chat` `/usage` and
+   `clai ls --json`; no column in `clai ls`, no line after `clai run`.
+
+## Notes from building
+
+Details the design left open:
+
+- The session row shows no context size while the window is unknown and nothing
+  was counted yet: a bare `0` says nothing.
+- A question that opens closes the picker, and an answer on its way does not open
+  it. Otherwise the picker would hide the prompt bar while keys go to it, and
+  typing a filter could answer the question.
+- A reload refreshes an open picker; the selected model stays selected if it can.
+- `Up` and `Down` stop at the ends of the list. Editing the filter selects the
+  first match.
+
+Left as designed, and open in `todo.md`: the TUI asks for the server's models only
+when the picker opens and after a reload. A TUI started with another `--config`
+therefore shows its own windows until then, so that fault of the motivation is
+only partly fixed.

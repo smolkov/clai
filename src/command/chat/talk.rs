@@ -11,10 +11,10 @@ use crate::agent::{Closed, Question, SessionEvent, State};
 use crate::client::{Client, Connect, unexpected};
 use crate::command::new::create;
 use crate::error::{Error, Result};
-use crate::protocol::{Notice, Payload, Request, ServerMessage, SessionInfo};
+use crate::protocol::{Notice, Payload, Request, ServerMessage, SessionInfo, TokenTotals};
 use crate::runtime::current_thread;
 use crate::text::{
-    Conversation, Dialog, Step, Style, Terminal, full_content, render_question_styled,
+    Conversation, Dialog, Step, Style, Terminal, full_content, render_question_styled, usage_line,
 };
 
 use super::{Lines, pager, symbols};
@@ -26,6 +26,7 @@ const HELP: &str = "\
 commands:
   /cancel          cancel the running turn
   /model [MODEL]   show or change the model (PROVIDER/MODEL)
+  /usage           show the tokens used so far
   /detach          leave; the session keeps running (also Ctrl-D)
   /kill            end the session and leave
   /help            this list
@@ -79,6 +80,8 @@ pub fn talk(config: Option<&Path>, target: Target) -> Result<()> {
             lines: Lines::start(),
             conversation: Conversation::new(unicode, colour),
             session: *session,
+            usage: TokenTotals::default(),
+            context_tokens: 0,
             dialog: None,
             unicode,
             colour,
@@ -102,6 +105,10 @@ struct Talk {
     conversation: Conversation,
     /// Name, id, model and state, kept up to date from events.
     session: SessionInfo,
+    /// The sum of the log's `usage` events.
+    usage: TokenTotals,
+    /// Tokens of the last request.
+    context_tokens: u64,
     /// The open question being answered.
     dialog: Option<Dialog>,
     unicode: bool,
@@ -138,6 +145,7 @@ impl Talk {
                     replay: true,
                     event,
                 } if session == self.session.id => match &event {
+                    SessionEvent::Usage { .. } => self.count(&event),
                     SessionEvent::Question(q) => open = Some((**q).clone()),
                     SessionEvent::QuestionClosed { id, .. } => {
                         open = open.filter(|q| q.id != *id);
@@ -258,7 +266,15 @@ impl Talk {
         Ok(Flow::Go)
     }
 
+    fn count(&mut self, event: &SessionEvent) {
+        if let SessionEvent::Usage { context_tokens, .. } = event {
+            self.usage.count(event);
+            self.context_tokens = *context_tokens;
+        }
+    }
+
     fn event(&mut self, event: SessionEvent, replay: bool) -> Flow {
+        self.count(&event);
         if replay {
             let text = self.conversation.event(&event, true);
             self.out(&text);
@@ -288,7 +304,7 @@ impl Talk {
                     self.prompt();
                 }
             }
-            SessionEvent::ModelChanged { model } => {
+            SessionEvent::ModelChanged { model, .. } => {
                 self.session.model.clone_from(model);
                 let text = self.conversation.event(&event, false);
                 self.out(&text);
@@ -393,6 +409,12 @@ impl Talk {
                 session,
                 model: argument.to_owned(),
             },
+            "usage" => {
+                let text = usage_line(self.usage, self.context_tokens);
+                self.note(&text);
+                self.prompt();
+                return Ok(Flow::Go);
+            }
             other => {
                 self.note(&format!("unknown command /{other}; /help lists them"));
                 self.prompt();

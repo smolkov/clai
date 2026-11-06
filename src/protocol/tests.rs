@@ -141,6 +141,7 @@ fn events_round_trip() {
             output_tokens: 2,
         }),
         SessionEvent::ModelChanged {
+            from: "anthropic/sonnet".into(),
             model: "local/qwen".into(),
         },
         SessionEvent::Ended {
@@ -240,4 +241,75 @@ async fn too_long() {
         read::<ClientMessage, _>(&mut reader).await,
         Err(ReadError::TooLong)
     ));
+}
+
+#[test]
+fn models_round_trip() {
+    let request = ClientMessage::Request {
+        id: 1,
+        request: Request::Models,
+    };
+    assert_eq!(
+        serde_json::to_value(&request).unwrap(),
+        json!({"type": "request", "id": 1, "request": {"command": "models"}})
+    );
+    assert_eq!(round_trip(&request), request);
+    let response = ServerMessage::Response {
+        id: 1,
+        result: Outcome::Ok(Payload::Models {
+            models: vec![ModelInfo {
+                model: "local/qwen".into(),
+                provider: "local".into(),
+                name: "qwen".into(),
+                id: "qwen3-coder:30b".into(),
+                context_window: 32768,
+                default: true,
+                key: "missing".into(),
+            }],
+            config: PathBuf::from("/home/u/.config/clai/config.toml"),
+        }),
+    };
+    assert_eq!(round_trip(&response), response);
+}
+
+#[test]
+fn model_changed_without_from() {
+    // A log of an older `clai` has no `from`, and none is written when empty.
+    let old: SessionEvent =
+        serde_json::from_value(json!({"event": "model_changed", "model": "a/b"})).unwrap();
+    assert_eq!(
+        old,
+        SessionEvent::ModelChanged {
+            from: String::new(),
+            model: "a/b".into()
+        }
+    );
+    assert_eq!(
+        serde_json::to_value(&old).unwrap(),
+        json!({"event": "model_changed", "model": "a/b"})
+    );
+}
+
+#[test]
+fn totals_sum_only_usage_events() {
+    let usage = |input_tokens, output_tokens| SessionEvent::Usage {
+        input_tokens,
+        output_tokens,
+        context_tokens: 999,
+    };
+    let log = [
+        usage(10, 1),
+        SessionEvent::Notice { text: "x".into() },
+        usage(20, 2),
+    ];
+    assert_eq!(
+        TokenTotals::of_log(&log),
+        TokenTotals {
+            input_tokens: 30,
+            output_tokens: 3
+        }
+    );
+    // A provider's nonsense does not overflow.
+    let huge = [usage(u64::MAX, u64::MAX), usage(5, 5)];
+    assert_eq!(TokenTotals::of_log(&huge).input_tokens, u64::MAX);
 }

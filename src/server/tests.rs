@@ -14,8 +14,9 @@ use super::*;
 use crate::agent::{Answer, CallState, Closed, EndReason, SessionEvent, State};
 use crate::client::{Client, Connect};
 use crate::config::Environment;
-use crate::protocol::{ClientKind, Payload, Request, SessionInfo};
+use crate::protocol::{ClientKind, ModelInfo, Payload, Request, SessionInfo, TokenTotals};
 use crate::provider::{Event, EventStream, ProviderError, Request as ProviderRequest, StopReason};
+use crate::session::Store;
 
 mod connection;
 
@@ -42,6 +43,8 @@ enum Step {
     Events(Vec<std::result::Result<Event, ProviderError>>),
     /// Nothing until the request is cancelled.
     Hang,
+    /// A `usage` event and a text, then nothing until the request is cancelled.
+    UsageThenHang(u64, u64),
     Panic,
 }
 
@@ -71,6 +74,18 @@ impl Provider for Script {
                 cancel.cancelled().await;
                 Err(ProviderError::cancelled())
             })
+            .boxed(),
+            Some(Step::UsageThenHang(input_tokens, output_tokens)) => stream::iter([
+                Ok(Event::Usage {
+                    input_tokens,
+                    output_tokens,
+                }),
+                Ok(Event::TextDelta { text: "x".into() }),
+            ])
+            .chain(stream::once(async move {
+                cancel.cancelled().await;
+                Err(ProviderError::cancelled())
+            }))
             .boxed(),
             Some(Step::Panic) => panic!("scripted panic"),
             None => stream::iter([Err(ProviderError::protocol("script: no more answers"))]).boxed(),
@@ -670,7 +685,7 @@ async fn model_change_applies_to_the_next_request() {
     .await
     .unwrap();
     let (model, _) = until(&mut c, |e, _| match e {
-        SessionEvent::ModelChanged { model } => Some(model.clone()),
+        SessionEvent::ModelChanged { model, .. } => Some(model.clone()),
         _ => None,
     })
     .await;
@@ -702,7 +717,7 @@ async fn version_mismatch() {
     let ServerMessage::Error { message } = reply else {
         panic!("{reply:?}");
     };
-    assert!(message.contains("version 2"), "{message}");
+    assert!(message.contains("version 3"), "{message}");
     assert!(message.contains("clai server stop"), "{message}");
     fx.stop().await;
 }
@@ -1088,4 +1103,356 @@ async fn idle_exit_with_saved_sessions() {
         .unwrap()
         .unwrap();
     assert_eq!(store::list(&fx.dir.join("sessions")).len(), 1);
+}
+
+/// An answer that reports its tokens.
+fn say_counted(text: &str, input_tokens: u64, output_tokens: u64) -> Step {
+    Step::Events(vec![
+        Ok(Event::TextDelta { text: text.into() }),
+        Ok(Event::Usage {
+            input_tokens,
+            output_tokens,
+        }),
+        Ok(Event::Done {
+            stop_reason: StopReason::EndTurn,
+        }),
+    ])
+}
+
+fn totals(input_tokens: u64, output_tokens: u64) -> TokenTotals {
+    TokenTotals {
+        input_tokens,
+        output_tokens,
+    }
+}
+
+/// The directory of the only saved session.
+fn saved_dir(fx: &Fixture) -> PathBuf {
+    fs::read_dir(fx.sessions_dir())
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path()
+}
+
+/// The saved log of a session.
+fn saved_log(dir: &Path) -> Vec<SessionEvent> {
+    fs::read_to_string(dir.join("events.jsonl"))
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect()
+}
+
+#[tokio::test]
+async fn token_totals_are_counted_and_survive_a_restart() {
+    let script = Script::new(vec![say_counted("a", 100, 10), say_counted("b", 200, 20)]);
+    let mut fx = Fixture::start(vec![script]).await;
+    let mut c = fx.client("tui", true).await;
+    let created = new_session(&mut c, &fx.ws, Some("s")).await;
+    assert_eq!(created.usage, totals(0, 0));
+    attach(&mut c, "s").await;
+    send(&mut c, "s", "one").await;
+    turn_end(&mut c).await;
+    send(&mut c, "s", "two").await;
+    turn_end(&mut c).await;
+    assert_eq!(c.list().await.unwrap()[0].usage, totals(300, 30));
+    drop(c);
+
+    // Written as it goes, not only at the stop.
+    let dir = saved_dir(&fx);
+    let meta = Store::open(dir).read_meta().unwrap();
+    assert_eq!(meta.usage, totals(300, 30));
+
+    fx.restart().await;
+    let mut c = fx.client("tui", true).await;
+    // A saved session reports them without being loaded.
+    let listed = c.list().await.unwrap();
+    assert_eq!(listed[0].state, State::Saved);
+    assert_eq!(listed[0].usage, totals(300, 30));
+    // Resuming sums the log once, not on top of the saved totals.
+    assert_eq!(attach(&mut c, "s").await.usage, totals(300, 30));
+    fx.stop().await;
+}
+
+#[tokio::test]
+async fn token_totals_are_summed_from_the_log_on_resume() {
+    let script = Script::new(vec![say_counted("a", 100, 10)]);
+    let mut fx = Fixture::start(vec![script]).await;
+    let mut c = fx.client("tui", true).await;
+    new_session(&mut c, &fx.ws, Some("s")).await;
+    attach(&mut c, "s").await;
+    send(&mut c, "s", "one").await;
+    turn_end(&mut c).await;
+    drop(c);
+    fx.stop.cancel();
+    tokio::time::timeout(WAIT, &mut fx.server)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+
+    // As an older `clai` left it: no totals in the meta.
+    let dir = saved_dir(&fx);
+    let path = dir.join("session.json");
+    let mut meta: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    meta.as_object_mut().unwrap().remove("usage");
+    fs::write(&path, meta.to_string()).unwrap();
+
+    let (stop, server) = launch(&fx.dir, &fx.config, &fx.scripts, WAIT).await;
+    fx.stop = stop;
+    fx.server = server;
+    let mut c = fx.client("tui", true).await;
+    assert_eq!(c.list().await.unwrap()[0].usage, totals(0, 0));
+    assert_eq!(attach(&mut c, "s").await.usage, totals(100, 10));
+    fx.stop().await;
+}
+
+#[tokio::test]
+async fn a_cancelled_request_counts_what_was_reported() {
+    let script = Script::new(vec![Step::UsageThenHang(70, 7), say("no usage")]);
+    let fx = Fixture::start(vec![script]).await;
+    let mut c = fx.client("tui", true).await;
+    new_session(&mut c, &fx.ws, Some("s")).await;
+    attach(&mut c, "s").await;
+    send(&mut c, "s", "one").await;
+    // The text comes after the usage, so the request has reported it by then.
+    until(&mut c, |e, _| {
+        matches!(e, SessionEvent::TextDelta { .. }).then_some(())
+    })
+    .await;
+    c.request(Request::Cancel {
+        session: "s".into(),
+    })
+    .await
+    .unwrap();
+    assert_eq!(turn_end(&mut c).await, EndReason::Cancelled);
+    assert_eq!(c.list().await.unwrap()[0].usage, totals(70, 7));
+
+    // A provider that reports nothing adds nothing.
+    send(&mut c, "s", "two").await;
+    turn_end(&mut c).await;
+    assert_eq!(c.list().await.unwrap()[0].usage, totals(70, 7));
+    fx.stop().await;
+}
+
+#[tokio::test]
+async fn export_and_import_keep_the_totals() {
+    let script = Script::new(vec![say_counted("a", 100, 10)]);
+    let fx = Fixture::start(vec![script]).await;
+    let mut c = fx.client("tui", true).await;
+    new_session(&mut c, &fx.ws, Some("s")).await;
+    attach(&mut c, "s").await;
+    send(&mut c, "s", "one").await;
+    turn_end(&mut c).await;
+    let file = fx.tmp.path().join("s.json");
+    c.request(Request::Export {
+        session: "s".into(),
+        path: file.clone(),
+    })
+    .await
+    .unwrap();
+    let imported = c
+        .request(Request::Import {
+            path: file,
+            name: Some("copy".into()),
+        })
+        .await
+        .unwrap();
+    let Payload::Session { session } = imported else {
+        panic!("not a session");
+    };
+    assert_eq!(session.usage, totals(100, 10));
+    assert_eq!(attach(&mut c, "copy").await.usage, totals(100, 10));
+    fx.stop().await;
+}
+
+#[tokio::test]
+async fn a_model_change_says_where_it_came_from() {
+    let fx = Fixture::start(vec![Script::new(vec![])]).await;
+    fx.add_script(Script::new(vec![]));
+    let mut c = fx.client("tui", true).await;
+    new_session(&mut c, &fx.ws, Some("s")).await;
+    attach(&mut c, "s").await;
+    c.request(Request::SetModel {
+        session: "s".into(),
+        model: "two".into(),
+    })
+    .await
+    .unwrap();
+    let (change, _) = until(&mut c, |e, _| {
+        matches!(e, SessionEvent::ModelChanged { .. }).then(|| e.clone())
+    })
+    .await;
+    assert_eq!(
+        change,
+        SessionEvent::ModelChanged {
+            from: "fake/one".into(),
+            model: "fake/two".into(),
+        }
+    );
+    fx.stop().await;
+}
+
+#[tokio::test]
+async fn setting_the_same_model_publishes_nothing() {
+    let script = Script::new(vec![say("a")]);
+    let fx = Fixture::start(vec![script.clone()]).await;
+    // The provider is made again: it may come from a reloaded configuration.
+    let applied = Script::new(vec![say("b")]);
+    fx.add_script(applied.clone());
+    let mut c = fx.client("tui", true).await;
+    new_session(&mut c, &fx.ws, Some("s")).await;
+    attach(&mut c, "s").await;
+    c.request(Request::SetModel {
+        session: "s".into(),
+        model: "fake/one".into(),
+    })
+    .await
+    .unwrap();
+    c.request(Request::Rename {
+        session: "s".into(),
+        name: "t".into(),
+    })
+    .await
+    .unwrap();
+    let (_, before) = until(&mut c, |e, _| {
+        matches!(e, SessionEvent::Renamed { .. }).then_some(())
+    })
+    .await;
+    assert!(
+        !before
+            .iter()
+            .any(|e| matches!(e, SessionEvent::ModelChanged { .. })),
+        "{before:?}"
+    );
+    send(&mut c, "t", "go").await;
+    turn_end(&mut c).await;
+    assert!(script.models.lock().unwrap().is_empty());
+    assert_eq!(*applied.models.lock().unwrap(), ["model-one"]);
+    fx.stop().await;
+}
+
+#[tokio::test]
+async fn changing_the_model_of_a_saved_session_is_logged() {
+    let mut fx = Fixture::start(vec![Script::new(vec![])]).await;
+    let mut c = fx.client("tui", true).await;
+    new_session(&mut c, &fx.ws, Some("s")).await;
+    drop(c);
+    fx.restart().await;
+    let mut c = fx.client("tui", true).await;
+    assert_eq!(c.list().await.unwrap()[0].state, State::Saved);
+    c.request(Request::SetModel {
+        session: "s".into(),
+        model: "fake/two".into(),
+    })
+    .await
+    .unwrap();
+    let changed = SessionEvent::ModelChanged {
+        from: "fake/one".into(),
+        model: "fake/two".into(),
+    };
+    assert!(saved_log(&saved_dir(&fx)).contains(&changed));
+    drop(c);
+
+    // Also after another restart, and for a client that attaches later.
+    fx.restart().await;
+    let mut c = fx.client("tui", true).await;
+    assert_eq!(c.list().await.unwrap()[0].model, "fake/two");
+    attach(&mut c, "s").await;
+    let (replayed, _) = until(&mut c, |e, replay| {
+        (replay && matches!(e, SessionEvent::ModelChanged { .. })).then(|| e.clone())
+    })
+    .await;
+    assert_eq!(replayed, changed);
+    fx.stop().await;
+}
+
+#[tokio::test]
+async fn resuming_on_the_same_model_logs_nothing() {
+    let mut fx = Fixture::start(vec![Script::new(vec![])]).await;
+    let mut c = fx.client("tui", true).await;
+    new_session(&mut c, &fx.ws, Some("s")).await;
+    drop(c);
+    fx.restart().await;
+    let mut c = fx.client("tui", true).await;
+    c.request(Request::SetModel {
+        session: "s".into(),
+        model: "fake/one".into(),
+    })
+    .await
+    .unwrap();
+    let dir = saved_dir(&fx);
+    let log = if dir.join("events.jsonl").exists() {
+        saved_log(&dir)
+    } else {
+        Vec::new()
+    };
+    assert!(
+        !log.iter()
+            .any(|e| matches!(e, SessionEvent::ModelChanged { .. })),
+        "{log:?}"
+    );
+    fx.stop().await;
+}
+
+async fn models(client: &mut Client) -> (Vec<ModelInfo>, PathBuf) {
+    match client.request(Request::Models).await.unwrap() {
+        Payload::Models { models, config } => (models, config),
+        other => panic!("{other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn the_models_request_lists_the_servers_models() {
+    let fx = Fixture::start(vec![]).await;
+    let mut c = fx.client("tui", true).await;
+    let (list, config) = models(&mut c).await;
+    assert_eq!(config, fx.config);
+    assert_eq!(
+        list[0],
+        ModelInfo {
+            model: "fake/one".into(),
+            provider: "fake".into(),
+            name: "one".into(),
+            id: "model-one".into(),
+            context_window: 100_000,
+            default: true,
+            key: "config".into(),
+        }
+    );
+    assert_eq!(list[1].model, "fake/two");
+    assert!(!list[1].default);
+
+    // After a reload it is the new configuration.
+    let three = CONFIG.replace(
+        "[providers.fake.models.two]",
+        "[providers.fake.models.three]",
+    );
+    fs::write(&fx.config, three).unwrap();
+    assert_eq!(notice(&mut c).await, Notice::ConfigReloaded);
+    let (list, _) = models(&mut c).await;
+    let names: Vec<&str> = list.iter().map(|m| m.name.as_str()).collect();
+    assert_eq!(names, ["one", "three"]);
+    fx.stop().await;
+}
+
+#[tokio::test]
+async fn an_older_client_gets_the_version_error() {
+    let fx = Fixture::start(vec![]).await;
+    let mut stream = UnixStream::connect(socket_path(&fx.dir)).await.unwrap();
+    stream
+        .write_all(b"{\"type\":\"hello\",\"version\":2,\"kind\":\"cli\",\"name\":\"x\",\"answers\":false}\n")
+        .await
+        .unwrap();
+    let mut reader = BufReader::new(stream);
+    let reply: ServerMessage = protocol::read(&mut reader).await.unwrap().unwrap();
+    let ServerMessage::Error { message } = reply else {
+        panic!("{reply:?}");
+    };
+    assert!(message.contains("version 3"), "{message}");
+    assert!(message.contains("clai server stop"), "{message}");
+    fx.stop().await;
 }

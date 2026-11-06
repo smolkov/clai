@@ -132,6 +132,9 @@ pub enum SessionEvent {
     TurnEnd(TurnEnd),
     /// The session's model changed; applies from the next request.
     ModelChanged {
+        /// The old `provider/model`; empty in a log of an older `clai`.
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        from: String,
         /// `provider/model`.
         model: String,
     },

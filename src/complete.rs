@@ -138,6 +138,7 @@ mod tests {
             created: 0,
             queued: 0,
             question: None,
+            usage: Default::default(),
         };
         let sessions = [info("clai"), info("clai-2"), info("docs")];
         let names: Vec<String> = session_candidates(&sessions, "cl")

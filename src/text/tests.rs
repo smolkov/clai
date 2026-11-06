@@ -528,3 +528,33 @@ fn conversation_streams() {
         "\n> x\n"
     );
 }
+
+#[test]
+fn token_counts() {
+    assert_eq!(tokens(950), "950");
+    assert_eq!(tokens(12_345), "12.3k");
+    assert_eq!(tokens(200_000), "200k");
+    assert_eq!(tokens(1_250_000), "1.2M");
+    // Nothing a provider reports can overflow it.
+    assert!(tokens(u64::MAX).ends_with('M'));
+}
+
+#[test]
+fn short_token_counts() {
+    assert_eq!(short_tokens(999), "999");
+    assert_eq!(short_tokens(32768), "32k");
+    assert_eq!(short_tokens(200_000), "200k");
+    assert_eq!(short_tokens(1_000_000), "1M");
+}
+
+#[test]
+fn the_usage_line() {
+    let usage = TokenTotals {
+        input_tokens: 45_100,
+        output_tokens: 3_200,
+    };
+    assert_eq!(
+        usage_line(usage, 12_300),
+        "tokens: in 45.1k, out 3.2k; context 12.3k"
+    );
+}

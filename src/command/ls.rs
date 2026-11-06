@@ -62,6 +62,8 @@ fn json_of(s: &SessionInfo) -> Value {
         "created": s.created,
         "queued": s.queued,
         "question": question,
+        "input_tokens": s.usage.input_tokens,
+        "output_tokens": s.usage.output_tokens,
     })
 }
 
@@ -128,6 +130,7 @@ mod tests {
             created,
             queued: 0,
             question: None,
+            usage: Default::default(),
         }
     }
 

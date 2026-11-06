@@ -40,7 +40,7 @@ edit_file: src/parse.rs  asks: default for edit_file
 > _
 ──────────────────────────────────────────────────────────────────────────────
   asking · Esc cancel · /help · Ctrl-D detach
-  project · ~/ws/project · anthropic/sonnet · 1/3 ●1 · 12.3k/200k
+  project · ~/ws/project · anthropic/sonnet · 1/3 ●1 · 12.3k/200k · in 45.1k out 3.2k
 ```
 
 There is no box around the screen: the conversation takes the full width, and
@@ -52,7 +52,7 @@ plain lines set off the prompt bar and the input. From top to bottom:
 | Prompt bar     | Shown only while a question (permission or limit) is open; replaces nothing else. |
 | Input          | Multi-line editor for the next user message, with a line above and below it. |
 | Status row     | Current state (idle, waiting for model, running tool, asking), turn counters, key hints. |
-| Session row    | Session name, workspace path, provider and model (`anthropic/sonnet`), position among all sessions (`1/3`), number of other sessions waiting for an answer (`●1`), context usage (tokens used / limit). |
+| Session row    | Session name, workspace path, provider and model (`anthropic/sonnet`), position among all sessions (`1/3`), number of other sessions waiting for an answer (`●1`), context usage (tokens used / limit; only the tokens if the server does not list the model, nothing until the first count), tokens the session has used (`in 45.1k out 3.2k`). |
 
 The conversation area takes all remaining height. If the terminal is smaller
 than 40 × 10 cells, `clai` shows only a "terminal too small" message until it
@@ -88,6 +88,21 @@ name:
 | `k`         | Kill the selected session, after a `y`/`n` confirmation. |
 | `Esc`       | Close the list, stay on the current session. |
 
+## Token counters
+
+The session row ends with the tokens the session has used. They are the first
+thing cut on a narrow terminal, and left out until the first `usage` event.
+
+- **Input** and **output** are the sums over all requests of the session.
+  Input counts the history again with every request, because that is what is
+  sent; it is not the context size.
+- Anthropic's cached input is included in input, so the counter is not a bill.
+- A cancelled request counts what the provider had reported by then. A provider
+  that reports nothing adds nothing.
+
+The TUI sums the `usage` events of the log it replays, and starts again on a
+reconnect, so a reconnect never counts anything twice.
+
 ## Model picker
 
 Each session has its own provider and model. The model picker chooses them.
@@ -115,7 +130,18 @@ session.
 - Each row shows the model's config name, its `id` and context window. Marks:
   current model of the session, `default_model`, a provider whose API key is
   missing (`⚠ no key`; still selectable, the error comes on first use), and a
-  model whose context window is smaller than the session's history.
+  model whose context window is smaller than the session's history
+  (`⚠ history 41k > 32k`, from the last context size). Until
+  `spec/context.md` exists such a model is only marked.
+- The list comes from the server (the `models` request), since its
+  configuration and environment are what the requests use. The TUI takes context
+  windows from the same answer; it asks when the picker opens and when the
+  configuration was reloaded.
+- `Enter` selects and closes; on the current model it only closes. `Esc` closes.
+  `Up` / `Down` select; other keys edit the filter. With no match the list says
+  `no model` and `Enter` does nothing.
+- The picker does not open while a question is open, and a question that opens
+  closes it: keys belong to the prompt bar then.
 - `/model <provider>/<model>` (or `/model <model>` when unambiguous) switches
   without the picker; an unknown name is an error that lists the configured
   models.
@@ -130,7 +156,9 @@ Changing the model of a running session:
   format. If it does not fit the new context window, the oldest parts are
   shortened (see `spec/context.md`); the TUI asks for confirmation first.
 - A notice in the conversation records each change, e.g.
-  "model: anthropic/sonnet → local/qwen".
+  "model: anthropic/sonnet → local/qwen". Choosing the model the session already
+  has adds no notice. A log of an older `clai` has no old model; its notice is
+  "model: local/qwen".
 - The change applies to this session only. Other sessions and
   `default_model` are not affected.
 

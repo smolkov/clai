@@ -23,6 +23,7 @@ use std::io::IsTerminal;
 
 use crate::agent::CallState;
 use crate::config::Symbols;
+use crate::protocol::TokenTotals;
 
 /// What the terminal can show.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,6 +43,44 @@ impl Terminal {
             colour: std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none(),
         }
     }
+}
+
+/// `950`, `12.3k`, `200k`, `1.2M`: for counts that grow.
+pub fn tokens(n: u64) -> String {
+    let short = |value: u64, unit: u64, name: &str| {
+        let tenths = value / (unit / 10);
+        if tenths.is_multiple_of(10) {
+            format!("{}{name}", tenths / 10)
+        } else {
+            format!("{}.{}{name}", tenths / 10, tenths % 10)
+        }
+    };
+    match n {
+        0..=999 => n.to_string(),
+        1_000..=999_999 => short(n, 1_000, "k"),
+        _ => short(n, 1_000_000, "M"),
+    }
+}
+
+/// `32768` → `32k`, `1000000` → `1M`; rounded down: for context windows.
+pub fn short_tokens(n: u64) -> String {
+    if n >= 1_000_000 {
+        format!("{}M", n / 1_000_000)
+    } else if n >= 1000 {
+        format!("{}k", n / 1000)
+    } else {
+        n.to_string()
+    }
+}
+
+/// What `/usage` in `clai chat` prints.
+pub fn usage_line(usage: TokenTotals, context: u64) -> String {
+    format!(
+        "tokens: in {}, out {}; context {}",
+        tokens(usage.input_tokens),
+        tokens(usage.output_tokens),
+        tokens(context)
+    )
 }
 
 /// Whether to use Unicode symbols: `auto` asks the locale.

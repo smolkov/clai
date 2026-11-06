@@ -2,17 +2,21 @@
 //! and no network here, so nearly all behaviour is tested without either.
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
 
 use crate::agent::{Closed, QuestionKind, SessionEvent, State, now_secs};
-use crate::protocol::{Notice, Payload, Request, ServerMessage, SessionInfo};
+use crate::protocol::{
+    ModelInfo, Notice, Payload, Request, ServerMessage, SessionInfo, TokenTotals,
+};
 
 use super::conversation::{Conversation, Kind};
 use super::editor::{Browse, Editor};
 use super::keys::{self, Action, Focus};
+use super::picker::Picker;
 use super::prompt::Prompt;
 use super::style::Look;
 use super::view;
@@ -44,7 +48,7 @@ pub enum Exit {
     Signal,
 }
 
-/// The settings that do not change while the TUI runs.
+/// The settings; only the context windows change while the TUI runs.
 #[derive(Debug, Clone)]
 pub struct Settings {
     pub look: Look,
@@ -55,7 +59,8 @@ pub struct Settings {
     pub scroll_lines: usize,
     /// `tui.timestamps`: the offset of local time from UTC, in seconds.
     pub timestamps: Option<i64>,
-    /// Context windows by `provider/model`.
+    /// Context windows by `provider/model`: from the TUI's own configuration
+    /// at first, then from the server's `models` answers.
     pub windows: HashMap<String, u64>,
 }
 
@@ -120,6 +125,9 @@ pub struct App {
     pub editor: Editor,
     pub prompt: Option<Prompt>,
     pub dialog: Option<Dialog>,
+    pub picker: Option<Picker>,
+    /// A `models` request is on its way to open the picker.
+    picker_wanted: bool,
     pub focus: Focus,
     /// The selected entry, with focus on the conversation.
     pub selected: Option<usize>,
@@ -132,6 +140,9 @@ pub struct App {
     pub place: Option<Place>,
     /// Tokens of the last request.
     pub context_tokens: u64,
+    /// The sum of the log's `usage` events; `None` until the first. It is not
+    /// taken from the session info: the log replayed after it would count twice.
+    pub usage: Option<TokenTotals>,
     /// In the current turn.
     pub requests: u32,
     pub tool_calls: u32,
@@ -170,6 +181,8 @@ impl App {
             editor: Editor::default(),
             prompt: None,
             dialog: None,
+            picker: None,
+            picker_wanted: false,
             focus: Focus::Input,
             selected: None,
             top: 0,
@@ -177,6 +190,7 @@ impl App {
             new_output: false,
             place: None,
             context_tokens: 0,
+            usage: None,
             requests: 0,
             tool_calls: 0,
             lost_since: None,
@@ -197,6 +211,17 @@ impl App {
 
     /// Takes one input.
     pub fn update(&mut self, input: Input) -> Vec<Effect> {
+        let effects = self.handle(input);
+        // Keys go to an open prompt, so the picker must not hide it: what is
+        // typed for the filter would answer the question.
+        if self.prompt.is_some() || self.ended.is_some() {
+            self.picker = None;
+            self.picker_wanted = false;
+        }
+        effects
+    }
+
+    fn handle(&mut self, input: Input) -> Vec<Effect> {
         match input {
             Input::Key(key) => self.key(key),
             Input::Paste(text) => self.paste(&text),
@@ -235,6 +260,9 @@ impl App {
         self.conversation.stamp = None;
         self.total = None;
         (self.requests, self.tool_calls) = (0, 0);
+        // Summed again from the log, so that a reconnect does not add to it.
+        self.context_tokens = 0;
+        self.usage = None;
         let earlier = self.prompt.take();
         for message in backlog {
             let _ = self.server(message);
@@ -291,7 +319,10 @@ impl App {
             ServerMessage::Notice { notice } => {
                 self.conversation.stamp = self.stamp();
                 match notice {
-                    Notice::ConfigReloaded => self.conversation.notice("configuration reloaded"),
+                    Notice::ConfigReloaded => {
+                        self.conversation.notice("configuration reloaded");
+                        return vec![Effect::Redraw, Effect::Request(Request::Models)];
+                    }
                     Notice::ConfigRejected { errors } => {
                         for error in errors {
                             self.conversation
@@ -345,12 +376,17 @@ impl App {
             SessionEvent::Notice { text } => conversation.notice(text),
             SessionEvent::Usage { context_tokens, .. } => {
                 self.context_tokens = context_tokens;
+                self.usage.get_or_insert_default().count(&event);
                 self.requests += 1;
             }
             SessionEvent::Error { message } => conversation.error(message),
             SessionEvent::TurnEnd(_) => conversation.close_text(),
-            SessionEvent::ModelChanged { model } => {
-                conversation.notice(format!("model: {} → {model}", self.session.model));
+            SessionEvent::ModelChanged { from, model } => {
+                conversation.notice(if from.is_empty() {
+                    format!("model: {model}")
+                } else {
+                    format!("model: {from} → {model}")
+                });
                 self.session.model = model;
             }
             SessionEvent::Renamed { name } => {
@@ -428,10 +464,40 @@ impl App {
                 }
             }
             (Request::List, Err(_)) => return Vec::new(),
+            (Request::Models, Ok(Payload::Models { models, config })) => {
+                self.models(models, config);
+            }
+            (Request::Models, Err(message)) => {
+                // A refresh after a reload fails quietly; the old list stays.
+                if !std::mem::take(&mut self.picker_wanted) || lost {
+                    return Vec::new();
+                }
+                self.conversation.error(message);
+            }
             (_, Err(message)) if !lost => self.conversation.error(message),
             _ => return Vec::new(),
         }
         vec![Effect::Redraw]
+    }
+
+    /// The server's models: its context windows count from now on, and the
+    /// picker opens if it was asked for.
+    fn models(&mut self, models: Vec<ModelInfo>, config: PathBuf) {
+        self.settings.windows = models
+            .iter()
+            .map(|m| (m.model.clone(), m.context_window))
+            .collect();
+        let wanted = std::mem::take(&mut self.picker_wanted);
+        if let Some(picker) = &mut self.picker {
+            picker.set_models(models, config);
+        } else if wanted && self.dialog.is_none() {
+            self.picker = Some(Picker::new(models, config, &self.session.model));
+        }
+    }
+
+    fn open_picker(&mut self) -> Vec<Effect> {
+        self.picker_wanted = true;
+        vec![Effect::Request(Request::Models)]
     }
 
     // Time and connection.
@@ -486,6 +552,9 @@ impl App {
         if self.prompt.is_some() {
             return self.prompt_key(key);
         }
+        if self.picker.is_some() {
+            return self.picker_key(key);
+        }
         if let Some(dialog) = self.dialog {
             return self.dialog_key(dialog, key);
         }
@@ -520,6 +589,36 @@ impl App {
                 question: prompt.id().to_owned(),
                 answer,
             }));
+        }
+        effects
+    }
+
+    fn picker_key(&mut self, key: KeyEvent) -> Vec<Effect> {
+        let mut effects = vec![Effect::Redraw];
+        let Some(picker) = &mut self.picker else {
+            return effects;
+        };
+        match key.code {
+            KeyCode::Esc => self.picker = None,
+            KeyCode::Up => picker.up(),
+            KeyCode::Down => picker.down(),
+            KeyCode::Enter => {
+                let Some(model) = picker.chosen().map(|m| m.model.clone()) else {
+                    return effects;
+                };
+                self.picker = None;
+                if model != self.session.model {
+                    effects.push(Effect::Request(Request::SetModel {
+                        session: self.session.name.clone(),
+                        model,
+                    }));
+                }
+            }
+            _ => {
+                if let Some(edit) = keys::edit(key) {
+                    picker.edit(edit);
+                }
+            }
         }
         effects
     }
@@ -590,6 +689,7 @@ impl App {
                 }
             }
             Action::Help => self.dialog = Some(Dialog::Help),
+            Action::ModelPicker => return self.open_picker(),
             Action::Detach | Action::Nothing => {}
         }
         Vec::new()
@@ -659,6 +759,8 @@ impl App {
     fn paste(&mut self, text: &str) -> Vec<Effect> {
         if let Some(prompt) = &mut self.prompt {
             prompt.paste(text);
+        } else if let Some(picker) = &mut self.picker {
+            picker.paste(text);
         } else if self.dialog.is_none() && self.ended.is_none() && self.focus == Focus::Input {
             self.editor.paste(text);
         }
@@ -721,13 +823,7 @@ impl App {
                 self.editor.clear();
                 return vec![self.detach()];
             }
-            ("model", "") => {
-                self.conversation.notice(format!(
-                    "`/model` without an argument comes with a later version; the model is {}",
-                    self.session.model
-                ));
-                Vec::new()
-            }
+            ("model", "") => self.open_picker(),
             ("model", model) => vec![Effect::Request(Request::SetModel {
                 session,
                 model: model.to_owned(),

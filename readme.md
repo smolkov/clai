@@ -63,14 +63,20 @@ returns to a session. Leaving only detaches: the session keeps running.
 | `Esc`, `Ctrl-C` | Cancel the running turn; without one, `Ctrl-C` clears the input. |
 | `Ctrl-C` twice, `Ctrl-D` on empty input | Detach. |
 | `PgUp` / `PgDn`, mouse wheel | Scroll. `Ctrl-Home` / `Ctrl-End`: start / end, and follow again. |
+| `Ctrl-O` | Choose the model: type to filter, `Up` / `Down` select, `Enter` changes it, `Esc` closes. |
 | `Tab` | Switch to the conversation: `Up` / `Down` select, `Enter` expands a tool call, `?` shows help. |
 
 A tool call that needs permission opens a prompt: `y` yes, `a` always (`Tab`
 widens the rule, `Enter` confirms), `n` no, `e` no with a message to the model,
 `Esc` no and cancel the turn. A turn at its limit asks `y` continue, `n` stop.
 
-Commands: `/help`, `/model PROVIDER/MODEL`, `/rename NAME`, `/kill`, `/detach`,
+Commands: `/help`, `/model [PROVIDER/MODEL]` (without one, choose it as with
+`Ctrl-O`), `/rename NAME`, `/kill`, `/detach`,
 `/quit`. A message that starts with `/` is written `//…`.
+
+The session row ends with the tokens the session has used, `in 45.1k out 3.2k`.
+Input counts the history again with each request, so this is neither the context
+size nor a bill.
 
 Without a terminal the TUI exits with `2`; use `clai run` or `clai chat`.
 `[tui]` in the configuration has `symbols`, `mouse` (off: the terminal's own
@@ -120,7 +126,7 @@ clai import api.json                  # add it again (e.g. on another machine)
 `clai chat` is a plain-text chat: lines you type go to the model, its text
 streams back with one line per tool call. `Ctrl-C` cancels the running
 turn, `Ctrl-D` detaches (the session keeps working), `/help` lists the
-commands (`/cancel`, `/model`, `/detach`, `/kill`). It shows each question
+commands (`/cancel`, `/model`, `/usage`, `/detach`, `/kill`). It shows each question
 with the diff or command and reads the answer as a line: `y` allow, `a` always (then a rule), `n` deny, `e` deny
 with a message, `c` cancel the turn; for a limit question `y` continue,
 `n` stop.

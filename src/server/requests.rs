@@ -8,14 +8,14 @@ use std::sync::atomic::Ordering;
 use crate::agent::{Agent, SessionEvent, Setup, State, now_secs, system_prompt, today};
 use crate::config::{self, Config, LoadOptions};
 use crate::permissions::{SessionRules, Workspace};
-use crate::protocol::{ErrorReply, Notice, Outcome, Payload, Request, SessionInfo, Status};
+use crate::protocol::{
+    ErrorReply, ModelInfo, Notice, Outcome, Payload, Request, SessionInfo, Status,
+};
 use crate::session::store::{self, Meta, Store};
 use crate::session::{self, SessionHandle, Spec};
 use crate::tools::Env;
 
-use super::{
-    Conn, Entry, Shared, Slot, broadcast, busy, check_name, error_lines, lock, unique_name,
-};
+use super::{Conn, Entry, Shared, Slot, broadcast, busy, check_name, error_lines, lock};
 
 type Reply = std::result::Result<Payload, ErrorReply>;
 
@@ -37,21 +37,6 @@ struct Built {
     path: PathBuf,
     /// `provider/model`.
     model: String,
-}
-
-/// The info of a session that is saved, not running.
-fn saved_info(id: u64, meta: &Meta) -> SessionInfo {
-    SessionInfo {
-        id,
-        name: meta.name.clone(),
-        workspace: meta.place.clone(),
-        path: meta.workspace.clone(),
-        model: meta.model.clone(),
-        state: State::Saved,
-        created: meta.created,
-        queued: meta.queued.len(),
-        question: None,
-    }
 }
 
 impl Shared {
@@ -124,13 +109,13 @@ impl Shared {
                 return;
             };
             let mut sessions = lock(&shared.sessions);
-            let Some(entry) = sessions.get_mut(&id) else {
+            let Some(entry) = sessions.get_mut(id) else {
                 return;
             };
             match entry.store.as_ref().map(Store::read_meta) {
                 Some(Ok(meta)) => entry.slot = Slot::Saved(Box::new(meta)),
                 _ => {
-                    sessions.remove(&id);
+                    sessions.remove(id);
                 }
             }
         })
@@ -138,15 +123,12 @@ impl Shared {
 
     fn find(&self, name: &str) -> std::result::Result<(u64, Found), ErrorReply> {
         let sessions = lock(&self.sessions);
-        let (id, entry) = sessions
-            .iter()
-            .find(|(_, e)| e.name == name)
-            .ok_or_else(|| no_session(name))?;
+        let (id, entry) = sessions.by_name(name).ok_or_else(|| no_session(name))?;
         let found = match &entry.slot {
             Slot::Running(handle) => Found::Running(handle.clone()),
             Slot::Saved(_) => Found::Saved,
         };
-        Ok((*id, found))
+        Ok((id, found))
     }
 
     /// The running session `name`, resumed from disk if it is saved;
@@ -158,20 +140,17 @@ impl Shared {
     ) -> std::result::Result<SessionHandle, ErrorReply> {
         let (id, store, meta) = {
             let sessions = lock(&self.sessions);
-            let (id, entry) = sessions
-                .iter()
-                .find(|(_, e)| e.name == name)
-                .ok_or_else(|| no_session(name))?;
+            let (id, entry) = sessions.by_name(name).ok_or_else(|| no_session(name))?;
             match (&entry.slot, &entry.store) {
                 (Slot::Running(handle), _) => return Ok(handle.clone()),
-                (Slot::Saved(meta), Some(store)) => (*id, store.clone(), (**meta).clone()),
+                (Slot::Saved(meta), Some(store)) => (id, store.clone(), (**meta).clone()),
                 (Slot::Saved(_), None) => return Err(no_session(name)),
             }
         };
         let handle = self.resume(id, store, &meta, model)?;
         let placed = {
             let mut sessions = lock(&self.sessions);
-            match sessions.get_mut(&id) {
+            match sessions.get_mut(id) {
                 Some(entry) if matches!(entry.slot, Slot::Saved(_)) => {
                     entry.slot = Slot::Running(handle.clone());
                     return Ok(handle);
@@ -231,6 +210,16 @@ impl Shared {
             events.push(notice);
         }
         let mut meta = loaded.meta;
+        if built.model != meta.model {
+            let changed = SessionEvent::ModelChanged {
+                from: std::mem::take(&mut meta.model),
+                model: built.model.clone(),
+            };
+            if let Err(e) = store.append_event(&changed) {
+                tracing::warn!("saving the model change: {e}");
+            }
+            events.push(changed);
+        }
         meta.model = built.model;
         meta.place = built.place;
         if let Err(e) = store.write_meta(&meta) {
@@ -246,15 +235,43 @@ impl Shared {
         }))
     }
 
+    /// The models of the current configuration, as the requests will use them.
+    fn models(&self) -> Reply {
+        // Models come only from the user file; any workspace will do.
+        let config = self.config(&std::env::temp_dir())?;
+        let getenv = |name: &str| std::env::var(name).ok();
+        let mut models = Vec::new();
+        for provider in config.providers.values() {
+            let key = provider.key.status(getenv).name();
+            for model in provider.models.values() {
+                models.push(ModelInfo {
+                    model: format!("{}/{}", provider.name, model.name),
+                    provider: provider.name.clone(),
+                    name: model.name.clone(),
+                    id: model.id.clone(),
+                    context_window: model.context_window,
+                    default: config.default_model.provider == provider.name
+                        && config.default_model.model == model.name,
+                    key: key.to_owned(),
+                });
+            }
+        }
+        let path = lock(&self.config).path.clone();
+        Ok(Payload::Models {
+            models,
+            config: path,
+        })
+    }
+
     async fn list(&self) -> Vec<SessionInfo> {
         let entries: Vec<(u64, Result<SessionHandle, SessionInfo>)> = lock(&self.sessions)
             .iter()
             .map(|(id, e)| {
                 let slot = match &e.slot {
                     Slot::Running(handle) => Ok(handle.clone()),
-                    Slot::Saved(meta) => Err(saved_info(*id, meta)),
+                    Slot::Saved(meta) => Err(meta.info(id, State::Saved, meta.queued.len(), None)),
                 };
-                (*id, slot)
+                (id, slot)
             })
             .collect();
         let mut sessions = Vec::new();
@@ -347,10 +364,7 @@ impl Conn {
             Request::Status => {
                 let (sessions, running) = {
                     let all = lock(&shared.sessions);
-                    (
-                        all.len(),
-                        all.values().filter(|e| e.handle().is_some()).count(),
-                    )
+                    (all.len(), all.handles().len())
                 };
                 Ok(Payload::Status(Status {
                     pid: std::process::id(),
@@ -361,6 +375,7 @@ impl Conn {
                     version: env!("CARGO_PKG_VERSION").to_owned(),
                 }))
             }
+            Request::Models => shared.models(),
             Request::Stop => {
                 tracing::info!(client = %self.outbox.name, "stop requested");
                 shared.stop.cancel();
@@ -398,7 +413,7 @@ impl Conn {
             let name = match name {
                 Some(name) => {
                     check_name(&name)?;
-                    if sessions.values().any(|e| e.name == name) {
+                    if sessions.is_taken(&name) {
                         if let Some(store) = &store {
                             let _ = store.remove();
                         }
@@ -406,7 +421,7 @@ impl Conn {
                     }
                     name
                 }
-                None => unique_name(&super::default_name(&built.path), &sessions),
+                None => sessions.unique_name(&super::default_name(&built.path)),
             };
             let meta = Meta::new(
                 name.clone(),
@@ -469,7 +484,7 @@ impl Conn {
         if let Found::Running(handle) = found {
             handle.kill("killed", false).await;
         }
-        let entry = lock(&shared.sessions).remove(&id);
+        let entry = lock(&shared.sessions).remove(id);
         if let Some(store) = entry.and_then(|e| e.store) {
             store
                 .remove()
@@ -481,12 +496,11 @@ impl Conn {
     fn rename(&self, session: &str, name: String) -> Reply {
         check_name(&name)?;
         let mut sessions = lock(&self.shared.sessions);
-        if sessions.values().any(|e| e.name == name) {
+        if sessions.is_taken(&name) {
             return Err(ErrorReply::failed(format!("the name {name} is taken")));
         }
-        let entry = sessions
-            .values_mut()
-            .find(|e| e.name == session)
+        let (_, entry) = sessions
+            .by_name_mut(session)
             .ok_or_else(|| no_session(session))?;
         match &mut entry.slot {
             Slot::Running(handle) => handle.rename(name.clone()).map_err(ErrorReply::failed)?,
@@ -537,9 +551,8 @@ impl Conn {
         }
         let store = {
             let sessions = lock(&self.shared.sessions);
-            let entry = sessions
-                .values()
-                .find(|e| e.name == session)
+            let (_, entry) = sessions
+                .by_name(session)
                 .ok_or_else(|| no_session(session))?;
             entry.store.clone().ok_or_else(|| {
                 ErrorReply::failed(format!("{session} is not saved, so it cannot be exported"))
@@ -560,12 +573,12 @@ impl Conn {
         let id = shared.next_session.fetch_add(1, Ordering::Relaxed) + 1;
         let mut sessions = lock(&shared.sessions);
         let name = match name {
-            Some(name) if sessions.values().any(|e| e.name == name) => {
+            Some(name) if sessions.is_taken(&name) => {
                 let _ = store.remove();
                 return Err(ErrorReply::failed(format!("the name {name} is taken")));
             }
             Some(name) => name,
-            None => unique_name(&bundle.meta.name, &sessions),
+            None => sessions.unique_name(&bundle.meta.name),
         };
         let mut meta = bundle.meta.clone();
         meta.name.clone_from(&name);
@@ -575,7 +588,7 @@ impl Conn {
             let _ = store.remove();
             return Err(ErrorReply::failed(e));
         }
-        let info = saved_info(id, &meta);
+        let info = meta.info(id, State::Saved, meta.queued.len(), None);
         sessions.insert(
             id,
             Entry {

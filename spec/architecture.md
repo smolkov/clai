@@ -164,11 +164,13 @@ clai/
 │   │   └── tests.rs            turns against a scripted provider
 │   ├── session/                Session (sessions.md)
 │   │   ├── mod.rs              the actor: state, queue, event log, questions
+│   │   ├── questions.rs        the open question, waiting answers, first one wins
 │   │   ├── store.rs            saved sessions: files, loading, repair, bundles
 │   │   └── outbox.rs           messages to one client, slow-client limit
 │   ├── protocol/               messages, framing, handshake; tests.rs
 │   ├── server/                 Server (sessions.md, "Server")
-│   │   ├── mod.rs              socket, registry, connections, idle exit, reload
+│   │   ├── mod.rs              socket, connections, idle exit, reload
+│   │   ├── registry.rs         all sessions, running and saved, by id and name
 │   │   ├── requests.rs         requests: create, resume, kill, export, import
 │   │   ├── paths.rs            runtime directory and its mode
 │   │   └── tests.rs            the server in-process with scripted providers
@@ -183,10 +185,11 @@ clai/
 │   │   ├── wrap.rs             styled text wrapped to terminal cells
 │   │   ├── editor.rs           the input editor
 │   │   ├── prompt.rs           the open question and the keys that answer it
+│   │   ├── picker.rs           the model picker: models, filter, selected row
 │   │   ├── keys.rs             key to action, by focus
 │   │   ├── style.rs            styles and symbols (Unicode or ASCII, NO_COLOR)
 │   │   ├── view/               drawing only: conversation, prompt bar, input,
-│   │   │                       status and session rows, popups
+│   │   │                       status and session rows, popups, model picker
 │   │   ├── snapshots/          expected frames (insta)
 │   │   └── tests.rs            state tests and frames with TestBackend
 │   ├── text/                   plain-text output for clai run and clai chat
@@ -244,7 +247,7 @@ need the network. Build output goes to `target/`, the spec book to
 Clients and the server exchange JSON messages over the Unix socket, one
 message per line (at most 16 MiB). Every message is an object with a
 `type`. The first message in each direction is `hello` with the protocol
-version (now `2`); on a mismatch the server sends `error` and closes the
+version (now `3`); on a mismatch the server sends `error` and closes the
 connection, and the message tells the user to restart the server with
 `clai server stop` (see [`sessions.md`](sessions.md), "Server"). The code
 is in `src/protocol/`.
@@ -254,9 +257,9 @@ Message kinds:
 | Direction | Kind | Content |
 |-----------|------|---------|
 | client → server | `hello` | Protocol version; client kind (`tui`, `chat`, `cli`, `bridge`) and name (e.g. `tui pts/3`, `clai chat`), which is shown as who answered; whether it answers questions. |
-| client → server | `request` | An id and a command: `new`, `list`, `kill`, `rename`, `attach`, `detach`, `send` (message), `set_model`, `cancel`, `answer`, `export`, `import`, `status`, `stop`. Each gets exactly one `response`. Sessions are named by their current name; `attach`, `send` and `set_model` resume a saved session. |
+| client → server | `request` | An id and a command: `new`, `list`, `kill`, `rename`, `attach`, `detach`, `send` (message), `set_model`, `cancel`, `answer`, `export`, `import`, `status`, `models`, `stop`. Each gets exactly one `response`. Sessions are named by their current name; `attach`, `send` and `set_model` resume a saved session. |
 | server → client | `hello` | Protocol version and the server's PID. |
-| server → client | `response` | The request's id and its `result`: `ok` with a payload (`done`, a session, the session list, the status) or `error` with a message, marked `usage` when the request itself was wrong (the command then exits `2`). |
+| server → client | `response` | The request's id and its `result`: `ok` with a payload (`done`, a session, the session list, the status, the models) or `error` with a message, marked `usage` when the request itself was wrong (the command then exits `2`). |
 | server → client | `event` | Something that happened in an attached session, with the session's id, and `replay` when it is part of the log sent on attach (see below). |
 | server → client | `notice` | Server-wide: `config_reloaded`, `config_rejected` (with the errors), `session_created`, `stopping`. |
 | server → client | `error` | The connection cannot go on: wrong version, a message that is not valid. |
@@ -280,10 +283,15 @@ Session events, in the order they happen:
 | `text_delta`, `text_done` | Streamed model text. |
 | `tool_call` | A tool call and its state: `pending`, `waiting`, `running`, `done`, `error`, `denied`, `cancelled`; with output as it arrives. |
 | `question`, `question_closed` | A question with all its details, and its answer with the client that gave it (see [`sessions.md`](sessions.md), "Questions"). |
-| `usage` | Tokens of a request, context size. |
+| `usage` | Tokens of a request, context size. The session sums them; the session info has the totals as `usage`. |
 | `error` | A provider or session error that ended a request or turn. |
 | `turn_end` | The turn ended: done, cancelled, limit reached or failed. |
-| `model_changed`, `renamed`, `ended` | Session settings and lifetime; `ended` has a reason: `killed`, `failed`, `server stopped`. |
+| `model_changed`, `renamed`, `ended` | Session settings and lifetime; `model_changed` has the new model and, as `from`, the old one (none in a log of an older `clai`); `ended` has a reason: `killed`, `failed`, `server stopped`. |
+
+The `models` request answers with the models of the server's configuration, in
+config order (`model`, `provider`, `name`, `id`, `context_window`, `default`,
+`key` as in `clai models --json`, without running `api_key_cmd`), and the path of
+the user config file.
 
 On `attach`, the session first sends its event log, then live events, so a
 client that attaches late shows the same conversation as one that was there

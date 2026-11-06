@@ -41,4 +41,4 @@ The test fails because parse drops the last line. Let me look.
 >                                                                                                                       
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   idle · /help · Ctrl-D detach                                                                                          
-  project · ~/ws/project · anthropic/sonnet · 1/3 ●1 · 12.3k/200k
+  project · ~/ws/project · anthropic/sonnet · 1/3 ●1 · 12.3k/200k · in 12k out 300

@@ -67,6 +67,10 @@ pub struct Symbols {
     pub quote: &'static str,
     pub new_output: &'static str,
     pub dot: &'static str,
+    /// The selected row of a list.
+    pub pointer: &'static str,
+    /// A mark that needs attention.
+    pub warning: &'static str,
     /// Plain lines across the screen and in Markdown.
     pub rule: &'static str,
     /// Between the parts of a footer row.
@@ -103,6 +107,8 @@ impl Symbols {
                 quote: "│",
                 new_output: "↓",
                 dot: "●",
+                pointer: "▶",
+                warning: "⚠",
                 rule: "─",
                 separator: "·",
                 border: border::PLAIN,
@@ -122,6 +128,8 @@ impl Symbols {
                 quote: "|",
                 new_output: "v",
                 dot: "*",
+                pointer: ">",
+                warning: "!",
                 rule: "-",
                 separator: "-",
                 border: ASCII_BORDER,

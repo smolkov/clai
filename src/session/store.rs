@@ -12,9 +12,10 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use crate::agent::{
-    CallResult, CallState, Closed, EndReason, INTERRUPTED, Record, SessionEvent, State,
+    CallResult, CallState, Closed, EndReason, INTERRUPTED, Question, Record, SessionEvent, State,
     ToolCallEvent, TurnEnd,
 };
+use crate::protocol::{SessionInfo, TokenTotals};
 
 /// The version of the files; a later `clai` reads older ones, never newer.
 pub const FORMAT: u32 = 1;
@@ -43,6 +44,10 @@ pub struct Meta {
     /// Messages waiting for a turn.
     #[serde(default)]
     pub queued: Vec<String>,
+    /// Tokens used so far. A file of an older `clai` has none; the log is
+    /// summed when the session resumes.
+    #[serde(default)]
+    pub usage: TokenTotals,
 }
 
 impl Meta {
@@ -58,6 +63,29 @@ impl Meta {
             updated: now,
             turns: 0,
             queued: Vec::new(),
+            usage: TokenTotals::default(),
+        }
+    }
+
+    /// The session as clients see it; the rest is not in the meta.
+    pub fn info(
+        &self,
+        id: u64,
+        state: State,
+        queued: usize,
+        question: Option<Question>,
+    ) -> SessionInfo {
+        SessionInfo {
+            id,
+            name: self.name.clone(),
+            workspace: self.place.clone(),
+            path: self.workspace.clone(),
+            model: self.model.clone(),
+            state,
+            created: self.created,
+            queued,
+            question,
+            usage: self.usage,
         }
     }
 }
@@ -495,6 +523,17 @@ mod tests {
         assert_eq!(list(&tmp.path().join("sessions")).len(), 1);
         store.remove().unwrap();
         assert!(list(&tmp.path().join("sessions")).is_empty());
+    }
+
+    #[test]
+    fn a_meta_without_totals_reads_as_zero() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = Store::create(tmp.path()).unwrap();
+        let mut old = serde_json::to_value(meta()).unwrap();
+        old.as_object_mut().unwrap().remove("usage");
+        fs::write(store.dir().join(META), old.to_string()).unwrap();
+        assert_eq!(store.read_meta().unwrap().usage, TokenTotals::default());
+        assert_eq!(FORMAT, 1);
     }
 
     #[test]

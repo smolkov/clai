@@ -141,12 +141,25 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [ ] Measure the full replay on a long session; paged loading if too slow.
 - [ ] `Ctrl-Z` suspends (restore, `SIGTSTP`, set up again on `SIGCONT`).
 
+## Session improvements
+
+- [x] Token totals: counted, saved, summed from the log on resume; the TUI
+      session row, `/usage` in `clai chat`, `clai ls --json`.
+- [x] Model change: `from` in `model_changed`, right notice on replay, saved
+      sessions logged, no notice for the same model.
+- [x] `models` request, protocol 3; the TUI takes context windows from it.
+- [x] Model picker: `Ctrl-O`, `/model`, filter, marks.
+- [ ] The TUI asks for the server's models only on opening the picker and after a
+      reload, as RFC 0003 says, so a TUI with another `--config` has its own
+      windows until then. Decide whether to ask at start and after a reconnect.
+
 ## Refactoring
 
 - [x] A: `Choice::name`, `text::ansi`, `text::Terminal`, `sync::lock`,
       `Error::io`, `runtime` (no behaviour change).
-- [ ] B: session registry type, `Meta::info`, question state machine in
-      the session, agent split, shared chat answering, `paths`, `signals`.
+- [x] B, the part in RFC 0003: session registry type, `Meta::info`, question
+      state machine in the session.
+- [ ] B, the rest: agent split, shared chat answering, `paths`, `signals`.
 - [ ] C: shared test tools (model server, `Env`, fake provider), split
       server tests.
 - [ ] D (to decide): split `SessionEvent`, typed store errors, one text
@@ -155,7 +168,7 @@ Milestones and their order: [`implementation.md`](implementation.md).
 ## Next milestones
 
 - [ ] TUI sessions and settings (with a server notice for session state
-      changes, protocol 3, in place of polling `list`)
+      changes, protocol 4, in place of polling `list`)
 - [ ] Commit (needs `spec/commit.md`)
 - [ ] Context management (needs `spec/context.md`)
 - [ ] Release

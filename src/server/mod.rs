@@ -2,9 +2,10 @@
 //! socket, the session registry, idle exit and configuration reload.
 
 mod paths;
+mod registry;
 mod requests;
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap};
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -24,9 +25,11 @@ use crate::protocol::{
     self, ClientHello, ClientMessage, ErrorReply, Notice, ServerHello, ServerMessage, VERSION,
 };
 use crate::provider::{self, Provider};
-use crate::session::store::{self, Meta, Store};
-use crate::session::{ClientId, Outbox, SessionHandle};
+use crate::session::store;
+use crate::session::{ClientId, Outbox};
 use crate::sync::lock;
+
+use registry::{Entry, Registry, Slot};
 
 pub use paths::{lock_path, prepare, runtime_dir, socket_path};
 
@@ -80,34 +83,12 @@ struct UserConfig {
     stamp: Option<(SystemTime, u64)>,
 }
 
-/// A session in the registry: running in the server, or saved on disk.
-struct Entry {
-    name: String,
-    /// `None` if it could not be saved; it then lives in memory only.
-    store: Option<Store>,
-    slot: Slot,
-}
-
-enum Slot {
-    Running(SessionHandle),
-    Saved(Box<Meta>),
-}
-
-impl Entry {
-    fn handle(&self) -> Option<&SessionHandle> {
-        match &self.slot {
-            Slot::Running(handle) => Some(handle),
-            Slot::Saved(_) => None,
-        }
-    }
-}
-
 struct Shared {
     sessions_dir: PathBuf,
     load: LoadOptions,
     providers: ProviderFactory,
     config: Mutex<UserConfig>,
-    sessions: Mutex<BTreeMap<u64, Entry>>,
+    sessions: Mutex<Registry>,
     clients: Mutex<HashMap<ClientId, Outbox>>,
     next_session: AtomicU64,
     next_client: AtomicU64,
@@ -179,7 +160,7 @@ pub async fn serve(options: Options) -> Result<()> {
         load: options.load.clone(),
         providers: options.providers.clone(),
         config: Mutex::new(user),
-        sessions: Mutex::new(BTreeMap::new()),
+        sessions: Mutex::new(Registry::default()),
         clients: Mutex::new(HashMap::new()),
         next_session: AtomicU64::new(0),
         next_client: AtomicU64::new(0),
@@ -208,10 +189,7 @@ pub async fn serve(options: Options) -> Result<()> {
     tracing::info!("server stopping");
     broadcast(&shared, Notice::Stopping);
     // Running sessions stop; their files stay, so they can be resumed.
-    let handles: Vec<SessionHandle> = lock(&shared.sessions)
-        .values()
-        .filter_map(|e| e.handle().cloned())
-        .collect();
+    let handles = lock(&shared.sessions).handles();
     let kills = handles
         .iter()
         .map(|handle| async move { handle.kill("server stopped", true).await });
@@ -229,7 +207,7 @@ pub async fn serve(options: Options) -> Result<()> {
 fn load_saved(shared: &Shared) {
     let mut sessions = lock(&shared.sessions);
     for (store, mut meta) in store::list(&shared.sessions_dir) {
-        let name = unique_name(&meta.name, &sessions);
+        let name = sessions.unique_name(&meta.name);
         if name != meta.name {
             meta.name.clone_from(&name);
             if let Err(e) = store.write_meta(&meta) {
@@ -251,10 +229,7 @@ fn load_saved(shared: &Shared) {
 
 /// Whether a running session works or waits for an answer.
 async fn busy(shared: &Shared) -> usize {
-    let handles: Vec<SessionHandle> = lock(&shared.sessions)
-        .values()
-        .filter_map(|e| e.handle().cloned())
-        .collect();
+    let handles = lock(&shared.sessions).handles();
     let mut busy = 0;
     for handle in handles {
         if handle
@@ -419,7 +394,7 @@ async fn connection(shared: Arc<Shared>, stream: UnixStream) {
     }
 
     for session in &conn.attached {
-        if let Some(handle) = lock(&shared.sessions).get(session).and_then(Entry::handle) {
+        if let Some(handle) = lock(&shared.sessions).get(*session).and_then(Entry::handle) {
             handle.detach(id);
         }
     }
@@ -505,18 +480,6 @@ fn default_name(workspace: &Path) -> String {
     } else {
         name.to_owned()
     }
-}
-
-/// `name`, else `name-2`, `name-3`, …
-fn unique_name(name: &str, sessions: &BTreeMap<u64, Entry>) -> String {
-    let taken = |n: &str| sessions.values().any(|e| e.name == n);
-    if !taken(name) {
-        return name.to_owned();
-    }
-    (2u64..)
-        .map(|i| format!("{name}-{i}"))
-        .find(|n| !taken(n))
-        .unwrap_or_else(|| name.to_owned())
 }
 
 #[cfg(test)]
