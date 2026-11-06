@@ -282,38 +282,58 @@ The prompt takes keys only for the prompt bar, as for permission prompts.
 
 ### Command list
 
-Typing `/` as the first character of an empty input opens the command list
-above the input:
+Typing `/` into the empty input, with focus on the input, opens the command
+list above the input. Pasted text and a message from the history do not open it.
 
 ```
-├──────────────────────────────────────────────────────────────────────────┤
-│ ▶ /model [PROVIDER/MODEL]   Change provider and model                    │
-│   /new [NAME]               Start a new session and attach               │
-│   /sessions                 Open the session list                        │
-├──────────────────────────────────────────────────────────────────────────┤
-│ > /m_                                                                    │
+──────────────────────────────────────────────────────────────────────────────
+▶ /model [PROVIDER/MODEL]  Change the model; without one, choose it
+  /permissions             later version
+  /rename NAME             Rename the session
+  /commit [HINT]           later version
+──────────────────────────────────────────────────────────────────────────────
+> /m_
+──────────────────────────────────────────────────────────────────────────────
 ```
 
 - The list shows every command with its arguments and a one-line
-  description, in the order of the table above.
-- Each further character filters the list: commands whose name contains the
-  typed text, those that start with it first. The best match is selected.
+  description, in the order of the table above. A command that is not built yet
+  is dim and says `later version`; `Enter` on it says so too.
+- It lies over the last rows of the conversation and shows at most 8 rows; the
+  selected row stays visible. The layout does not change, so the conversation
+  does not jump.
+- Each further character searches the list: commands with a name that contains
+  the typed text, in any case, those that start with it first, each in table
+  order. The best match is selected. `/quit` shares a row with `/detach`, and
+  either name finds it.
 - If nothing matches, the list shows "no command" and `Enter` sends nothing;
   the input stays so it can be corrected. To send a message that starts with
-  `/` to the model, start it with `//`; the first `/` is removed.
-  **(assumption)**
+  `/` to the model, start it with `//`; the first `/` is removed, and the second
+  `/` closes the list. **(assumption)**
+- A space or a new line closes the list too: arguments follow.
+- A question that opens, and `Ctrl-O`, close the list and keep the text. Keys
+  belong to the prompt bar or the picker then.
+- A closed list opens again only from an empty input. With it closed, `Enter`
+  runs the text as it stands; an unknown command gets a notice and stays in the
+  input, and `/rename` without a name gets its usage.
 
 | Key in list         | Action |
 |---------------------|--------|
-| `Up` / `Down`       | Select the previous / next command. |
-| `Tab`               | Complete the selected command into the input and close the list, so arguments can be typed. |
-| `Enter`             | Run the selected command. If it needs an argument that is missing, complete it like `Tab` instead. |
-| `Esc`               | Close the list; the typed text stays. |
+| `Up` / `Down`       | Select the previous / next command; they stop at the ends. |
+| `Tab`               | Complete the selected command into the input and close the list, so arguments can be typed. With no match, nothing. Focus does not change. |
+| `Enter`             | Run the selected command. If it needs an argument, complete it like `Tab` instead. |
+| `Esc`               | Close the list and nothing else: the typed text stays and a running turn goes on. A second `Esc` cancels the turn. |
 | `Backspace` on the `/` | Delete the `/` and close the list. |
 
-After the command name and a space, arguments are completed from current
-values where it makes sense: `/model` offers the configured models, `/attach`
-the session names. `Tab` completes the selected value.
+Other keys work as without the list: the conversation scrolls, and `Ctrl-C`
+cancels the turn or clears the input, which closes the list.
+
+Every box the user can open has a command in the table above. The prompt bar has
+none: it opens when the agent asks a question.
+
+Not built yet: after the command name and a space, arguments are completed from
+current values where it makes sense: `/model` offers the configured models,
+`/attach` the session names. `Tab` completes the selected value.
 
 While the command list is open, `Up`/`Down` select in the list instead of
 browsing the message history.

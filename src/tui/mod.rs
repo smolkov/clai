@@ -4,6 +4,7 @@
 //! inputs to `App::update`, carries out its effects and draws.
 
 mod app;
+mod commands;
 mod conversation;
 mod editor;
 mod keys;

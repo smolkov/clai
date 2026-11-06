@@ -13,8 +13,9 @@ use crate::protocol::{
     ModelInfo, Notice, Payload, Request, ServerMessage, SessionInfo, TokenTotals,
 };
 
+use super::commands::{self, Command};
 use super::conversation::{Conversation, Kind};
-use super::editor::{Browse, Editor};
+use super::editor::{Browse, Edit, Editor};
 use super::keys::{self, Action, Focus};
 use super::picker::Picker;
 use super::prompt::Prompt;
@@ -128,6 +129,9 @@ pub struct App {
     pub picker: Option<Picker>,
     /// A `models` request is on its way to open the picker.
     picker_wanted: bool,
+    /// The selected row of the open command list. The search is the input's
+    /// text, so nothing else needs keeping in step.
+    pub command_list: Option<usize>,
     pub focus: Focus,
     /// The selected entry, with focus on the conversation.
     pub selected: Option<usize>,
@@ -183,6 +187,7 @@ impl App {
             dialog: None,
             picker: None,
             picker_wanted: false,
+            command_list: None,
             focus: Focus::Input,
             selected: None,
             top: 0,
@@ -217,6 +222,11 @@ impl App {
         if self.prompt.is_some() || self.ended.is_some() {
             self.picker = None;
             self.picker_wanted = false;
+            self.command_list = None;
+        }
+        // The picker can open late, when the server answers.
+        if self.picker.is_some() || commands::search_text(&self.editor.text()).is_none() {
+            self.command_list = None;
         }
         effects
     }
@@ -559,7 +569,11 @@ impl App {
             return self.dialog_key(dialog, key);
         }
         let action = keys::action(key, self.focus);
-        let mut effects = self.act(action);
+        let mut effects = if self.command_list.is_some() {
+            self.command_list_act(action)
+        } else {
+            self.act(action)
+        };
         effects.push(Effect::Redraw);
         effects
     }
@@ -623,6 +637,66 @@ impl App {
         effects
     }
 
+    /// The commands the list shows now.
+    pub fn listed(&self) -> Vec<&'static Command> {
+        commands::search_text(&self.editor.text()).map_or_else(Vec::new, commands::search)
+    }
+
+    /// An action while the command list is open. What the list does not take
+    /// works as without it.
+    fn command_list_act(&mut self, action: Action) -> Vec<Effect> {
+        let listed = self.listed();
+        let selected = self.command_list.unwrap_or(0);
+        let chosen = listed.get(selected).copied();
+        match action {
+            Action::Cancel => self.command_list = None,
+            Action::Up => self.command_list = Some(selected.saturating_sub(1)),
+            Action::Down => {
+                let last = listed.len().saturating_sub(1);
+                self.command_list = Some((selected + 1).min(last));
+            }
+            Action::SwitchFocus => {
+                if let Some(command) = chosen {
+                    self.complete(command);
+                }
+            }
+            Action::Send => match chosen {
+                Some(command) if command.built && command.needs_argument => {
+                    self.complete(command);
+                }
+                Some(command) => {
+                    self.command_list = None;
+                    return self.command(command.name);
+                }
+                None => {}
+            },
+            Action::ModelPicker => {
+                self.command_list = None;
+                return self.act(action);
+            }
+            _ => return self.act(action),
+        }
+        Vec::new()
+    }
+
+    /// Puts the command in the input, for its arguments, and closes the list.
+    fn complete(&mut self, command: &Command) {
+        self.editor.set_text(&command.completed());
+        self.command_list = None;
+    }
+
+    /// Changes the input. `/` typed in the empty input opens the command list,
+    /// and a new search selects its first row.
+    fn edit_input(&mut self, edit: impl FnOnce(&mut Editor), typed_slash: bool) {
+        let before = self.editor.text();
+        edit(&mut self.editor);
+        let opened = before.is_empty() && typed_slash;
+        let searched = self.command_list.is_some() && before != self.editor.text();
+        if opened || searched {
+            self.command_list = Some(0);
+        }
+    }
+
     fn dialog_key(&mut self, dialog: Dialog, key: KeyEvent) -> Vec<Effect> {
         let mut effects = vec![Effect::Redraw];
         match dialog {
@@ -678,7 +752,9 @@ impl App {
             }
             Action::SwitchFocus => self.switch_focus(),
             Action::Send => return self.send(),
-            Action::Edit(edit) => self.editor.edit(edit),
+            Action::Edit(edit) => {
+                self.edit_input(|editor| editor.edit(edit), edit == Edit::Char('/'));
+            }
             Action::Up => self.up(),
             Action::Down => self.down(),
             Action::Toggle => {
@@ -762,7 +838,7 @@ impl App {
         } else if let Some(picker) = &mut self.picker {
             picker.paste(text);
         } else if self.dialog.is_none() && self.ended.is_none() && self.focus == Focus::Input {
-            self.editor.paste(text);
+            self.edit_input(|editor| editor.paste(text), false);
         }
         vec![Effect::Redraw]
     }

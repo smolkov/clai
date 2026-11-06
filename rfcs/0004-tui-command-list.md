@@ -1,7 +1,7 @@
 # TUI command list
 
 - RFC: 0004
-- Status: draft
+- Status: done
 - Milestone: the command list of "TUI sessions and settings" (see
   [`implementation.md`](../implementation.md))
 - Spec: [`spec/tui.md`](../spec/tui.md), "Input editor", "Command list", "Keys"
@@ -196,23 +196,23 @@ A run of the real binary in tmux against an isolated server: `/`, search, `Tab`,
 ## Implementation plan
 
 1. **Command table**
-   - Status: todo
+   - Status: done
    - Files: `src/tui/commands.rs`, `src/tui/view/popup.rs`, `src/tui/mod.rs`
    - Result: `/help` text comes from the table; no visible change except the
      order, which becomes the spec's.
    - Tests: search; every name is known to `App::command`.
 2. **List state and keys**
-   - Status: todo
+   - Status: done
    - Files: `src/tui/app.rs`
    - Result: the list works without being drawn.
    - Tests: the `App` tests above; the two changed tests.
 3. **Drawing**
-   - Status: todo
+   - Status: done
    - Files: `src/tui/view/commands.rs`, `src/tui/view/mod.rs`
    - Result: the list is on the screen.
    - Tests: frames.
 4. **Docs and the real binary**
-   - Status: todo
+   - Status: done
    - Files: `spec/tui.md`, `readme.md`, `todo.md`, `implementation.md`, this RFC
    - Result: status `done`.
    - Tests: tmux run; `cargo fmt`, `clippy -D warnings`, `cargo test`.
@@ -228,11 +228,18 @@ A run of the real binary in tmux against an isolated server: `/`, search, `Tab`,
 
 ## Open questions
 
-1. **What does "all layouts can be opened with a command" cover?** Every layout
-   that exists already has a command. The session list, permission rules and
-   commit dialog do not exist yet. Default: this RFC builds no new layout; their
-   commands appear in the list and get a real box when they are built.
-2. **Do unbuilt commands appear in the list?** Default: yes, dim and marked
-   `later version`, as the spec says "every command". Otherwise the list has only
-   `/help`, `/model`, `/rename`, `/kill` and `/detach` for now, and typing
-   `/sessions` shows `no command`.
+Answered when the RFC was accepted, with the defaults:
+
+1. **What does "all layouts can be opened with a command" cover?** The layouts
+   that exist. This RFC builds no new layout; the session list, permission rules
+   and commit dialog get a box when they are built.
+2. **Do unbuilt commands appear in the list?** Yes, dim and marked
+   `later version`.
+
+## Notes from building
+
+- `Enter` on an unbuilt command gives its notice even if it needs an argument
+  (`/attach`), since completing it would lead nowhere.
+- A picker can open late, when the server answers. If `/` was typed in between,
+  the picker closes the list, like a question does.
+- `Tab` completes a row's main name: `/q` becomes `/detach`.

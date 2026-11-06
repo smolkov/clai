@@ -1,0 +1,28 @@
+---
+source: src/tui/tests.rs
+expression: "screen(&mut app, 80, 24)"
+---
+> fix the failing test                                                          
+                                                                                
+The test fails because parse drops the last line. Let me look.                  
+                                                                                
+▸ read_file src/parse.rs                                               ✓ 3 lines
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+────────────────────────────────────────────────────────────────────────────────
+  /model [PROVIDER/MODEL]  Change the model; without one, choose it             
+▶ /permissions             later version                                        
+  /rename NAME             Rename the session                                   
+  /commit [HINT]           later version                                        
+────────────────────────────────────────────────────────────────────────────────
+> /m                                                                            
+────────────────────────────────────────────────────────────────────────────────
+  idle · /help · Ctrl-D detach                                                  
+  project · ~/ws/project · anthropic/sonnet · 1/3 ●1 · 12.3k/200k · in 12k out …

@@ -72,7 +72,10 @@ widens the rule, `Enter` confirms), `n` no, `e` no with a message to the model,
 
 Commands: `/help`, `/model [PROVIDER/MODEL]` (without one, choose it as with
 `Ctrl-O`), `/rename NAME`, `/kill`, `/detach`,
-`/quit`. A message that starts with `/` is written `//…`.
+`/quit`. `/` in the empty input lists them: type to search, `Up` / `Down` select,
+`Enter` runs, `Tab` completes, `Esc` closes the list and keeps the text. The list
+also shows commands of later versions, dimmed. A message that starts with `/` is
+written `//…`.
 
 The session row ends with the tokens the session has used, `in 45.1k out 3.2k`.
 Input counts the history again with each request, so this is neither the context

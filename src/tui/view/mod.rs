@@ -3,6 +3,7 @@
 //! and the input, and two footer rows hold the status and the session (see
 //! `spec/tui.md`, "Layout").
 
+mod commands;
 mod conversation;
 mod info;
 mod input;
@@ -117,6 +118,7 @@ pub fn draw(app: &App, frame: &mut Frame<'_>) {
         }
         _ => {}
     }
+    commands::draw(app, frame, areas.conversation, areas.input.y - 1);
     popup::draw(app, frame, size);
     picker::draw(app, frame, size);
 }

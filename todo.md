@@ -153,6 +153,15 @@ Milestones and their order: [`implementation.md`](implementation.md).
       reload, as RFC 0003 says, so a TUI with another `--config` has its own
       windows until then. Decide whether to ask at start and after a reconnect.
 
+## Command list
+
+- [x] `/` in the empty input opens the list; search, `Up` / `Down`, `Tab`,
+      `Enter`, `Esc`; one table for the list and `/help` (RFC 0004).
+- [ ] Argument completion: `/model` offers models, `/attach` session names.
+- [ ] Commands marked `later version`: `/clear`, `/permissions`, `/sessions`,
+      `/new`, `/attach`, `/commit`. Each box they open keeps the rule that a box
+      has a command.
+
 ## Refactoring
 
 - [x] A: `Choice::name`, `text::ansi`, `text::Terminal`, `sync::lock`,

@@ -5,34 +5,49 @@ use ratatui::layout::Rect;
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 
 use crate::tui::app::{App, Dialog};
+use crate::tui::commands::COMMANDS;
 use crate::tui::style::Look;
 
-const HELP: &str = "\
+const KEYS: &str = "\
 Enter            send the message
 Alt-Enter        new line (Shift-Enter where the terminal reports it)
 Up / Down        earlier messages; select an entry in the conversation
 Tab              switch between input and conversation
 Enter            expand a tool call (conversation)
+/                list the commands; type to search, Esc closes the list
 Ctrl-O           choose the model
 PgUp / PgDn      scroll; Ctrl-Home / Ctrl-End: start / end
 Esc / Ctrl-C     cancel the turn; Ctrl-C without one clears the input
 Ctrl-C twice, or Ctrl-D with empty input: detach
+";
 
-/model [PROVIDER/MODEL] change the model; without one, choose it
-/rename NAME            rename the session
-/kill                   end the session, after a question
-/detach, /quit          leave; the session keeps running
-/help                   this list
-//text                  send a message that starts with /
-
-Any key closes this.";
+/// The keys and the commands that work.
+fn help() -> String {
+    let built = || COMMANDS.iter().filter(|c| c.built);
+    let width = built()
+        .map(|c| c.shown().chars().count())
+        .max()
+        .unwrap_or(0);
+    let mut text = format!("{KEYS}\n");
+    for command in built() {
+        let shown = command.shown();
+        let description = command.description;
+        text.push_str(&format!("{shown:<width$}  {description}\n"));
+    }
+    let escape = "//text";
+    text.push_str(&format!(
+        "{escape:<width$}  Send a message that starts with /\n"
+    ));
+    text.push_str("\nAny key closes this.");
+    text
+}
 
 pub fn draw(app: &App, frame: &mut Frame<'_>, size: Rect) {
     let Some(dialog) = app.dialog else {
         return;
     };
     let (title, text) = match dialog {
-        Dialog::Help => (" Help ".to_owned(), HELP.to_owned()),
+        Dialog::Help => (" Help ".to_owned(), help()),
         Dialog::ConfirmKill => (
             " Kill session ".to_owned(),
             format!(
