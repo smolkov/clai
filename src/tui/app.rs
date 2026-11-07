@@ -9,9 +9,12 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, MouseEvent, MouseEventKi
 use ratatui::layout::Rect;
 
 use crate::agent::{Closed, QuestionKind, SessionEvent, State, now_secs};
+use crate::config::edit::{Setting, Stamp};
+use crate::config::{Symbols, Theme, ThemeWarning, Tui};
 use crate::protocol::{
     ModelInfo, Notice, Payload, Request, ServerMessage, SessionInfo, TokenTotals,
 };
+use indexmap::IndexMap;
 
 use super::commands::{self, Command};
 use super::conversation::{Conversation, Expansion, Kind};
@@ -20,7 +23,9 @@ use super::keys::{self, Action, Focus};
 use super::picker::{Picker, Purpose};
 use super::prompt::Prompt;
 use super::sessions::{ListAction, SessionList};
-use super::style::Look;
+use super::settings::{BoxAction, SettingsBox};
+use super::style::{Colouring, Look, Styles};
+use super::themes::{self, ThemeList};
 use super::view;
 
 /// `Ctrl-C` twice within this time detaches.
@@ -64,6 +69,66 @@ pub struct Settings {
     /// Context windows by `provider/model`: from the TUI's own configuration
     /// at first, then from the server's `models` answers.
     pub windows: HashMap<String, u64>,
+    /// The `[tui]` settings in effect; the fields above follow from them.
+    pub tui: Tui,
+    pub theming: Theming,
+}
+
+/// What the look is made from besides `[tui]`; read once by the shell.
+#[derive(Debug, Clone)]
+pub struct Theming {
+    /// Bundled themes, theme files and `[themes.NAME]` tables.
+    pub themes: IndexMap<String, Theme>,
+    /// Broken theme files, left out.
+    pub warnings: Vec<ThemeWarning>,
+    /// What the user file itself says, for the settings box.
+    pub file: FileTui,
+    pub colouring: Colouring,
+    /// Whether the locale is UTF-8, for `symbols = "auto"`.
+    pub unicode_locale: bool,
+    /// `CLAI_THEME`: wins over `tui.theme` for this run.
+    pub theme_env: Option<String>,
+    /// The offset of local time from UTC in seconds, for `tui.timestamps`.
+    pub offset: i64,
+    /// The user file `[tui]` is read from and saved to.
+    pub user_file: PathBuf,
+}
+
+/// `[tui]` as the user file has it, without `CLAI_THEME`.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct FileTui {
+    pub tui: Tui,
+    /// The keys the file sets; the others have their default.
+    pub keys: Vec<String>,
+    /// When it was read, so that a save does not overwrite a newer file.
+    pub stamp: Option<Stamp>,
+}
+
+/// `[tui]` and the themes as loaded again from the user file.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Reloaded {
+    /// With `CLAI_THEME` applied, as at start.
+    pub tui: Tui,
+    pub themes: IndexMap<String, Theme>,
+    pub warnings: Vec<ThemeWarning>,
+    pub file: FileTui,
+}
+
+impl Settings {
+    /// Whether Unicode symbols are shown with these settings.
+    pub fn unicode(&self, symbols: Symbols) -> bool {
+        match symbols {
+            Symbols::Auto => self.theming.unicode_locale,
+            Symbols::Unicode => true,
+            Symbols::Ascii => false,
+        }
+    }
+
+    /// The look of `tui` with the themes known now.
+    pub fn look_of(&self, tui: &Tui) -> Look {
+        let styles = Styles::themed(&tui.theme, &self.theming.themes, self.theming.colouring);
+        Look::themed(self.unicode(tui.symbols), styles)
+    }
 }
 
 /// A session just attached to.
@@ -94,6 +159,10 @@ pub enum Input {
     /// Attached again after a lost connection, or to another session.
     Attached(Box<Attachment>),
     ReconnectFailed,
+    /// The user file loaded again after `config_reloaded`, or why it failed.
+    Reloaded(Box<Result<Reloaded, String>>),
+    /// A save: the file's new stamp, or why it was not written.
+    Saved(Result<Option<Stamp>, String>),
     /// A switch to another session failed; the current one stays.
     SwitchFailed(String),
 }
@@ -108,7 +177,27 @@ pub enum Effect {
     /// Attach to another session on a new connection; the old one is dropped
     /// when it is there, which detaches it.
     Switch(String),
+    /// Turn mouse capture on or off.
+    Mouse(bool),
+    /// Load `[tui]` and the themes from the user file again.
+    ReloadConfig,
+    /// Write `[tui]` changes into the user file, if it still has `stamp`.
+    Save {
+        path: PathBuf,
+        stamp: Option<Stamp>,
+        changes: Vec<(&'static str, Option<Setting>)>,
+    },
     Exit(Exit),
+}
+
+/// What a save is for, to report its result.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Saving {
+    Theme(String),
+    /// From the settings box; `close` it once saved.
+    Settings {
+        close: bool,
+    },
 }
 
 /// What the TUI keeps of a session while it shows another one (see
@@ -179,6 +268,12 @@ pub struct App {
     greeting: Option<(u64, String)>,
     /// The server is stopping: it is not started again for the session list.
     stopping: bool,
+    pub settings_box: Option<SettingsBox>,
+    pub theme_list: Option<ThemeList>,
+    /// A theme taken in this run: it wins over `CLAI_THEME` on a reload.
+    chosen_theme: Option<String>,
+    /// What the save on its way is for.
+    saving: Option<Saving>,
     /// The selected row of the open command list. The search is the input's
     /// text, so nothing else needs keeping in step.
     pub command_list: Option<usize>,
@@ -249,6 +344,10 @@ impl App {
             views: HashMap::new(),
             greeting: None,
             stopping: false,
+            settings_box: None,
+            theme_list: None,
+            chosen_theme: None,
+            saving: None,
             command_list: None,
             argument_list: None,
             models_asked: false,
@@ -280,10 +379,12 @@ impl App {
 
     /// Takes one input.
     pub fn update(&mut self, input: Input) -> Vec<Effect> {
-        let effects = self.handle(input);
+        let mut effects = self.handle(input);
         // Keys go to an open prompt, so no box must hide it: what is typed for
         // a filter would answer the question.
         if self.prompt.is_some() {
+            let mut restored = self.close_theme_boxes();
+            effects.append(&mut restored);
             self.picker = None;
             self.picker_wanted = None;
             self.session_list = None;
@@ -309,9 +410,11 @@ impl App {
         if self.picker.is_some() || commands::search_text(&self.editor.text()).is_none() {
             self.command_list = None;
         }
-        let mut effects = effects;
+
         let boxed = self.picker.is_some()
             || self.session_list.is_some()
+            || self.settings_box.is_some()
+            || self.theme_list.is_some()
             || self.prompt.is_some()
             || self.dialog.is_some()
             || self.ended.is_some();
@@ -330,6 +433,231 @@ impl App {
         effects
     }
 
+    // Settings and themes.
+
+    /// The themes that can be used, in the order of the theme list.
+    fn theme_names(&self) -> Vec<String> {
+        themes::entries(&self.settings.theming.themes, &[])
+            .into_iter()
+            .map(|e| e.name)
+            .collect()
+    }
+
+    /// The theme in effect without a box open: one taken in this run, then
+    /// `CLAI_THEME`, then the file's.
+    fn base_theme(&self, file_theme: &str) -> String {
+        self.chosen_theme
+            .clone()
+            .or_else(|| self.settings.theming.theme_env.clone())
+            .unwrap_or_else(|| file_theme.to_owned())
+    }
+
+    /// The settings the open box shows, as applied: its theme only if the user
+    /// changed it there, since `CLAI_THEME` may decide it otherwise.
+    fn box_preview(&self) -> Tui {
+        let Some(settings) = &self.settings_box else {
+            return self.settings.tui.clone();
+        };
+        let mut tui = settings.current.clone();
+        if tui.theme == settings.saved.theme {
+            tui.theme = self.base_theme(&settings.saved.theme);
+        }
+        tui
+    }
+
+    /// The settings with another theme, for a preview.
+    fn with_theme(&self, theme: &str) -> Tui {
+        Tui {
+            theme: theme.to_owned(),
+            ..self.settings.tui.clone()
+        }
+    }
+
+    /// A question closes the theme list and the settings box, as it does the
+    /// picker; what they previewed is undone.
+    fn close_theme_boxes(&mut self) -> Vec<Effect> {
+        let mut effects = Vec::new();
+        if let Some(list) = self.theme_list.take() {
+            effects.extend(self.apply(self.with_theme(&list.original)));
+        }
+        if self.settings_box.take().is_some() {
+            let file = self.settings.theming.file.tui.clone();
+            let tui = Tui {
+                theme: self.base_theme(&file.theme),
+                ..file
+            };
+            effects.extend(self.apply(tui));
+        }
+        effects
+    }
+
+    /// `/settings`: the box on the file's values.
+    fn open_settings(&mut self) {
+        let file = &self.settings.theming.file;
+        self.settings_box = Some(SettingsBox::new(
+            file.tui.clone(),
+            file.tui.clone(),
+            file.keys.clone(),
+            self.theme_names(),
+        ));
+    }
+
+    /// `/theme`, or `Enter` on the theme row of the settings box.
+    fn open_themes(&mut self, for_settings: bool) {
+        let current = if for_settings {
+            self.box_preview().theme
+        } else {
+            self.settings.tui.theme.clone()
+        };
+        let entries = themes::entries(
+            &self.settings.theming.themes,
+            &self.settings.theming.warnings,
+        );
+        self.theme_list = Some(ThemeList::new(entries, &current, for_settings));
+    }
+
+    /// Takes a theme for this run and saves it as the default.
+    fn take_theme(&mut self, name: &str) -> Vec<Effect> {
+        let mut effects = self.apply(self.with_theme(name));
+        self.chosen_theme = Some(name.to_owned());
+        self.saving = Some(Saving::Theme(name.to_owned()));
+        effects.push(self.save_effect(vec![("theme", Some(Setting::Text(name.to_owned())))]));
+        effects
+    }
+
+    fn save_effect(&self, changes: Vec<(&'static str, Option<Setting>)>) -> Effect {
+        Effect::Save {
+            path: self.settings.theming.user_file.clone(),
+            stamp: self.settings.theming.file.stamp,
+            changes,
+        }
+    }
+
+    fn saved(&mut self, result: Result<Option<Stamp>, String>) {
+        let saving = self.saving.take();
+        let file = &mut self.settings.theming.file;
+        match (result, saving) {
+            (Ok(stamp), Some(Saving::Theme(name))) => {
+                file.stamp = stamp;
+                file.tui.theme.clone_from(&name);
+                if !file.keys.iter().any(|k| k == "theme") {
+                    file.keys.push("theme".to_owned());
+                }
+                self.message = Some(format!("theme {name} saved as the default"));
+            }
+            (Ok(stamp), Some(Saving::Settings { close })) => {
+                file.stamp = stamp;
+                if let Some(settings) = &mut self.settings_box {
+                    settings.saved_now();
+                    file.tui = settings.saved.clone();
+                    file.keys.clone_from(&settings.file_keys);
+                }
+                if close {
+                    self.settings_box = None;
+                }
+            }
+            (Ok(stamp), None) => file.stamp = stamp,
+            (Err(message), Some(Saving::Settings { .. })) if self.settings_box.is_some() => {
+                if let Some(settings) = &mut self.settings_box {
+                    settings.message = Some(message);
+                }
+            }
+            (Err(message), _) => self.conversation.error(format!("not saved: {message}")),
+        }
+    }
+
+    fn theme_list_key(&mut self, key: KeyEvent) -> Vec<Effect> {
+        let mut effects = vec![Effect::Redraw];
+        let Some(list) = &mut self.theme_list else {
+            return effects;
+        };
+        match key.code {
+            KeyCode::Esc => {
+                let original = list.original.clone();
+                let for_settings = list.for_settings;
+                self.theme_list = None;
+                let tui = if for_settings {
+                    self.box_preview()
+                } else {
+                    self.with_theme(&original)
+                };
+                effects.extend(self.apply(tui));
+                return effects;
+            }
+            KeyCode::Enter => {
+                let Some(name) = list.preview().map(str::to_owned) else {
+                    return effects;
+                };
+                let for_settings = list.for_settings;
+                self.theme_list = None;
+                if for_settings {
+                    if let Some(settings) = &mut self.settings_box {
+                        settings.set_theme(&name);
+                    }
+                    effects.extend(self.apply(self.box_preview()));
+                } else {
+                    effects.extend(self.take_theme(&name));
+                }
+                return effects;
+            }
+            KeyCode::Up => list.up(),
+            KeyCode::Down => list.down(),
+            _ => {
+                if let Some(edit) = keys::edit(key) {
+                    list.edit(edit);
+                }
+            }
+        }
+        if let Some(name) = self.theme_list.as_ref().and_then(|l| l.preview())
+            && name != self.settings.tui.theme
+        {
+            let tui = self.with_theme(name);
+            effects.extend(self.apply(tui));
+        }
+        effects
+    }
+
+    fn settings_key(&mut self, key: KeyEvent) -> Vec<Effect> {
+        let mut effects = vec![Effect::Redraw];
+        let Some(settings) = &mut self.settings_box else {
+            return effects;
+        };
+        let Some(action) = settings.key(key) else {
+            return effects;
+        };
+        match action {
+            BoxAction::Preview => effects.extend(self.apply(self.box_preview())),
+            BoxAction::Save { changes, close } => {
+                if let Some((_, Some(Setting::Text(theme)))) =
+                    changes.iter().find(|(k, _)| *k == "theme")
+                {
+                    self.chosen_theme = Some(theme.clone());
+                }
+                self.saving = Some(Saving::Settings { close });
+                effects.push(self.save_effect(changes));
+            }
+            BoxAction::Close { restore } => {
+                if restore {
+                    effects.extend(self.close_theme_boxes());
+                }
+                self.settings_box = None;
+            }
+            BoxAction::Themes => self.open_themes(true),
+        }
+        effects
+    }
+
+    /// `/theme NAME`: takes it at once; an unknown name stays in the input.
+    fn theme_command(&mut self, name: &str) -> Option<Vec<Effect>> {
+        if themes::usable(name, &self.settings.theming.themes) {
+            Some(self.take_theme(name))
+        } else {
+            self.conversation
+                .notice(format!("unknown theme {name}; /theme lists them"));
+            None
+        }
+    }
+
     fn handle(&mut self, input: Input) -> Vec<Effect> {
         match input {
             Input::Key(key) => self.key(key),
@@ -346,12 +674,84 @@ impl App {
                 vec![Effect::Redraw]
             }
             Input::ReconnectFailed => self.reconnect_failed(),
+            Input::Reloaded(result) => match *result {
+                Ok(reloaded) => {
+                    self.settings.theming.themes = reloaded.themes;
+                    self.settings.theming.warnings = reloaded.warnings;
+                    let names = self.theme_names();
+                    if let Some(list) = &mut self.theme_list {
+                        list.set_entries(themes::entries(
+                            &self.settings.theming.themes,
+                            &self.settings.theming.warnings,
+                        ));
+                    }
+                    if let Some(settings) = &mut self.settings_box {
+                        let file = &reloaded.file;
+                        settings.reloaded(file.tui.clone(), file.keys.clone(), names);
+                    }
+                    self.settings.theming.file = reloaded.file;
+                    let mut tui = reloaded.tui;
+                    if let Some(theme) = &self.chosen_theme {
+                        tui.theme.clone_from(theme);
+                    }
+                    if self.settings_box.is_some() {
+                        tui = self.box_preview();
+                    }
+                    // An open theme list keeps showing what is selected.
+                    if let Some(name) = self.theme_list.as_ref().and_then(|l| l.preview()) {
+                        tui.theme = name.to_owned();
+                    }
+                    let mut effects = self.apply(tui);
+                    effects.push(Effect::Redraw);
+                    effects
+                }
+                Err(message) => {
+                    // The settings in effect stay.
+                    self.message = Some(format!("configuration: {message}"));
+                    vec![Effect::Redraw]
+                }
+            },
+            Input::Saved(result) => {
+                self.saved(result);
+                vec![Effect::Redraw]
+            }
             Input::SwitchFailed(message) => {
                 self.switching = None;
                 self.conversation.error(message);
                 vec![Effect::Redraw]
             }
         }
+    }
+
+    /// Puts `[tui]` settings into effect: the look, the conversation's
+    /// settings, timestamps, scrolling, and the mouse through an effect. The
+    /// shell reads `max_fps` from here before each frame.
+    pub fn apply(&mut self, tui: Tui) -> Vec<Effect> {
+        let look = self.settings.look_of(&tui);
+        let limit = usize::try_from(tui.tool_output_lines).unwrap_or(usize::MAX);
+        let changed = look != self.settings.look
+            || limit != self.settings.tool_output_lines
+            || tui.expand_tool_calls != self.settings.expand_tool_calls;
+        if changed {
+            self.conversation
+                .reconfigure(look, limit, tui.expand_tool_calls);
+        }
+        let mut effects = Vec::new();
+        if tui.mouse != self.settings.tui.mouse {
+            effects.push(Effect::Mouse(tui.mouse));
+        }
+        self.settings.look = look;
+        self.settings.tool_output_lines = limit;
+        self.settings.expand_tool_calls = tui.expand_tool_calls;
+        self.settings.scroll_lines = usize::from(tui.scroll_lines);
+        self.settings.timestamps = tui.timestamps.then_some(self.settings.theming.offset);
+        self.settings.tui = tui;
+        effects
+    }
+
+    /// The time between two frames, from `tui.max_fps`.
+    pub fn frame_time(&self) -> Duration {
+        Duration::from_secs(1) / u32::from(self.settings.tui.max_fps.max(1))
     }
 
     /// The window of the session's model, if it is configured.
@@ -497,7 +897,11 @@ impl App {
                 match notice {
                     Notice::ConfigReloaded => {
                         self.conversation.notice("configuration reloaded");
-                        return vec![Effect::Redraw, Effect::Request(Request::Models)];
+                        return vec![
+                            Effect::Redraw,
+                            Effect::Request(Request::Models),
+                            Effect::ReloadConfig,
+                        ];
                     }
                     Notice::ConfigRejected { errors } => {
                         for error in errors {
@@ -623,7 +1027,12 @@ impl App {
                 let wanted = std::mem::take(&mut self.list_wanted);
                 if let Some(list) = &mut self.session_list {
                     list.set_sessions(self.sessions.clone(), now_secs());
-                } else if wanted && self.picker.is_none() && self.dialog.is_none() {
+                } else if wanted
+                    && self.picker.is_none()
+                    && self.dialog.is_none()
+                    && self.settings_box.is_none()
+                    && self.theme_list.is_none()
+                {
                     self.show_sessions();
                 } else if before == (self.place, self.sessions.clone()) {
                     return Vec::new();
@@ -888,8 +1297,14 @@ impl App {
         if self.prompt.is_some() {
             return self.prompt_key(key);
         }
+        if self.theme_list.is_some() {
+            return self.theme_list_key(key);
+        }
         if self.picker.is_some() {
             return self.picker_key(key);
+        }
+        if self.settings_box.is_some() {
+            return self.settings_key(key);
         }
         if self.session_list.is_some() {
             return self.session_list_key(key);
@@ -1059,7 +1474,20 @@ impl App {
         let Some((command, typed)) = commands::argument_text(&text) else {
             return Vec::new();
         };
-        let values = if command == "attach" {
+        let values = if command == "theme" {
+            themes::entries(&self.settings.theming.themes, &[])
+                .into_iter()
+                .map(|e| commands::Value {
+                    description: if e.note.is_empty() {
+                        e.group.heading().to_owned()
+                    } else {
+                        e.note
+                    },
+                    value: e.name,
+                    search_description: false,
+                })
+                .collect()
+        } else if command == "attach" {
             let symbols = &self.settings.look.symbols;
             self.sessions
                 .iter()
@@ -1268,8 +1696,12 @@ impl App {
     fn paste(&mut self, text: &str) -> Vec<Effect> {
         if let Some(prompt) = &mut self.prompt {
             prompt.paste(text);
+        } else if let Some(list) = &mut self.theme_list {
+            list.paste(text);
         } else if let Some(picker) = &mut self.picker {
             picker.paste(text);
+        } else if self.settings_box.is_some() {
+            // Nothing to paste into.
         } else if let Some(list) = &mut self.session_list {
             list.paste(text);
         } else if self.dialog.is_none() && self.ended.is_none() && self.focus == Focus::Input {
@@ -1361,6 +1793,20 @@ impl App {
                 }
                 self.switch(name)
             }
+            // Theme files may have changed on their own: read them again.
+            ("settings", _) => {
+                self.open_settings();
+                vec![Effect::ReloadConfig]
+            }
+            ("theme", "") => {
+                self.open_themes(false);
+                vec![Effect::ReloadConfig]
+            }
+            ("theme", name) => match self.theme_command(name) {
+                Some(effects) => effects,
+                // The input stays, so that it can be corrected.
+                None => return Vec::new(),
+            },
             ("new", "") => self.new_session(None),
             ("new", name) => self.new_session(Some(name.to_owned())),
             ("clear" | "permissions" | "commit", _) => {

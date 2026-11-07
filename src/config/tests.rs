@@ -34,7 +34,7 @@ fn load_with(user: &str, project: Option<&str>, env: &Environment) -> Result<Con
         path: Path::new("project.toml"),
         text,
     });
-    build(user, project, env)
+    build(user, project, env, &[])
 }
 
 fn ok(user: &str) -> Config {
@@ -749,4 +749,181 @@ fn sample_configs() {
         rules.contains(&"deny run_command(cargo publish)".to_owned()),
         "{rules:?}"
     );
+}
+
+// Theme files and bundled themes.
+
+fn load_themes(user: &str, files: &[ThemeText], env: &Environment) -> Result<Config, ConfigErrors> {
+    let user = FileCtx {
+        path: Path::new("user.toml"),
+        text: user,
+    };
+    build(user, None, env, files)
+}
+
+fn theme_file(name: &str, text: &str) -> ThemeText {
+    ThemeText {
+        name: name.to_owned(),
+        path: PathBuf::from(format!("themes/{name}.toml")),
+        text: Ok(text.to_owned()),
+    }
+}
+
+#[test]
+fn bundled_themes_load_without_errors() {
+    let config = ok(&with(""));
+    let bundled: Vec<&str> = config
+        .themes
+        .iter()
+        .filter(|(_, t)| t.source == ThemeSource::Bundled)
+        .map(|(name, _)| name.as_str())
+        .collect();
+    assert_eq!(
+        bundled,
+        ["atom-one-dark", "nord", "gruvbox-dark", "solarized-light"]
+    );
+    assert!(
+        config.theme_warnings.is_empty(),
+        "{:?}",
+        config.theme_warnings
+    );
+    let nord = &config.themes["nord"];
+    assert_eq!(nord.base, BuiltinTheme::Dark);
+    assert!(
+        nord.colours
+            .contains(&("background", Colour::Rgb(0x2e, 0x34, 0x40)))
+    );
+    assert_eq!(config.themes["solarized-light"].base, BuiltinTheme::Light);
+    // One of them as `tui.theme`.
+    let config = ok(&with("[tui]\ntheme = \"nord\"\n"));
+    assert_eq!(config.tui.theme, "nord");
+}
+
+#[test]
+fn theme_files_come_after_the_bundled_ones_and_replace_them() {
+    let files = [
+        theme_file("mine", "base = \"light\"\naccent = 26\n"),
+        theme_file("nord", "base = \"dark\"\ntext = \"white\"\n"),
+    ];
+    let config = load_themes(
+        &with("[tui]\ntheme = \"mine\"\n"),
+        &files,
+        &Environment::default(),
+    )
+    .unwrap();
+    assert_eq!(config.tui.theme, "mine");
+    let names: Vec<&str> = config.themes.keys().map(String::as_str).collect();
+    // `nord` keeps its place; the file's theme is used.
+    assert_eq!(
+        names,
+        [
+            "atom-one-dark",
+            "nord",
+            "gruvbox-dark",
+            "solarized-light",
+            "mine"
+        ]
+    );
+    assert_eq!(
+        config.themes["nord"].source,
+        ThemeSource::File("themes/nord.toml".into())
+    );
+    assert_eq!(
+        config.themes["nord"].colours,
+        [("text", Colour::Named("white"))]
+    );
+}
+
+#[test]
+fn a_table_and_a_file_of_one_name_are_an_error() {
+    let files = [theme_file("solar", "base = \"dark\"\n")];
+    let e = load_themes(
+        &with("[themes.solar]\nbase = \"light\"\n"),
+        &files,
+        &Environment::default(),
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(
+        e.contains("themes.solar: also defined in themes/solar.toml; remove one"),
+        "{e}"
+    );
+    // A table over a bundled theme replaces it quietly.
+    let config = ok(&with("[themes.nord]\nbase = \"light\"\n"));
+    assert_eq!(config.themes["nord"].source, ThemeSource::Table);
+}
+
+#[test]
+fn a_broken_theme_file_counts_only_in_use() {
+    let broken = || {
+        [
+            theme_file("bad", "base = \"dark\"\n\ntext = \"purple\"\n"),
+            theme_file("dark", "text = 1\n"),
+            ThemeText {
+                name: "gone".into(),
+                path: "themes/gone.toml".into(),
+                text: Err("cannot read: denied".into()),
+            },
+        ]
+    };
+    let config = load_themes(&with(""), &broken(), &Environment::default()).unwrap();
+    assert!(!config.themes.contains_key("bad"));
+    let warnings: Vec<(&str, &str)> = config
+        .theme_warnings
+        .iter()
+        .map(|w| (w.name.as_str(), w.message.as_str()))
+        .collect();
+    assert_eq!(
+        warnings,
+        [
+            (
+                "bad",
+                "themes/bad.toml:3: text: unknown colour `purple`; use an ANSI colour name, \"default\", \"#rrggbb\" or 0–255"
+            ),
+            (
+                "dark",
+                "themes/dark.toml: a theme file may not use the name of a built-in theme"
+            ),
+            ("gone", "themes/gone.toml: cannot read: denied"),
+        ]
+    );
+    // In use, by the file or by `CLAI_THEME`: a load error, with no second
+    // "unknown theme".
+    let e = load_themes(
+        &with("[tui]\ntheme = \"bad\"\n"),
+        &broken(),
+        &Environment::default(),
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(e.contains("themes/bad.toml:3: text: unknown colour"), "{e}");
+    assert!(!e.contains("unknown theme"), "{e}");
+    let env = Environment {
+        theme: Some("bad".into()),
+        ..Environment::default()
+    };
+    assert!(load_themes(&with(""), &broken(), &env).is_err());
+}
+
+#[test]
+fn the_theme_directory() {
+    assert_eq!(
+        themes::directory(Path::new("/home/u/.config/clai/config.toml")),
+        Path::new("/home/u/.config/clai/themes")
+    );
+    let dir = tempfile::tempdir().unwrap();
+    assert!(themes::read_directory(&dir.path().join("missing")).is_empty());
+    for (name, text) in [
+        ("zed.toml", "base = \"dark\""),
+        ("a-b_c.toml", "base = \"light\""),
+        ("notes.txt", "x"),
+        ("bad name.toml", "x"),
+    ] {
+        std::fs::write(dir.path().join(name), text).unwrap();
+    }
+    std::fs::create_dir(dir.path().join("dir.toml")).unwrap();
+    let found = themes::read_directory(dir.path());
+    let names: Vec<&str> = found.iter().map(|t| t.name.as_str()).collect();
+    assert_eq!(names, ["a-b_c", "zed"]);
+    assert_eq!(found[1].text.as_deref(), Ok("base = \"dark\""));
 }

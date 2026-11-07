@@ -127,6 +127,7 @@ pub struct TuiFile {
 #[serde(deny_unknown_fields)]
 pub struct ThemeFile {
     pub base: Option<Spanned<String>>,
+    pub background: Option<Spanned<toml::Value>>,
     pub text: Option<Spanned<toml::Value>>,
     pub dim: Option<Spanned<toml::Value>>,
     pub user: Option<Spanned<toml::Value>>,

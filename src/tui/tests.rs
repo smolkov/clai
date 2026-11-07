@@ -19,7 +19,7 @@ use super::conversation::Kind;
 use super::keys::Focus;
 use super::prompt::Mode;
 use super::style::Look;
-use super::{check_terminal, exit_line, exit_result, first_session, parse_offset, view};
+use super::{check_terminal, exit_line, exit_result, first_session, parse_offset, save, view};
 use crate::agent::{
     Answer, CallInfo, CallResult, CallState, Closed, EndReason, LIMIT_CHOICES, Limit,
     PERMISSION_CHOICES, Permission, Question, QuestionKind, SessionEvent, SessionRef, State,
@@ -44,6 +44,32 @@ fn settings(unicode: bool, colour: bool) -> Settings {
         scroll_lines: 3,
         timestamps: None,
         windows: HashMap::from([("anthropic/sonnet".to_owned(), 200_000)]),
+        tui: crate::config::Tui {
+            symbols: if unicode {
+                crate::config::Symbols::Unicode
+            } else {
+                crate::config::Symbols::Ascii
+            },
+            ..crate::config::Tui::default()
+        },
+        theming: super::app::Theming {
+            themes: crate::config::themes::file_themes(&[]).0,
+            warnings: Vec::new(),
+            file: super::app::FileTui {
+                tui: crate::config::Tui::default(),
+                keys: Vec::new(),
+                stamp: None,
+            },
+            colouring: if colour {
+                super::style::Colouring::Ansi256
+            } else {
+                super::style::Colouring::None
+            },
+            unicode_locale: unicode,
+            theme_env: None,
+            offset: 3600,
+            user_file: "/home/u/.config/clai/config.toml".into(),
+        },
     }
 }
 
@@ -2361,7 +2387,10 @@ fn a_new_search_selects_the_best_match() {
     app.update(key(KeyCode::Down));
     typed(&mut app, "m");
     assert_eq!(selected_command(&app), Some("model"));
-    assert_eq!(listed(&app), ["model", "permissions", "rename", "commit"]);
+    assert_eq!(
+        listed(&app),
+        ["model", "permissions", "rename", "theme", "commit"]
+    );
     // Moving the cursor is no new search.
     app.update(key(KeyCode::Down));
     app.update(key(KeyCode::Left));
@@ -3090,4 +3119,492 @@ fn frame_argument_list() {
     let mut app = among_three();
     typed(&mut app, "/attach ");
     insta::assert_snapshot!(screen(&mut app, 80, 24));
+}
+
+// Settings applied live (RFC 0006).
+
+fn tui_with(f: impl FnOnce(&mut crate::config::Tui)) -> crate::config::Tui {
+    let mut tui = app().settings.tui.clone();
+    f(&mut tui);
+    tui
+}
+
+#[test]
+fn applied_settings_change_the_conversation() {
+    let long = "x\n".repeat(30);
+    let mut app = app_with(vec![
+        SessionEvent::ToolCall(call("c1", "run_command", CallState::Running)),
+        SessionEvent::ToolCall(done(call("c1", "run_command", CallState::Running), &long)),
+    ]);
+    let before = screen(&mut app, 80, 40);
+    assert!(before.contains("▸ run_command"), "{before}");
+    let effects = app.apply(tui_with(|t| {
+        t.expand_tool_calls = true;
+        t.tool_output_lines = 5;
+        t.symbols = crate::config::Symbols::Ascii;
+        t.scroll_lines = 7;
+    }));
+    assert!(effects.is_empty());
+    let after = screen(&mut app, 80, 40);
+    assert!(after.contains("v run_command"), "{after}");
+    assert!(after.contains("25 more lines"), "{after}");
+    assert!(after.is_ascii(), "{after}");
+    assert_eq!(app.settings.scroll_lines, 7);
+}
+
+#[test]
+fn mouse_and_frame_rate_go_to_the_shell() {
+    let mut app = app();
+    assert_eq!(app.frame_time(), Duration::from_secs(1) / 30);
+    let effects = app.apply(tui_with(|t| {
+        t.mouse = false;
+        t.max_fps = 10;
+    }));
+    assert_eq!(effects, [Effect::Mouse(false)]);
+    assert_eq!(app.frame_time(), Duration::from_millis(100));
+    // The same again: nothing to do.
+    assert!(app.apply(app.settings.tui.clone()).is_empty());
+}
+
+#[test]
+fn timestamps_take_the_local_offset() {
+    let mut app = app();
+    app.apply(tui_with(|t| t.timestamps = true));
+    assert_eq!(app.settings.timestamps, Some(3600));
+    app.apply(tui_with(|t| t.timestamps = false));
+    assert_eq!(app.settings.timestamps, None);
+}
+
+#[test]
+fn a_reload_applies_the_file() {
+    let mut app = app();
+    let effects = app.update(Input::Server(ServerMessage::Notice {
+        notice: Notice::ConfigReloaded,
+    }));
+    assert!(effects.contains(&Effect::ReloadConfig));
+    let reloaded = super::app::Reloaded {
+        tui: tui_with(|t| t.theme = "nord".into()),
+        themes: app.settings.theming.themes.clone(),
+        warnings: vec![warning("x")],
+        file: super::app::FileTui::default(),
+    };
+    app.update(Input::Reloaded(Box::new(Ok(reloaded))));
+    assert_eq!(app.settings.tui.theme, "nord");
+    assert_eq!(app.settings.theming.warnings, [warning("x")]);
+    assert_eq!(
+        app.settings.look.styles.background,
+        Some(Color::Indexed(237))
+    );
+    // A file that does not load: the settings stay, and the status says why.
+    app.update(Input::Reloaded(Box::new(Err(
+        "user.toml:3: tui.max_fps: 500 is not in 1–120".into(),
+    ))));
+    assert_eq!(app.settings.tui.theme, "nord");
+    let text = screen(&mut app, 120, 24);
+    assert!(text.contains("configuration: user.toml:3"), "{text}");
+}
+
+#[test]
+fn a_theme_with_a_background_paints_the_screen() {
+    let mut app = app();
+    app.apply(tui_with(|t| t.theme = "atom-one-dark".into()));
+    let terminal = screen_of(&mut app, 80, 24);
+    let buffer = terminal.backend().buffer();
+    // #282c34 as the nearest of 256 colours, everywhere.
+    let bg = app.settings.look.styles.background.unwrap();
+    assert!(
+        buffer
+            .content
+            .iter()
+            .all(|c| c.bg == bg || c.bg != Color::Reset)
+    );
+    assert!(buffer.content.iter().all(|c| c.bg != Color::Reset));
+    assert!(buffer.content.iter().all(|c| c.fg != Color::Reset));
+}
+
+fn warning(name: &str) -> crate::config::ThemeWarning {
+    crate::config::ThemeWarning {
+        name: name.into(),
+        message: format!("themes/{name}.toml:1: base: broken"),
+    }
+}
+
+// The theme list and the settings box (RFC 0006).
+
+use crate::config::edit::Setting;
+
+fn saves(effects: &[Effect]) -> Vec<Vec<(&'static str, Option<Setting>)>> {
+    effects
+        .iter()
+        .filter_map(|e| match e {
+            Effect::Save { changes, .. } => Some(changes.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn theme_saved(name: &str) -> Vec<Vec<(&'static str, Option<Setting>)>> {
+    vec![vec![("theme", Some(Setting::Text(name.into())))]]
+}
+
+#[test]
+fn theme_list_previews_and_esc_goes_back() {
+    let mut app = app();
+    command(&mut app, "/theme");
+    let list = app.theme_list.as_ref().expect("list");
+    assert_eq!(list.preview(), Some("terminal"));
+    app.update(key(KeyCode::Down));
+    assert_eq!(app.settings.tui.theme, "dark");
+    assert_eq!(app.settings.look.styles.text.fg, Some(Color::Indexed(252)));
+    typed(&mut app, "nord");
+    assert_eq!(app.settings.tui.theme, "nord");
+    let effects = app.update(key(KeyCode::Esc));
+    assert!(saves(&effects).is_empty());
+    assert!(app.theme_list.is_none());
+    assert_eq!(app.settings.tui.theme, "terminal");
+    assert_eq!(app.settings.look.styles.background, None);
+}
+
+#[test]
+fn enter_takes_the_theme_and_saves_it_as_the_default() {
+    let mut app = app();
+    command(&mut app, "/theme");
+    typed(&mut app, "gruv");
+    let effects = app.update(key(KeyCode::Enter));
+    assert_eq!(saves(&effects), theme_saved("gruvbox-dark"));
+    let Some(Effect::Save { path, .. }) = effects.iter().find(|e| matches!(e, Effect::Save { .. }))
+    else {
+        panic!("{effects:?}");
+    };
+    assert_eq!(
+        path,
+        std::path::Path::new("/home/u/.config/clai/config.toml")
+    );
+    assert!(app.theme_list.is_none());
+    assert_eq!(app.settings.tui.theme, "gruvbox-dark");
+    app.update(Input::Saved(Ok(None)));
+    assert!(screen(&mut app, 100, 24).contains("theme gruvbox-dark saved as the default"));
+    assert_eq!(app.settings.theming.file.tui.theme, "gruvbox-dark");
+    // A failed save is shown; the theme stays for this run.
+    let mut app = self::app();
+    command(&mut app, "/theme dark");
+    app.update(Input::Saved(Err(
+        "the file changed since it was read; open it again".into(),
+    )));
+    assert!(kinds(&app).contains(&Kind::Error(
+        "not saved: the file changed since it was read; open it again".into()
+    )));
+    assert_eq!(app.settings.tui.theme, "dark");
+}
+
+#[test]
+fn theme_by_name() {
+    let mut app = app();
+    assert_eq!(
+        saves(&command(&mut app, "/theme nord")),
+        theme_saved("nord")
+    );
+    assert!(app.editor.is_empty());
+    let effects = command(&mut app, "/theme neon");
+    assert!(saves(&effects).is_empty());
+    assert_eq!(notices(&app), ["unknown theme neon; /theme lists them"]);
+    assert_eq!(app.editor.text(), "/theme neon");
+}
+
+#[test]
+fn a_broken_theme_file_cannot_be_taken() {
+    let mut app = app();
+    app.settings.theming.warnings = vec![warning("bad")];
+    command(&mut app, "/theme");
+    typed(&mut app, "bad");
+    // The last theme that could be shown stays: `b` found gruvbox-dark.
+    assert_eq!(
+        app.theme_list.as_ref().unwrap().chosen().unwrap().name,
+        "bad"
+    );
+    assert_eq!(app.settings.tui.theme, "gruvbox-dark");
+    assert!(saves(&app.update(key(KeyCode::Enter))).is_empty());
+    assert!(app.theme_list.is_some());
+    let text = screen(&mut app, 100, 30);
+    assert!(text.contains("themes/bad.toml:1: base: broken"), "{text}");
+    // `/theme bad` neither.
+    let mut app = self::app();
+    app.settings.theming.warnings = vec![warning("bad")];
+    assert!(saves(&command(&mut app, "/theme bad")).is_empty());
+}
+
+#[test]
+fn theme_names_in_the_argument_list() {
+    let mut app = app();
+    typed(&mut app, "/theme so");
+    assert_eq!(values(&app), ["solarized-light"]);
+}
+
+#[test]
+fn clai_theme_wins_until_a_theme_is_taken() {
+    let mut app = app();
+    app.settings.theming.theme_env = Some("light".into());
+    let reloaded = || super::app::Reloaded {
+        tui: tui_with(|t| t.theme = "light".into()),
+        themes: crate::config::themes::file_themes(&[]).0,
+        warnings: Vec::new(),
+        file: super::app::FileTui::default(),
+    };
+    app.update(Input::Reloaded(Box::new(Ok(reloaded()))));
+    assert_eq!(app.settings.tui.theme, "light");
+    command(&mut app, "/theme nord");
+    app.update(Input::Reloaded(Box::new(Ok(reloaded()))));
+    assert_eq!(app.settings.tui.theme, "nord");
+}
+
+/// The settings box on a file that sets `mouse = false`.
+fn settings_open() -> App {
+    let mut app = app();
+    app.settings.theming.file.tui.mouse = false;
+    app.settings.theming.file.keys = vec!["mouse".into()];
+    app.apply(tui_with(|t| t.mouse = false));
+    command(&mut app, "/settings");
+    assert!(app.settings_box.is_some());
+    app
+}
+
+fn select_row(app: &mut App, key_name: &str) {
+    for _ in 0..10 {
+        app.update(key(KeyCode::Up));
+    }
+    for _ in 0..10 {
+        if app.settings_box.as_ref().unwrap().row().unwrap().key == key_name {
+            return;
+        }
+        app.update(key(KeyCode::Down));
+    }
+    panic!("no row {key_name}");
+}
+
+#[test]
+fn settings_preview_and_save() {
+    let mut app = settings_open();
+    select_row(&mut app, "mouse");
+    let effects = app.update(key(KeyCode::Enter));
+    assert!(effects.contains(&Effect::Mouse(true)));
+    select_row(&mut app, "expand_tool_calls");
+    app.update(key(KeyCode::Right));
+    assert!(app.settings.expand_tool_calls);
+    let effects = app.update(ch('s'));
+    assert_eq!(
+        saves(&effects),
+        [vec![
+            ("mouse", Some(Setting::Bool(true))),
+            ("expand_tool_calls", Some(Setting::Bool(true)))
+        ]]
+    );
+    app.update(Input::Saved(Ok(None)));
+    let settings = app.settings_box.as_ref().expect("still open");
+    assert!(settings.changes().is_empty());
+    assert!(screen(&mut app, 100, 30).contains("saved"));
+    assert!(app.settings.theming.file.tui.expand_tool_calls);
+    assert!(
+        app.settings
+            .theming
+            .file
+            .keys
+            .contains(&"expand_tool_calls".to_owned())
+    );
+    // Nothing changed now: Esc closes at once.
+    app.update(key(KeyCode::Esc));
+    assert!(app.settings_box.is_none());
+}
+
+#[test]
+fn settings_discarded_go_back_to_the_file() {
+    let mut app = settings_open();
+    select_row(&mut app, "mouse");
+    app.update(key(KeyCode::Enter));
+    app.update(key(KeyCode::Esc));
+    assert!(screen(&mut app, 100, 30).contains("save changes? [s] save  [n] discard"));
+    let effects = app.update(ch('n'));
+    assert!(app.settings_box.is_none());
+    assert!(effects.contains(&Effect::Mouse(false)));
+    assert!(!app.settings.tui.mouse);
+}
+
+#[test]
+fn the_theme_row_opens_the_theme_list() {
+    let mut app = settings_open();
+    app.update(key(KeyCode::Enter));
+    assert!(app.theme_list.as_ref().unwrap().for_settings);
+    typed(&mut app, "nord");
+    // Enter only sets the row; `s` in the box saves it.
+    let effects = app.update(key(KeyCode::Enter));
+    assert!(saves(&effects).is_empty());
+    assert!(app.theme_list.is_none());
+    assert_eq!(app.settings.tui.theme, "nord");
+    assert_eq!(app.settings_box.as_ref().unwrap().current.theme, "nord");
+    assert_eq!(saves(&app.update(ch('s'))), theme_saved("nord"));
+}
+
+#[test]
+fn a_question_closes_the_settings_and_undoes_the_preview() {
+    let mut app = settings_open();
+    select_row(&mut app, "mouse");
+    app.update(key(KeyCode::Enter));
+    let effects = app.update(live(SessionEvent::Question(Box::new(permission()))));
+    assert!(app.settings_box.is_none());
+    assert!(effects.contains(&Effect::Mouse(false)));
+    let mut app = self::app();
+    command(&mut app, "/theme");
+    app.update(key(KeyCode::Down));
+    app.update(live(SessionEvent::Question(Box::new(permission()))));
+    assert!(app.theme_list.is_none());
+    assert_eq!(app.settings.tui.theme, "terminal");
+}
+
+#[test]
+fn a_failed_save_shows_in_the_box() {
+    let mut app = settings_open();
+    select_row(&mut app, "timestamps");
+    app.update(key(KeyCode::Enter));
+    app.update(ch('s'));
+    app.update(Input::Saved(Err("tui.theme: unknown theme `x`".into())));
+    let settings = app.settings_box.as_ref().unwrap();
+    assert_eq!(
+        settings.message.as_deref(),
+        Some("tui.theme: unknown theme `x`")
+    );
+    assert!(!settings.changes().is_empty());
+}
+
+#[test]
+fn frame_settings() {
+    let mut app = settings_open();
+    select_row(&mut app, "mouse");
+    app.update(key(KeyCode::Enter));
+    insta::assert_snapshot!(screen(&mut app, 80, 24));
+}
+
+#[test]
+fn frame_settings_ascii_editing_a_number() {
+    let mut app = App::new(
+        settings(false, true),
+        attachment(Vec::new()),
+        Instant::now(),
+    );
+    command(&mut app, "/settings");
+    select_row(&mut app, "max_fps");
+    app.update(key(KeyCode::Enter));
+    let text = screen(&mut app, 80, 24);
+    assert!(text.is_ascii(), "{text}");
+    insta::assert_snapshot!(text);
+}
+
+#[test]
+fn frame_settings_with_clai_theme() {
+    let mut app = settings_open();
+    app.settings.theming.theme_env = Some("nord".into());
+    insta::assert_snapshot!(screen(&mut app, 80, 24));
+}
+
+#[test]
+fn frame_theme_list() {
+    let mut app = app();
+    app.settings.theming.warnings = vec![warning("bad")];
+    command(&mut app, "/theme");
+    app.update(key(KeyCode::Down));
+    insta::assert_snapshot!(screen(&mut app, 80, 30));
+}
+
+#[test]
+fn frame_theme_list_ascii() {
+    let mut app = App::new(
+        settings(false, true),
+        attachment(Vec::new()),
+        Instant::now(),
+    );
+    command(&mut app, "/theme");
+    let text = screen(&mut app, 80, 30);
+    assert!(text.is_ascii(), "{text}");
+    insta::assert_snapshot!(text);
+}
+
+/// One frame per built-in and bundled theme: the styles of the cells, not
+/// only the text, so that a palette change shows.
+#[test]
+fn frame_of_each_theme() {
+    for theme in [
+        "dark",
+        "light",
+        "atom-one-dark",
+        "nord",
+        "gruvbox-dark",
+        "solarized-light",
+    ] {
+        let mut app = app_with(vec![
+            SessionEvent::UserMessage { text: "hi".into() },
+            SessionEvent::TextDone {
+                text: "**done** `x`".into(),
+            },
+            SessionEvent::ToolCall(done(call("c1", "read_file", CallState::Running), "1 line")),
+            SessionEvent::Error {
+                message: "oops".into(),
+            },
+        ]);
+        app.apply(tui_with(|t| t.theme = theme.into()));
+        let terminal = screen_of(&mut app, 40, 12);
+        insta::assert_debug_snapshot!(format!("theme_{theme}"), terminal.backend().buffer());
+    }
+}
+
+/// The shell's save: written, checked by loading, refused when invalid.
+#[test]
+fn the_shell_saves_into_a_real_user_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    let text = "# mine\ndefault_model = \"a/m\"\n\n[providers.a]\napi = \"anthropic\"\n\n[providers.a.models.m]\nid = \"m\"\ncontext_window = 1000\n";
+    std::fs::write(&path, text).unwrap();
+    std::fs::create_dir(dir.path().join("themes")).unwrap();
+    std::fs::write(dir.path().join("themes/mine.toml"), "base = \"light\"\n").unwrap();
+    let options = crate::config::LoadOptions {
+        config_file: Some(path.clone()),
+        workspace: dir.path().to_path_buf(),
+        env: crate::config::Environment::default(),
+    };
+    let stamp = crate::config::edit::stamp(&path);
+    let theme = |name: &str| vec![("theme", Some(Setting::Text(name.into())))];
+    let new = save(&options, &path, stamp, &theme("mine")).unwrap();
+    let written = std::fs::read_to_string(&path).unwrap();
+    assert!(written.starts_with("# mine\n"), "{written}");
+    assert!(written.ends_with("[tui]\ntheme = \"mine\"\n"), "{written}");
+    // A theme the loader does not know is refused, and nothing is written.
+    let e = save(&options, &path, new, &theme("neon")).unwrap_err();
+    assert!(e.contains("unknown theme `neon`"), "{e}");
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), written);
+}
+
+#[test]
+fn opening_reads_the_theme_files_again() {
+    let mut app = app();
+    assert!(command(&mut app, "/theme").contains(&Effect::ReloadConfig));
+    app.update(key(KeyCode::Down));
+    let mut themes = app.settings.theming.themes.clone();
+    themes.insert(
+        "fresh".into(),
+        crate::config::Theme {
+            base: crate::config::BuiltinTheme::Light,
+            colours: Vec::new(),
+            code: None,
+            source: crate::config::ThemeSource::File("themes/fresh.toml".into()),
+        },
+    );
+    app.update(Input::Reloaded(Box::new(Ok(super::app::Reloaded {
+        tui: app.settings.theming.file.tui.clone(),
+        themes,
+        warnings: Vec::new(),
+        file: super::app::FileTui::default(),
+    }))));
+    let list = app.theme_list.as_ref().unwrap();
+    assert!(list.visible().iter().any(|e| e.name == "fresh"));
+    // The selection and its preview stay.
+    assert_eq!(list.preview(), Some("dark"));
+    assert_eq!(app.settings.tui.theme, "dark");
+    assert!(command(&mut self::app(), "/settings").contains(&Effect::ReloadConfig));
 }

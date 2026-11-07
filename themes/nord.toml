@@ -1,0 +1,15 @@
+# Nord, bundled with clai. Copy it to ~/.config/clai/themes/nord.toml
+# to change it there; that file then replaces this one.
+base        = "dark"
+background  = "#2e3440"
+text        = "#d8dee9"
+dim         = "#616e88"
+user        = "#88c0d0"
+accent      = "#81a1c1"
+border      = "#4c566a"
+selection   = "#434c5e"
+success     = "#a3be8c"
+error       = "#bf616a"
+warning     = "#ebcb8b"
+diff_add    = "#a3be8c"
+diff_remove = "#bf616a"

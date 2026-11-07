@@ -175,6 +175,20 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [ ] A pseudo-terminal test of switching in the real TUI (part of the TUI
       core pseudo-terminal test above).
 
+## Settings and themes
+
+- [x] Themes drawn: `terminal`, `dark`, `light`, custom; `background`; the
+      256-colour fallback (RFC 0006).
+- [x] Theme files in `themes/` next to the user file; bundled `atom-one-dark`,
+      `nord`, `gruvbox-dark`, `solarized-light`.
+- [x] `[tui]` applied live: from `/settings`, `/theme` and `config_reloaded`.
+- [x] Saving `[tui]` into the user file with `toml_edit`: comments kept,
+      checked, atomic, refused when the file changed.
+- [x] `/theme [NAME]` with the theme list; `/settings` with the settings box.
+- [ ] Syntax highlighting (`syntax_highlight`, a theme's `code` key).
+- [ ] Look at the `dark` and `light` palettes in a real terminal (RFC 0006,
+      open question 10).
+
 ## Refactoring
 
 - [x] A: `Choice::name`, `text::ansi`, `text::Terminal`, `sync::lock`,
@@ -189,9 +203,8 @@ Milestones and their order: [`implementation.md`](implementation.md).
 
 ## Next milestones
 
-- [ ] TUI sessions and settings: the rest (`[tui]` settings, themes, live
-      reload; a server notice for session state changes, protocol 4, in place
-      of polling `list`)
+- [ ] TUI sessions and settings: the rest (syntax highlighting; a server notice
+      for session state changes, protocol 4, in place of polling `list`)
 - [ ] Commit (needs `spec/commit.md`)
 - [ ] Context management (needs `spec/context.md`)
 - [ ] Release

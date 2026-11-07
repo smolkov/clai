@@ -1,0 +1,15 @@
+# Atom One Dark, bundled with clai. Copy it to ~/.config/clai/themes/atom-one-dark.toml
+# to change it there; that file then replaces this one.
+base        = "dark"
+background  = "#282c34"
+text        = "#abb2bf"
+dim         = "#5c6370"
+user        = "#56b6c2"
+accent      = "#61afef"
+border      = "#4b5263"
+selection   = "#3e4451"
+success     = "#98c379"
+error       = "#e06c75"
+warning     = "#e5c07b"
+diff_add    = "#98c379"
+diff_remove = "#e06c75"

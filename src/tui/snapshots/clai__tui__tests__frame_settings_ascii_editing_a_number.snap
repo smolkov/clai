@@ -1,0 +1,28 @@
+---
+source: src/tui/tests.rs
+expression: text
+---
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
++ Settings - /home/u/.config/clai/config.toml ---------------------------------+
+|   theme              terminal  Colour theme                                  |
+|   symbols            auto      Unicode or ASCII symbols                      |
+|   mouse              on        Capture the mouse for scrolling               |
+|   tool_output_lines  20        Lines of tool output before it is cut         |
+|   expand_tool_calls  off       Keep finished tool calls expanded             |
+|   syntax_highlight   on        later version                                 |
+|   timestamps         off       Time of each entry                            |
+|   scroll_lines       3         Lines per mouse-wheel step                    |
+| > max_fps            30        Redraw limit                                  |
+|                                                                              |
+| max_fps: Frames per second, 1 to 120                                         |
+| Enter take - Esc back                                                        |
++------------------------------------------------------------------------------+
+--------------------------------------------------------------------------------
+>                                                                               
+--------------------------------------------------------------------------------
+  idle - /help - Ctrl-D detach                                                  
+  project - ~/ws/project - anthropic/sonnet - 1/1 - 0/200k

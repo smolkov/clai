@@ -12,8 +12,10 @@ mod markdown;
 mod picker;
 mod prompt;
 mod sessions;
+mod settings;
 mod style;
 pub mod terminal;
+mod themes;
 mod view;
 mod wrap;
 
@@ -37,14 +39,14 @@ use tokio::time::{Instant, MissedTickBehavior, interval_at, sleep, sleep_until};
 
 use crate::client::{Client, Connect, Connection, unexpected};
 use crate::command::new::create;
-use crate::config::{self, Config, Environment, LoadOptions};
+use crate::config::{self, Config, Environment, LoadOptions, Symbols};
 use crate::error::{Error, Result};
 use crate::protocol::{Payload, Request, ServerMessage, SessionInfo};
 use crate::runtime::current_thread;
 use crate::server::runtime_dir;
 
 pub use app::Exit;
-use app::{App, Attachment, Effect, Input, LOST, Settings};
+use app::{App, Attachment, Effect, FileTui, Input, LOST, Reloaded, Settings, Theming};
 
 /// How long to wait between two tries to connect again.
 const RECONNECT_EVERY: Duration = Duration::from_millis(500);
@@ -66,11 +68,12 @@ pub fn run(config: Option<&Path>, target: Target) -> Result<()> {
         // No project file applies; the session has its own workspace.
         _ => runtime_dir(),
     };
-    let loaded = config::load(&LoadOptions {
+    let options = LoadOptions {
         config_file: config.map(Path::to_path_buf),
         workspace,
         env: Environment::from_process(),
-    })?;
+    };
+    let loaded = config::load(&options)?;
     check_terminal(
         std::io::stdin().is_terminal(),
         std::io::stdout().is_terminal(),
@@ -83,8 +86,8 @@ pub fn run(config: Option<&Path>, target: Target) -> Result<()> {
         terminal::install_panic_hook();
         let guard = terminal::Guard::new(loaded.tui.mouse)?;
         let exit = event_loop(
-            settings(&loaded, &connect),
-            &loaded,
+            settings(&loaded, &connect, &options),
+            options,
             connect.clone(),
             attached,
             choose,
@@ -193,9 +196,19 @@ async fn attach(mut client: Client, name: &str) -> Result<Attached> {
     })
 }
 
-fn settings(config: &Config, connect: &Connect) -> Settings {
+fn settings(config: &Config, connect: &Connect, options: &LoadOptions) -> Settings {
     let tui = &config.tui;
     let terminal = crate::text::Terminal::detect(tui.symbols);
+    let theming = Theming {
+        themes: config.themes.clone(),
+        warnings: config.theme_warnings.clone(),
+        file: file_tui(config, options),
+        colouring: colouring(),
+        unicode_locale: crate::text::unicode(Symbols::Auto, |name| std::env::var(name).ok()),
+        theme_env: options.env.theme.clone(),
+        offset: local_offset(),
+        user_file: config.user_file.clone(),
+    };
     let mut windows = HashMap::new();
     for (provider, p) in &config.providers {
         for (model, m) in &p.models {
@@ -203,14 +216,72 @@ fn settings(config: &Config, connect: &Connect) -> Settings {
         }
     }
     Settings {
-        look: style::Look::new(terminal.unicode, terminal.colour),
+        look: style::Look::themed(
+            terminal.unicode,
+            style::Styles::themed(&tui.theme, &config.themes, colouring()),
+        ),
         client: connect.name.clone(),
         tool_output_lines: usize::try_from(tui.tool_output_lines).unwrap_or(usize::MAX),
         expand_tool_calls: tui.expand_tool_calls,
         scroll_lines: usize::from(tui.scroll_lines),
-        timestamps: tui.timestamps.then(local_offset),
+        timestamps: tui.timestamps.then_some(theming.offset),
         windows,
+        tui: tui.clone(),
+        theming,
     }
+}
+
+/// `[tui]` and the themes from the user file again, after `config_reloaded`.
+fn reload(options: &LoadOptions) -> std::result::Result<Reloaded, String> {
+    let config = config::load(options).map_err(|e| e.to_string())?;
+    let file = file_tui(&config, options);
+    Ok(Reloaded {
+        tui: config.tui,
+        themes: config.themes,
+        warnings: config.theme_warnings,
+        file,
+    })
+}
+
+/// What the user file itself says about `[tui]`: without `CLAI_THEME`, which
+/// loading applied, with the keys it sets and its stamp.
+fn file_tui(config: &Config, options: &LoadOptions) -> FileTui {
+    let tui = if options.env.theme.is_some() {
+        let mut without = options.clone();
+        without.env.theme = None;
+        config::load(&without).map_or_else(|_| config.tui.clone(), |c| c.tui)
+    } else {
+        config.tui.clone()
+    };
+    let text = std::fs::read_to_string(&config.user_file).unwrap_or_default();
+    FileTui {
+        tui,
+        keys: config::edit::tui_keys(&text),
+        stamp: config::edit::stamp(&config.user_file),
+    }
+}
+
+/// Writes `[tui]` changes into the user file, checked as loading would; the
+/// new stamp on success.
+fn save(
+    options: &LoadOptions,
+    path: &Path,
+    stamp: Option<config::edit::Stamp>,
+    changes: &[(&str, Option<config::edit::Setting>)],
+) -> std::result::Result<Option<config::edit::Stamp>, String> {
+    config::edit::save(path, stamp, changes, |text| {
+        config::load_with_user_text(path, text, options)
+            .map(drop)
+            .map_err(|e| e.to_string())
+    })?;
+    Ok(config::edit::stamp(path))
+}
+
+/// The colours of this terminal, from `NO_COLOR`, standard output and
+/// `COLORTERM`.
+fn colouring() -> style::Colouring {
+    let colour = std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none();
+    style::Colouring::detect(colour, std::env::var("COLORTERM").ok().as_deref())
 }
 
 /// The offset of local time from UTC in seconds, from `date`: the standard
@@ -273,7 +344,7 @@ async fn next_message(connection: &mut Option<Connection>) -> Option<ServerMessa
 
 async fn event_loop(
     settings: Settings,
-    config: &Config,
+    options: LoadOptions,
     connect: Connect,
     attached: Attached,
     choose: bool,
@@ -296,7 +367,6 @@ async fn event_loop(
     let second = Duration::from_secs(1);
     let mut ticks = interval_at(Instant::now() + second, second);
     ticks.set_missed_tick_behavior(MissedTickBehavior::Delay);
-    let frame_time = Duration::from_secs(1) / u32::from(config.tui.max_fps.max(1));
 
     // A whole replay is applied before this first frame.
     draw(&mut screen, &mut app)?;
@@ -328,7 +398,7 @@ async fn event_loop(
                     Some(Input::Attached(Box::new(attachment)))
                 }
             },
-            () = sleep_until(last_frame + frame_time), if dirty => {
+            () = sleep_until(last_frame + app.frame_time()), if dirty => {
                 draw(&mut screen, &mut app)?;
                 dirty = false;
                 last_frame = Instant::now();
@@ -345,6 +415,23 @@ async fn event_loop(
                 Effect::Redraw => dirty = true,
                 Effect::Exit(exit) => return Ok(exit),
                 Effect::Request(request) => send(&mut connection, request, &reports),
+                Effect::Mouse(on) => {
+                    if let Err(e) = terminal::set_mouse(on) {
+                        tracing::info!("mouse capture: {e}");
+                    }
+                }
+                Effect::Save {
+                    path,
+                    stamp,
+                    changes,
+                } => {
+                    let result = save(&options, &path, stamp, &changes);
+                    let _ = reports.send(Report::Input(Input::Saved(result)));
+                }
+                Effect::ReloadConfig => {
+                    let reloaded = reload(&options);
+                    let _ = reports.send(Report::Input(Input::Reloaded(Box::new(reloaded))));
+                }
                 Effect::Switch(name) => {
                     let (connect, reports) = (connect.clone(), reports.clone());
                     tokio::spawn(async move {

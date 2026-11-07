@@ -76,7 +76,7 @@ widens the rule, `Enter` confirms), `n` no, `e` no with a message to the model,
 Commands: `/help`, `/model [PROVIDER/MODEL]` (without one, choose it as with
 `Ctrl-O`), `/sessions`, `/new [NAME]` (a session in the same workspace; the model
 picker starts on `default_model`, so `Enter` takes it), `/attach [NAME]`,
-`/rename NAME`, `/kill`, `/detach`, `/quit`. `/` in the empty input lists them:
+`/rename NAME`, `/settings`, `/theme [NAME]`, `/kill`, `/detach`, `/quit`. `/` in the empty input lists them:
 type to search, `Up` / `Down` select, `Enter` runs, `Tab` completes, `Esc` closes
 the list and keeps the text. After `/attach ` and `/model ` a list offers the
 session names and models the same way. The list also shows commands of later
@@ -84,6 +84,22 @@ versions, dimmed. A message that starts with `/` is written `//…`.
 
 Switching keeps each session's unsent input, scroll position and expanded tool
 calls. When the attached session ends, the session list opens.
+
+`/settings` shows the `[tui]` settings: change one with `Enter` or `Left` /
+`Right` and see it at once, `d` sets the default, `s` saves into the config file
+(comments and order stay), `Esc` closes. `/theme` lists the themes and previews
+the selected one; `Enter` takes it and saves it as the default, `/theme NAME`
+does so directly. Besides `terminal`, `dark` and `light`, `clai` brings
+`atom-one-dark`, `nord`, `gruvbox-dark` and `solarized-light`. Your own themes go
+in the config file as `[themes.NAME]` or as files in `~/.config/clai/themes/`,
+e.g. `themes/mine.toml`:
+
+```toml
+base       = "dark"       # terminal | dark | light
+background = "#282c34"    # optional: paints the whole screen
+text       = "#abb2bf"
+accent     = "#61afef"
+```
 
 The session row ends with the tokens the session has used, `in 45.1k out 3.2k`.
 Input counts the history again with each request, so this is neither the context

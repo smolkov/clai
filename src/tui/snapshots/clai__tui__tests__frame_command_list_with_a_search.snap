@@ -15,11 +15,11 @@ The test fails because parse drops the last line. Let me look.
                                                                                 
                                                                                 
                                                                                 
-                                                                                
 ────────────────────────────────────────────────────────────────────────────────
   /model [PROVIDER/MODEL]  Change the model; without one, choose it             
 ▶ /permissions             later version                                        
   /rename NAME             Rename the session                                   
+  /theme [NAME]            Choose the colour theme, saved as the default        
   /commit [HINT]           later version                                        
 ────────────────────────────────────────────────────────────────────────────────
 > /m                                                                            

@@ -127,6 +127,17 @@ fn parse_hex(s: &str) -> Option<Colour> {
     Some(Colour::Rgb(byte(0..2)?, byte(2..4)?, byte(4..6)?))
 }
 
+/// Where a custom theme comes from (see `spec/config.md`, "Themes").
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ThemeSource {
+    /// A `[themes.NAME]` table of the user file.
+    Table,
+    /// `themes/NAME.toml` next to the user file.
+    File(std::path::PathBuf),
+    /// Built into `clai`.
+    Bundled,
+}
+
 /// A custom theme: a built-in base with some colours changed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Theme {
@@ -134,6 +145,7 @@ pub struct Theme {
     pub colours: Vec<(&'static str, Colour)>,
     /// Name of the syntax highlighting theme.
     pub code: Option<String>,
+    pub source: ThemeSource,
 }
 
 pub(crate) fn build_themes(
@@ -153,49 +165,63 @@ pub(crate) fn build_themes(
                 "a custom theme may not use the name of a built-in theme",
             ));
         }
-        let base = match &file.base {
-            None => BuiltinTheme::Terminal,
-            Some(base) => match BuiltinTheme::from_name(base.get_ref()) {
-                Some(b) => b,
-                None => {
-                    errors.push(ctx.error(
-                        Some(base.span()),
-                        Some(format!("{key}.base")),
-                        format!(
-                            "base `{}` is not a built-in theme (terminal, dark, light)",
-                            base.get_ref()
-                        ),
-                    ));
-                    continue;
-                }
-            },
-        };
-        let mut colours = Vec::new();
-        for (colour_key, value) in colour_keys(&file) {
-            let Some(value) = value else { continue };
-            match parse_colour(value.get_ref()) {
-                Ok(colour) => colours.push((colour_key, colour)),
-                Err(message) => errors.push(ctx.error(
-                    Some(value.span()),
-                    Some(format!("{key}.{colour_key}")),
-                    message,
-                )),
-            }
+        if let Some(theme) = build_theme(ctx, &format!("{key}."), file, ThemeSource::Table, errors)
+        {
+            built.insert(name, theme);
         }
-        built.insert(
-            name,
-            Theme {
-                base,
-                colours,
-                code: file.code,
-            },
-        );
     }
     built
 }
 
-fn colour_keys(file: &ThemeFile) -> [(&'static str, &Option<Spanned<toml::Value>>); 11] {
+/// One theme from its keys; `prefix` comes before each key in errors:
+/// `themes.solar.` for a table, nothing for a theme file.
+pub(crate) fn build_theme(
+    ctx: FileCtx<'_>,
+    prefix: &str,
+    file: ThemeFile,
+    source: ThemeSource,
+    errors: &mut Vec<ConfigError>,
+) -> Option<Theme> {
+    let base = match &file.base {
+        None => BuiltinTheme::Terminal,
+        Some(base) => match BuiltinTheme::from_name(base.get_ref()) {
+            Some(b) => b,
+            None => {
+                errors.push(ctx.error(
+                    Some(base.span()),
+                    Some(format!("{prefix}base")),
+                    format!(
+                        "base `{}` is not a built-in theme (terminal, dark, light)",
+                        base.get_ref()
+                    ),
+                ));
+                return None;
+            }
+        },
+    };
+    let mut colours = Vec::new();
+    for (colour_key, value) in colour_keys(&file) {
+        let Some(value) = value else { continue };
+        match parse_colour(value.get_ref()) {
+            Ok(colour) => colours.push((colour_key, colour)),
+            Err(message) => errors.push(ctx.error(
+                Some(value.span()),
+                Some(format!("{prefix}{colour_key}")),
+                message,
+            )),
+        }
+    }
+    Some(Theme {
+        base,
+        colours,
+        code: file.code,
+        source,
+    })
+}
+
+fn colour_keys(file: &ThemeFile) -> [(&'static str, &Option<Spanned<toml::Value>>); 12] {
     [
+        ("background", &file.background),
         ("text", &file.text),
         ("dim", &file.dim),
         ("user", &file.user),
@@ -219,6 +245,8 @@ pub(crate) fn build_tui(
     ctx: FileCtx<'_>,
     file: Option<TuiFile>,
     themes: &IndexMap<String, Theme>,
+    // Broken theme files in use: their errors say enough already.
+    broken: &[String],
     errors: &mut Vec<ConfigError>,
 ) -> Tui {
     let mut tui = Tui::default();
@@ -226,7 +254,7 @@ pub(crate) fn build_tui(
         return tui;
     };
     if let Some(theme) = file.theme {
-        if theme_exists(theme.get_ref(), themes) {
+        if theme_exists(theme.get_ref(), themes) || broken.contains(theme.get_ref()) {
             tui.theme = theme.into_inner();
         } else {
             errors.push(ctx.error(

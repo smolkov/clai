@@ -4,10 +4,12 @@
 //! line. Command-line options are applied by each command, using
 //! [`Config::resolve_model`].
 
+pub mod edit;
 mod errors;
 mod file;
 pub mod permissions;
 mod secret;
+pub mod themes;
 pub mod tui;
 
 use std::env;
@@ -28,7 +30,8 @@ use file::{LimitsFile, ModelFile, ProjectFile, ProviderFile, UserFile};
 pub use errors::{ConfigError, ConfigErrors, Origin};
 pub use permissions::{Access, Action, ExtraDir, Pattern, Permissions, Rule, Source, Tool};
 pub use secret::{ApiKey, KEY_CMD_TIMEOUT, KeySource, KeyStatus};
-pub use tui::{BuiltinTheme, Colour, Symbols, Theme, Tui};
+pub use themes::ThemeText;
+pub use tui::{BuiltinTheme, Colour, Symbols, Theme, ThemeSource, Tui};
 
 /// Example user config, printed when there is none.
 pub const EXAMPLE: &str = include_str!("example.toml");
@@ -182,7 +185,18 @@ pub struct Config {
     pub permissions: Permissions,
     pub commit: Commit,
     pub tui: Tui,
+    /// Bundled themes, theme files and `[themes.NAME]` tables, in that order.
     pub themes: IndexMap<String, Theme>,
+    /// Theme files that are broken but not in use: left out, and shown by the
+    /// TUI.
+    pub theme_warnings: Vec<ThemeWarning>,
+}
+
+/// A theme file left out, and why: `themes/x.toml:3: base: …`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ThemeWarning {
+    pub name: String,
+    pub message: String,
 }
 
 impl Config {
@@ -332,7 +346,8 @@ pub fn load_with_user_text(
         path: &project_path,
         text,
     });
-    build(user, project, &options.env).map_err(Error::Config)
+    let theme_files = themes::read_directory(&themes::directory(user_path));
+    build(user, project, &options.env, &theme_files).map_err(Error::Config)
 }
 
 fn read_error(path: &Path, e: &io::Error) -> Error {
@@ -359,6 +374,7 @@ fn build(
     user: FileCtx<'_>,
     project: Option<FileCtx<'_>>,
     env: &Environment,
+    theme_files: &[ThemeText],
 ) -> Result<Config, ConfigErrors> {
     let user_file: UserFile = user.parse().map_err(|e| ConfigErrors(vec![e]))?;
     let project_file: Option<ProjectFile> = match project {
@@ -400,8 +416,47 @@ fn build(
         };
 
     let providers = build_providers(user, user_file.providers, &mut errors);
-    let themes = tui::build_themes(user, user_file.themes, &mut errors);
-    let mut tui = tui::build_tui(user, user_file.tui, &themes, &mut errors);
+    // Themes: bundled, then files, then tables. A broken file counts only if
+    // its theme is the one in use.
+    let (mut themes, broken) = themes::file_themes(theme_files);
+    let tables = tui::build_themes(user, user_file.themes, &mut errors);
+    for (name, theme) in tables {
+        if let Some(Theme {
+            source: ThemeSource::File(path),
+            ..
+        }) = themes.get(&name)
+        {
+            errors.push(user.error(
+                None,
+                Some(format!("themes.{name}")),
+                format!("also defined in {}; remove one", path.display()),
+            ));
+        }
+        themes.insert(name, theme);
+    }
+    let wanted: Vec<&str> = user_file
+        .tui
+        .as_ref()
+        .and_then(|t| t.theme.as_ref())
+        .map(|t| t.get_ref().as_str())
+        .into_iter()
+        .chain(env.theme.as_deref())
+        .collect();
+    let mut theme_warnings = Vec::new();
+    let mut in_use_broken = Vec::new();
+    for b in broken {
+        if wanted.contains(&b.name.as_str()) {
+            in_use_broken.push(b.name.clone());
+            errors.extend(b.errors);
+        } else {
+            let messages: Vec<String> = b.errors.iter().map(ToString::to_string).collect();
+            theme_warnings.push(ThemeWarning {
+                name: b.name,
+                message: messages.join("; "),
+            });
+        }
+    }
+    let mut tui = tui::build_tui(user, user_file.tui, &themes, &in_use_broken, &mut errors);
     let mut permissions = Permissions::from_user(
         user,
         user_file.permissions,
@@ -474,7 +529,7 @@ fn build(
         }
     }
     if let Some(theme) = &env.theme {
-        if tui::theme_exists(theme, &themes) {
+        if tui::theme_exists(theme, &themes) || in_use_broken.contains(theme) {
             tui.theme = theme.clone();
         } else {
             errors.push(env_error(THEME_ENV, format!("unknown theme `{theme}`")));
@@ -495,6 +550,7 @@ fn build(
             commit,
             tui,
             themes,
+            theme_warnings,
         }),
         _ => Err(ConfigErrors(errors)),
     }

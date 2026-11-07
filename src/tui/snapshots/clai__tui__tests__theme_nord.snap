@@ -1,0 +1,43 @@
+---
+source: src/tui/tests.rs
+expression: terminal.backend().buffer()
+---
+Buffer {
+    area: Rect { x: 0, y: 0, width: 40, height: 12 },
+    content: [
+        "> hi                                    ",
+        "                                        ",
+        "done x                                  ",
+        "                                        ",
+        "▸ read_file src/parse.rs        ✓ 1 line",
+        "                                        ",
+        "oops                                    ",
+        "────────────────────────────────────────",
+        ">                                       ",
+        "────────────────────────────────────────",
+        "  idle · /help · Ctrl-D detach          ",
+        "  project · ~/ws/project · anthropic/so…",
+    ],
+    styles: [
+        x: 0, y: 0, fg: Indexed(110), bg: Indexed(237), underline: Reset, modifier: BOLD,
+        x: 4, y: 0, fg: Indexed(254), bg: Indexed(237), underline: Reset, modifier: NONE,
+        x: 0, y: 2, fg: Indexed(254), bg: Indexed(237), underline: Reset, modifier: BOLD,
+        x: 4, y: 2, fg: Indexed(254), bg: Indexed(237), underline: Reset, modifier: NONE,
+        x: 5, y: 2, fg: Indexed(180), bg: Indexed(237), underline: Reset, modifier: NONE,
+        x: 6, y: 2, fg: Indexed(254), bg: Indexed(237), underline: Reset, modifier: NONE,
+        x: 0, y: 4, fg: Indexed(60), bg: Indexed(237), underline: Reset, modifier: NONE,
+        x: 2, y: 4, fg: Indexed(254), bg: Indexed(237), underline: Reset, modifier: BOLD,
+        x: 11, y: 4, fg: Indexed(254), bg: Indexed(237), underline: Reset, modifier: NONE,
+        x: 32, y: 4, fg: Indexed(144), bg: Indexed(237), underline: Reset, modifier: NONE,
+        x: 0, y: 5, fg: Indexed(254), bg: Indexed(237), underline: Reset, modifier: NONE,
+        x: 0, y: 6, fg: Indexed(131), bg: Indexed(237), underline: Reset, modifier: BOLD,
+        x: 4, y: 6, fg: Indexed(254), bg: Indexed(237), underline: Reset, modifier: NONE,
+        x: 0, y: 7, fg: Indexed(240), bg: Indexed(237), underline: Reset, modifier: NONE,
+        x: 0, y: 8, fg: Indexed(254), bg: Indexed(237), underline: Reset, modifier: NONE,
+        x: 0, y: 9, fg: Indexed(240), bg: Indexed(237), underline: Reset, modifier: NONE,
+        x: 0, y: 10, fg: Indexed(254), bg: Indexed(237), underline: Reset, modifier: NONE,
+        x: 2, y: 10, fg: Indexed(60), bg: Indexed(237), underline: Reset, modifier: NONE,
+        x: 30, y: 10, fg: Indexed(254), bg: Indexed(237), underline: Reset, modifier: NONE,
+        x: 2, y: 11, fg: Indexed(60), bg: Indexed(237), underline: Reset, modifier: NONE,
+    ]
+}

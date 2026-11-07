@@ -1,7 +1,7 @@
 # TUI settings
 
 - RFC: 0006
-- Status: draft
+- Status: done
 - Milestone: the `[tui]` settings of "TUI sessions and settings" (see
   [`implementation.md`](../implementation.md))
 - Spec: [`spec/tui.md`](../spec/tui.md), "Input editor", "Appearance";
@@ -396,7 +396,7 @@ Written when the RFC is accepted.
 ## Implementation plan
 
 1. **Themes**
-   - Status: todo
+   - Status: done
    - Files: `src/tui/style.rs`, `src/tui/mod.rs`, `src/config/tui.rs`
    - Result: `dark`, `light` and custom themes drawn; `CLAI_THEME`; the
      256-colour fallback; the `background` key. `terminal` looks as before.
@@ -404,7 +404,7 @@ Written when the RFC is accepted.
      colour, a painted background; frames of each built-in theme; existing
      snapshots unchanged.
 2. **Theme files**
-   - Status: todo
+   - Status: done
    - Files: `themes/atom-one-dark.toml`, `themes/nord.toml`,
      `themes/gruvbox-dark.toml`, `themes/solarized-light.toml`,
      `src/config/themes.rs`, `src/config/mod.rs`
@@ -414,19 +414,19 @@ Written when the RFC is accepted.
      a file with one name; a missing directory; a broken file in use and not in
      use; all bundled files load without errors.
 3. **Settings applied live**
-   - Status: todo
+   - Status: done
    - Files: `src/tui/app.rs`, `src/tui/mod.rs`, `src/tui/conversation.rs`
    - Result: `App::apply(config::Tui)`, `Effect::Mouse`, the frame time from
      `App`; `config_reloaded` reloads `[tui]`.
    - Tests: preview and reload tests of `App`.
 4. **Writing the user file**
-   - Status: todo
+   - Status: done
    - Files: `Cargo.toml`, `src/config/edit.rs`
    - Result: set and remove `[tui]` keys, validate, write atomically, refuse a
      changed file.
    - Tests: saving tests above.
 5. **The theme list**
-   - Status: todo
+   - Status: done
    - Files: `src/tui/themes.rs`, `src/tui/view/themes.rs`, `src/tui/app.rs`,
      `src/tui/commands.rs`
    - Result: `/theme` opens the list with preview, `Enter` takes and saves,
@@ -435,14 +435,14 @@ Written when the RFC is accepted.
      cannot be chosen, filter; `/theme NAME` and an unknown name; snapshots of
      the list in Unicode and ASCII.
 6. **The settings box**
-   - Status: todo
+   - Status: done
    - Files: `src/tui/settings.rs`, `src/tui/view/settings.rs`,
      `src/tui/themes.rs`,
      `src/tui/view/popup.rs`, `src/tui/app.rs`, `src/tui/commands.rs`
    - Result: `/settings` opens it; change, preview, save, discard.
    - Tests: box and `App` tests; snapshots.
 7. **Docs**
-   - Status: todo
+   - Status: done
    - Files: `spec/`, `readme.md`, `implementation.md`, `todo.md`,
      `rfcs/readme.md`
    - Result: spec changes above; status `done`.
@@ -489,3 +489,32 @@ Still open:
 
 10. **The palettes of `dark` and `light`** in "Themes" are a proposal; they can
     be changed after a look at them in a real terminal.
+
+## Notes from building
+
+Details the design left open, or changed while building:
+
+- `Theming` in `App` holds what the look is made of besides `[tui]`: the
+  themes, broken files, the colours of the terminal, the locale, `CLAI_THEME`,
+  the offset for timestamps, and the user file with its stamp and the keys it
+  sets. The shell reads all of it; `App` stays free of I/O, and saving is
+  `Effect::Save`, answered by `Input::Saved`.
+- The style of inline code is not a theme key (a theme's `code` is the syntax
+  highlighting theme): `dark` uses 180, `light` 130, `terminal` yellow as before.
+- A theme with `background` also gives its `text` colour to cells without one,
+  so the terminal's own foreground never lands on the theme's background.
+- A selection by background keeps the theme's text colour.
+- Theme file names have letters, digits, `-` and `_`; other `.toml` files are
+  ignored. A broken file replaces the bundled theme of its name instead of
+  falling back to it: the user meant the file.
+- With the selection of the theme list on a broken file or on no match, the
+  last theme shown stays.
+- A question closes the settings box and the theme list and undoes their
+  preview, as for the picker; unsaved changes in the box are lost then.
+- The `syntax_highlight` row can be changed and saved, but says
+  `later version`.
+- A failed save of `/theme` is an error in the conversation (`not saved: …`);
+  one from the settings box is shown in the box, which stays open.
+- After a save the TUI takes the file's new stamp at once, so a second save
+  before the server's `config_reloaded` is not refused.
+- Texts of the box rows are ASCII, so the ASCII frames stay ASCII.

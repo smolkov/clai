@@ -397,7 +397,7 @@ in the user file. All keys are optional; the values shown are the defaults.
 
 ```toml
 [tui]
-theme             = "terminal"  # terminal | dark | light | name of a [themes.NAME] table
+theme             = "terminal"  # terminal | dark | light | a bundled theme | a [themes.NAME] table or themes/NAME.toml
 symbols           = "auto"      # auto | unicode | ascii
 mouse             = true        # capture the mouse; false keeps the terminal's text selection
 tool_output_lines = 20          # lines of tool output shown before "… N more lines"; 0 = no limit
@@ -429,7 +429,26 @@ A theme gives a colour to each part of the interface.
 | `terminal` | Uses only the terminal's 16-colour palette, so it follows the terminal's own theme. Default. |
 | `dark` | Built-in theme for dark backgrounds, using 256 colours. |
 | `light` | Built-in theme for light backgrounds, using 256 colours. |
-| `NAME` | A theme defined in the configuration as `[themes.NAME]`. |
+| `atom-one-dark`, `nord`, `gruvbox-dark`, `solarized-light` | Bundled with `clai`, see [Theme files](#theme-files). |
+| `NAME` | A theme defined as `[themes.NAME]` in the user file, or as a theme file `themes/NAME.toml`. |
+
+`dark` and `light` use the 256 colours:
+
+| Key | `dark` | `light` |
+|-----|--------|---------|
+| `text` | 252 | 235 |
+| `dim` | 244 | 245 |
+| `user` | 117 bold | 25 bold |
+| `accent` | 75 | 26 |
+| `border` | 240 | 250 |
+| `selection` | background 238 | background 254 |
+| `success`, `diff_add` | 114 | 28 |
+| `error`, `diff_remove` | 203 bold | 160 bold |
+| `warning` | 221 | 136 |
+
+`terminal` uses the 16 colours, and the dim and reversed attributes for `dim`,
+`border` and `selection`; a custom theme that sets one of these uses the
+colour instead.
 
 A custom theme starts from a built-in one and changes some colours:
 
@@ -445,6 +464,7 @@ code        = "Solarized (dark)"   # syntax highlighting theme
 
 | Colour key | Used for |
 |------------|----------|
+| `background` | Painted over the whole screen when set; text without a colour then gets the `text` colour. Without it the terminal's background stays, as for the three built-in themes. |
 | `text` | Normal text: model answers. |
 | `dim` | Notices, hints, collapsed tool results. |
 | `user` | User messages. |
@@ -463,7 +483,7 @@ Colour values: one of the 16 ANSI colour names (`black`, `red`, `green`,
 a 256-colour index (`0`–`255`), `"#rrggbb"`, or `"default"` (the terminal's
 default foreground or background). In a terminal without true-colour support
 (`COLORTERM` is not `truecolor` or `24bit`), `#rrggbb` is shown as the
-nearest 256-colour value. **(assumption)**
+nearest of the 6×6×6 cube and the grey ramp of the 256 colours.
 
 A theme may not set `base` to itself or to another custom theme; without
 `base` it starts from `terminal`. A custom theme may not use the name of a
@@ -472,9 +492,52 @@ built-in theme. An unknown colour key or value is a load error.
 The environment variable `NO_COLOR` (any value) turns all colours off,
 whatever the theme. `CLAI_THEME` overrides `tui.theme` for one run.
 
-The TUI reads `[tui]` and `[themes]` itself when it starts and when the user
-file changes; a change applies at once to the running TUI. An invalid change
-keeps the previous settings and shows the error in the status line.
+### Theme files
+
+A theme can also be a file of its own, so it can be shared and copied without
+editing the configuration.
+
+- **Directory:** `themes/` next to the user file, so
+  `$XDG_CONFIG_HOME/clai/themes/` by default, or next to the `--config` file.
+  Each `NAME.toml` there is the theme `NAME`; a name has letters, digits, `-`
+  and `_`. Other files are ignored, and so is a missing directory.
+- **Content:** the keys of a `[themes.NAME]` table, at the top level:
+
+  ```toml
+  # ~/.config/clai/themes/nord.toml
+  base        = "dark"
+  background  = "#2e3440"
+  text        = "#d8dee9"
+  accent      = "#81a1c1"
+  ```
+
+- **Bundled:** `atom-one-dark`, `nord`, `gruvbox-dark` and `solarized-light` come
+  with `clai`, in this format (`themes/` in the source), so one can be copied
+  into the directory and changed.
+- **Precedence:** a `[themes.NAME]` table, then a file, then a bundled theme. A
+  file `nord.toml` replaces the bundled `nord`, and so does a table. A table and
+  a file of the same name are an error. `terminal`, `dark` and `light` cannot be
+  replaced.
+- `base` is one of `terminal`, `dark`, `light`, as for tables.
+- **Errors** name the theme file and line. A broken theme file is a load error
+  only if it is the theme in use (`tui.theme` or `CLAI_THEME`); otherwise it is
+  left out, and the TUI's theme list shows it with its error. A broken file
+  does not fall back to a bundled theme of its name.
+- `clai` never writes into the directory.
+
+### Reading and writing `[tui]`
+
+The TUI reads `[tui]`, `[themes]` and the theme files itself: when it starts,
+on `config_reloaded`, and when `/settings` or `/theme` opens. A change applies
+at once to the running TUI. An invalid change keeps the previous settings and
+shows the error in the status line.
+
+The TUI writes the user file only from `/settings` and `/theme` (see
+[`tui.md`](tui.md), "Settings"): it sets or removes keys of `[tui]` and keeps
+the rest of the file, comments and order included; it checks the new text as
+loading would and writes nothing if it fails or if the file changed since it
+was read; it replaces the file atomically with its mode kept, through a link to
+its target.
 
 ## Providers and models
 

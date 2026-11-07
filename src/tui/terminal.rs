@@ -72,6 +72,19 @@ impl Guard {
     }
 }
 
+/// Turns mouse capture on or off while the TUI runs (`tui.mouse`).
+pub fn set_mouse(on: bool) -> Result<()> {
+    let context = Error::io("setting up the terminal");
+    let mut out = io::stdout();
+    if on {
+        execute!(out, EnableMouseCapture).map_err(&context)?;
+    } else {
+        execute!(out, DisableMouseCapture).map_err(&context)?;
+    }
+    MOUSE.store(on, Ordering::SeqCst);
+    Ok(())
+}
+
 impl Drop for Guard {
     fn drop(&mut self) {
         restore();

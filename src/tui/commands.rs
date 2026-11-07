@@ -75,6 +75,11 @@ pub const COMMANDS: &[Command] = &[
         "[NAME]",
     ),
     required(command("rename", "Rename the session"), "NAME"),
+    command("settings", "Change the TUI settings and save them"),
+    optional(
+        command("theme", "Choose the colour theme, saved as the default"),
+        "[NAME]",
+    ),
     command("kill", "End the session, after a question"),
     later(optional(
         command("commit", "Commit the changes, after a question"),
@@ -119,7 +124,7 @@ pub fn search_text(text: &str) -> Option<&str> {
 }
 
 /// The commands whose argument the list completes.
-pub const COMPLETED: &[&str] = &["attach", "model"];
+pub const COMPLETED: &[&str] = &["attach", "model", "theme"];
 
 /// A value the argument list offers: what goes in the input, and a hint.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -185,7 +190,10 @@ mod tests {
     #[test]
     fn names_that_start_with_the_text_come_first() {
         // `model` starts with it; the others only contain it.
-        assert_eq!(names("m"), ["model", "permissions", "rename", "commit"]);
+        assert_eq!(
+            names("m"),
+            ["model", "permissions", "rename", "theme", "commit"]
+        );
         // Each group keeps the table order.
         assert_eq!(
             names("e"),
@@ -197,6 +205,8 @@ mod tests {
                 "sessions",
                 "new",
                 "rename",
+                "settings",
+                "theme",
                 "detach"
             ]
         );

@@ -133,6 +133,17 @@ impl Conversation {
         self.tops.clear();
     }
 
+    /// New settings: every entry is laid out again with them. What the user
+    /// expanded or collapsed stays.
+    pub fn reconfigure(&mut self, look: Look, limit: usize, expand_all: bool) {
+        self.look = look;
+        self.limit = limit;
+        self.expand_all = expand_all;
+        for entry in &mut self.entries {
+            entry.cache = None;
+        }
+    }
+
     /// What the user chose to expand, and the queued messages: the part of a
     /// session's view kept while the TUI shows another session.
     pub fn take_choices(&mut self) -> (HashMap<String, Expansion>, Vec<String>) {

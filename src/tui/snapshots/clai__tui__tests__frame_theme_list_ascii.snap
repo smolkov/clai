@@ -1,0 +1,34 @@
+---
+source: src/tui/tests.rs
+expression: text
+---
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
++ Theme -----------------------------------------------------------------------+
+| Filter:                                                                      |
+|                                                                              |
+| built in                                                                     |
+| > terminal         + current                                                 |
+|   dark                                                                       |
+|   light                                                                      |
+| bundled                                                                      |
+|   atom-one-dark    base dark                                                 |
+|   nord             base dark                                                 |
+|   gruvbox-dark     base dark                                                 |
+|   solarized-light  base light                                                |
+|                                                                              |
+| Enter take and save as default - Esc back to terminal                        |
++------------------------------------------------------------------------------+
+                                                                                
+                                                                                
+                                                                                
+--------------------------------------------------------------------------------
+>                                                                               
+--------------------------------------------------------------------------------
+  idle - /help - Ctrl-D detach                                                  
+  project - ~/ws/project - anthropic/sonnet - 1/1 - 0/200k

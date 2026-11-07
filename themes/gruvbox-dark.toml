@@ -1,0 +1,15 @@
+# Gruvbox (dark), bundled with clai. Copy it to ~/.config/clai/themes/gruvbox-dark.toml
+# to change it there; that file then replaces this one.
+base        = "dark"
+background  = "#282828"
+text        = "#ebdbb2"
+dim         = "#928374"
+user        = "#8ec07c"
+accent      = "#83a598"
+border      = "#504945"
+selection   = "#3c3836"
+success     = "#b8bb26"
+error       = "#fb4934"
+warning     = "#fabd2f"
+diff_add    = "#b8bb26"
+diff_remove = "#fb4934"

@@ -1,0 +1,15 @@
+# Solarized (light), bundled with clai. Copy it to ~/.config/clai/themes/solarized-light.toml
+# to change it there; that file then replaces this one.
+base        = "light"
+background  = "#fdf6e3"
+text        = "#657b83"
+dim         = "#93a1a1"
+user        = "#2aa198"
+accent      = "#268bd2"
+border      = "#93a1a1"
+selection   = "#eee8d5"
+success     = "#859900"
+error       = "#dc322f"
+warning     = "#b58900"
+diff_add    = "#859900"
+diff_remove = "#dc322f"

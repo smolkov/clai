@@ -81,7 +81,7 @@ Chosen for: pure Rust, works with a static musl build, maintained.
 |---------|-------|
 | Async runtime | `tokio` (rt-multi-thread, net, process, signal, fs, time), `tokio-util` (cancellation), `futures-util` (streams) |
 | CLI | `clap` (derive) |
-| Config | `serde`, `toml` (spans for file:line errors) |
+| Config | `serde`, `toml` (spans for file:line errors), `toml_edit` (writing `[tui]` with comments kept) |
 | JSON | `serde_json` |
 | HTTP | `reqwest` with `rustls` (aws-lc-rs) and `webpki-root-certs`; no OpenSSL |
 | SSE parsing | own small parser over the byte stream (few lines, fully tested) |
@@ -338,8 +338,9 @@ the server's queue at once; `unicode-width` is a direct dependency for cells.
 - Command list with search (built, see
   [RFC 0004](rfcs/0004-tui-command-list.md)); argument completion (built,
   RFC 0005); all `/` commands.
-- `[tui]` settings, themes, `NO_COLOR`, `CLAI_THEME`, ASCII symbols,
-  syntax highlighting, live reload.
+- `[tui]` settings, themes, `NO_COLOR`, `CLAI_THEME`, ASCII symbols, live
+  reload (built, see [RFC 0006](rfcs/0006-tui-settings.md): `/settings`,
+  `/theme`, theme files, saving with `toml_edit`); syntax highlighting.
 
 Tests: snapshots of list, picker, command list and each built-in theme.
 

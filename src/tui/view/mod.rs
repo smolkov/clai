@@ -11,11 +11,14 @@ mod picker;
 mod popup;
 pub mod prompt;
 mod sessions;
+mod settings;
 mod status;
+mod themes;
 
 use ratatui::Frame;
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Alignment, Rect};
+use ratatui::style::Color;
 use ratatui::widgets::{Paragraph, Wrap};
 
 use super::app::App;
@@ -115,7 +118,11 @@ pub fn draw(app: &App, frame: &mut Frame<'_>) {
     footer_row(buffer, areas.info, &info::text(app), look);
     match cursor(app, &areas) {
         Some((x, y))
-            if app.dialog.is_none() && app.picker.is_none() && app.session_list.is_none() =>
+            if app.dialog.is_none()
+                && app.picker.is_none()
+                && app.session_list.is_none()
+                && app.settings_box.is_none()
+                && app.theme_list.is_none() =>
         {
             frame.set_cursor_position((x, y));
         }
@@ -125,6 +132,29 @@ pub fn draw(app: &App, frame: &mut Frame<'_>) {
     popup::draw(app, frame, size);
     sessions::draw(app, frame, size);
     picker::draw(app, frame, size);
+    settings::draw(app, frame, size);
+    themes::draw(app, frame, size);
+    paint(frame.buffer_mut(), look);
+}
+
+/// A theme with `background` paints every cell the drawing left to the
+/// terminal, and gives the theme's text colour to text that has none, so it
+/// stays readable on that background.
+fn paint(buffer: &mut Buffer, look: &Look) {
+    let Some(background) = look.styles.background else {
+        return;
+    };
+    let text = look.styles.text.fg;
+    for cell in &mut buffer.content {
+        if cell.bg == Color::Reset {
+            cell.bg = background;
+        }
+        if cell.fg == Color::Reset
+            && let Some(text) = text
+        {
+            cell.fg = text;
+        }
+    }
 }
 
 fn cursor(app: &App, areas: &Areas) -> Option<(u16, u16)> {
