@@ -5,11 +5,12 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
-use crate::agent::{Agent, SessionEvent, Setup, State, now_secs, system_prompt, today};
+use crate::agent::{Agent, SessionEvent, Setup, State, now_ms, now_secs, system_prompt, today};
 use crate::config::{self, Config, LoadOptions};
 use crate::permissions::{SessionRules, Workspace};
 use crate::protocol::{
-    ErrorReply, ModelInfo, Notice, Outcome, Payload, Request, SessionInfo, Status,
+    DirInfo, ErrorReply, LimitsInfo, ModelInfo, ModelStatus, Notice, Outcome, Payload, Request,
+    SessionInfo, SessionStatus, Stats, Status,
 };
 use crate::session::store::{self, Meta, Store};
 use crate::session::{self, SessionHandle, Spec};
@@ -202,11 +203,13 @@ impl Shared {
             self.load.env.home.as_deref(),
         );
         let mut events = loaded.events;
+        let mut stats = loaded.stats;
         for text in problems {
             let notice = SessionEvent::Notice { text };
             if let Err(e) = store.append_event(&notice) {
                 tracing::warn!("saving a notice: {e}");
             }
+            stats.count(&notice, Some(now_ms()));
             events.push(notice);
         }
         let mut meta = loaded.meta;
@@ -218,6 +221,7 @@ impl Shared {
             if let Err(e) = store.append_event(&changed) {
                 tracing::warn!("saving the model change: {e}");
             }
+            stats.count(&changed, Some(now_ms()));
             events.push(changed);
         }
         meta.model = built.model;
@@ -232,6 +236,7 @@ impl Shared {
             store: Some(store),
             agent,
             log: events,
+            stats,
         }))
     }
 
@@ -239,27 +244,112 @@ impl Shared {
     fn models(&self) -> Reply {
         // Models come only from the user file; any workspace will do.
         let config = self.config(&std::env::temp_dir())?;
-        let getenv = |name: &str| std::env::var(name).ok();
         let mut models = Vec::new();
         for provider in config.providers.values() {
-            let key = provider.key.status(getenv).name();
             for model in provider.models.values() {
-                models.push(ModelInfo {
-                    model: format!("{}/{}", provider.name, model.name),
-                    provider: provider.name.clone(),
-                    name: model.name.clone(),
-                    id: model.id.clone(),
-                    context_window: model.context_window,
-                    default: config.default_model.provider == provider.name
-                        && config.default_model.model == model.name,
-                    key: key.to_owned(),
-                });
+                models.push(model_info(&config, provider, model));
             }
         }
         let path = lock(&self.config).path.clone();
         Ok(Payload::Models {
             models,
             config: path,
+        })
+    }
+
+    /// The status of the server, as `status` returns it.
+    async fn server_status(&self) -> Status {
+        let (sessions, running) = {
+            let all = lock(&self.sessions);
+            (all.len(), all.handles().len())
+        };
+        Status {
+            pid: std::process::id(),
+            sessions,
+            running,
+            busy: busy(self).await,
+            clients: lock(&self.clients).len(),
+            version: env!("CARGO_PKG_VERSION").to_owned(),
+        }
+    }
+
+    /// The full status of a session; a saved one is counted from its log
+    /// and stays saved.
+    async fn session_status(&self, name: &str) -> Reply {
+        let (id, found) = self.find(name)?;
+        let (store, saved) = {
+            let sessions = lock(&self.sessions);
+            let entry = sessions.get(id).ok_or_else(|| no_session(name))?;
+            let saved = match &entry.slot {
+                Slot::Saved(meta) => Some((**meta).clone()),
+                Slot::Running(_) => None,
+            };
+            (entry.store.clone(), saved)
+        };
+        let (session, stats, clients) = match (found, saved) {
+            (Found::Running(handle), _) => {
+                let report = handle.report().await.ok_or_else(session::gone)?;
+                (report.info, report.stats, report.clients)
+            }
+            (Found::Saved, Some(meta)) => {
+                let stats = match &store {
+                    Some(store) => store.stats().map_err(ErrorReply::failed)?,
+                    None => Stats::default(),
+                };
+                let mut info = meta.info(id, State::Saved, meta.queued.len(), None);
+                info.usage = stats.tokens;
+                (info, stats, Vec::new())
+            }
+            (Found::Saved, None) => return Err(no_session(name)),
+        };
+        // What the configuration says now for this workspace; a workspace
+        // that is gone still has a status.
+        let config = self.config(&session.path).ok();
+        let model = config.as_ref().and_then(|config| {
+            let model_ref = config.resolve_model(&session.model).ok()?;
+            let (provider, model) = config.model(&model_ref)?;
+            Some(ModelStatus {
+                info: model_info(config, provider, model),
+                api: provider.api.name().to_owned(),
+                base_url: provider.base_url.clone(),
+                temperature: model.temperature,
+                max_output_tokens: model.max_output_tokens,
+                max_retries: provider.max_retries,
+            })
+        });
+        let home = self.load.env.home.as_deref();
+        let extra_dirs = config
+            .as_ref()
+            .map(|config| {
+                config
+                    .permissions
+                    .extra_dirs
+                    .iter()
+                    .map(|dir| DirInfo {
+                        path: tilde(&dir.path, home),
+                        read_only: dir.access == crate::config::Access::Read,
+                        exists: dir.path.is_dir(),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let limits = config.as_ref().map(|config| LimitsInfo {
+            max_requests: config.limits.max_requests,
+            max_tool_calls: config.limits.max_tool_calls,
+        });
+        Ok(Payload::SessionStatus {
+            status: Box::new(SessionStatus {
+                session,
+                stats,
+                clients,
+                dir: store.as_ref().map(|s| tilde(s.dir(), home)),
+                size: store.as_ref().map(Store::size),
+                extra_dirs,
+                model,
+                limits,
+                now: now_ms(),
+                server: self.server_status().await,
+            }),
         })
     }
 
@@ -361,20 +451,8 @@ impl Conn {
             },
             Request::Export { session, path } => self.export(&session, &path),
             Request::Import { path, name } => self.import(&path, name),
-            Request::Status => {
-                let (sessions, running) = {
-                    let all = lock(&shared.sessions);
-                    (all.len(), all.handles().len())
-                };
-                Ok(Payload::Status(Status {
-                    pid: std::process::id(),
-                    sessions,
-                    running,
-                    busy: busy(&shared).await,
-                    clients: lock(&shared.clients).len(),
-                    version: env!("CARGO_PKG_VERSION").to_owned(),
-                }))
-            }
+            Request::Status => Ok(Payload::Status(shared.server_status().await)),
+            Request::SessionStatus { session } => shared.session_status(&session).await,
             Request::Models => shared.models(),
             Request::Stop => {
                 tracing::info!(client = %self.outbox.name, "stop requested");
@@ -453,6 +531,7 @@ impl Conn {
                 store: store.clone(),
                 agent: built.agent,
                 log,
+                stats: Stats::default(),
             });
             sessions.insert(
                 id,
@@ -600,5 +679,29 @@ impl Conn {
         Ok(Payload::Session {
             session: Box::new(info),
         })
+    }
+}
+
+/// A configured model as `models` lists it.
+fn model_info(config: &Config, provider: &config::Provider, model: &config::Model) -> ModelInfo {
+    let getenv = |name: &str| std::env::var(name).ok();
+    ModelInfo {
+        model: format!("{}/{}", provider.name, model.name),
+        provider: provider.name.clone(),
+        name: model.name.clone(),
+        id: model.id.clone(),
+        context_window: model.context_window,
+        default: config.default_model.provider == provider.name
+            && config.default_model.model == model.name,
+        key: provider.key.status(getenv).name().to_owned(),
+    }
+}
+
+/// A path as shown: `~/ws/shared-lib`.
+fn tilde(path: &Path, home: Option<&Path>) -> String {
+    match home.and_then(|h| path.strip_prefix(h).ok()) {
+        Some(rest) if rest.as_os_str().is_empty() => "~".into(),
+        Some(rest) => format!("~/{}", rest.display()),
+        None => path.display().to_string(),
     }
 }

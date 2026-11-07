@@ -76,7 +76,7 @@ widens the rule, `Enter` confirms), `n` no, `e` no with a message to the model,
 Commands: `/help`, `/model [PROVIDER/MODEL]` (without one, choose it as with
 `Ctrl-O`), `/sessions`, `/new [NAME]` (a session in the same workspace; the model
 picker starts on `default_model`, so `Enter` takes it), `/attach [NAME]`,
-`/rename NAME`, `/settings`, `/theme [NAME]`, `/kill`, `/detach`, `/quit`. `/` in the empty input lists them:
+`/rename NAME`, `/status [NAME]`, `/settings`, `/theme [NAME]`, `/kill`, `/detach`, `/quit`. `/` in the empty input lists them:
 type to search, `Up` / `Down` select, `Enter` runs, `Tab` completes, `Esc` closes
 the list and keeps the text. After `/attach ` and `/model ` a list offers the
 session names and models the same way. The list also shows commands of later
@@ -84,6 +84,13 @@ versions, dimmed. A message that starts with `/` is written `//…`.
 
 Switching keeps each session's unsent input, scroll position and expanded tool
 calls. When the attached session ends, the session list opens.
+
+`/status` shows the attached session, `/status NAME` another one, running or
+saved: state, workspace, clients, where it is saved; the model with its key,
+context use and settings; the running turn against `[limits]`; and statistics
+over the whole session: turns, requests, retries, errors, tokens, time spent
+working, tool calls per tool, and questions by answer and client. It updates
+while open; `Esc` closes it.
 
 `/settings` shows the `[tui]` settings: change one with `Enter` or `Left` /
 `Right` and see it at once, `d` sets the default, `s` saves into the config file
@@ -153,7 +160,7 @@ clai import api.json                  # add it again (e.g. on another machine)
 `clai chat` is a plain-text chat: lines you type go to the model, its text
 streams back with one line per tool call. `Ctrl-C` cancels the running
 turn, `Ctrl-D` detaches (the session keeps working), `/help` lists the
-commands (`/cancel`, `/model`, `/usage`, `/sessions`, `/attach NAME`,
+commands (`/cancel`, `/model`, `/usage`, `/status [NAME]`, `/sessions`, `/attach NAME`,
 `/new [NAME] [PROVIDER/MODEL]`, `/models`, `/detach`, `/kill`). It shows each question
 with the diff or command and reads the answer as a line: `y` allow, `a` always (then a rule), `n` deny, `e` deny
 with a message, `c` cancel the turn; for a limit question `y` continue,

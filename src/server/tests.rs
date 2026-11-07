@@ -717,7 +717,10 @@ async fn version_mismatch() {
     let ServerMessage::Error { message } = reply else {
         panic!("{reply:?}");
     };
-    assert!(message.contains("version 3"), "{message}");
+    assert!(
+        message.contains(&format!("version {}", protocol::VERSION)),
+        "{message}"
+    );
     assert!(message.contains("clai server stop"), "{message}");
     fx.stop().await;
 }
@@ -1452,7 +1455,10 @@ async fn an_older_client_gets_the_version_error() {
     let ServerMessage::Error { message } = reply else {
         panic!("{reply:?}");
     };
-    assert!(message.contains("version 3"), "{message}");
+    assert!(
+        message.contains(&format!("version {}", protocol::VERSION)),
+        "{message}"
+    );
     assert!(message.contains("clai server stop"), "{message}");
     fx.stop().await;
 }
@@ -1494,5 +1500,120 @@ async fn deny_with_a_message_closes_the_question_and_goes_on() {
         _ => None,
     })
     .await;
+    fx.stop().await;
+}
+
+async fn session_status(client: &mut Client, name: &str) -> crate::protocol::SessionStatus {
+    match client
+        .request(Request::SessionStatus {
+            session: name.into(),
+        })
+        .await
+        .unwrap()
+    {
+        Payload::SessionStatus { status } => *status,
+        other => panic!("{other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn session_status_of_a_running_and_a_saved_session() {
+    let script = Script::new(vec![
+        write_call("c1", "a.txt"),
+        say_counted("done", 100, 10),
+    ]);
+    let mut fx = Fixture::start(vec![script]).await;
+    let mut c = fx.client("tui", true).await;
+    new_session(&mut c, &fx.ws, Some("s")).await;
+    attach(&mut c, "s").await;
+    send(&mut c, "s", "write a.txt").await;
+    let q = question(&mut c).await;
+
+    // While it waits: the turn runs, the client is listed.
+    let status = session_status(&mut c, "s").await;
+    assert_eq!(status.session.state, State::Waiting);
+    assert!(status.stats.turn.is_some());
+    assert_eq!(
+        status.clients,
+        [crate::protocol::ClientInfo {
+            name: "tui".into(),
+            answers: true
+        }]
+    );
+    let limits = status.limits.unwrap();
+    assert_eq!((limits.max_requests, limits.max_tool_calls), (50, 120));
+    let model = status.model.unwrap();
+    assert_eq!(model.info.model, "fake/one");
+    assert_eq!(model.api, "openai-compatible");
+    assert_eq!(model.info.key, "config");
+    assert!(status.dir.is_some());
+    assert!(status.size.unwrap() > 0);
+    assert_eq!(status.server.running, 1);
+
+    answer(&mut c, "s", &q.id, Answer::Allow).await.unwrap();
+    assert_eq!(turn_end(&mut c).await, EndReason::Done);
+    let status = session_status(&mut c, "s").await;
+    let stats = &status.stats;
+    assert!(stats.turn.is_none());
+    assert_eq!(stats.turns.done, 1);
+    // The first request reported no usage; the end of the turn counts it.
+    assert_eq!(stats.requests, 2);
+    assert_eq!(stats.tokens, totals(100, 10));
+    assert_eq!(stats.tools["write_file"].done, 1);
+    assert_eq!(stats.answers.allow, 1);
+    assert_eq!(stats.by["tui"], 1);
+    assert!(stats.last_active.is_some());
+    let (_, exact) = stats.working_time(status.now);
+    assert!(exact);
+    let running = status.stats.clone();
+    drop(c);
+
+    // Saved: counted from the log, with the same result, and not resumed.
+    fx.restart().await;
+    let mut c = fx.client("tui", true).await;
+    let status = session_status(&mut c, "s").await;
+    assert_eq!(status.session.state, State::Saved);
+    assert!(status.clients.is_empty());
+    assert_eq!(status.stats.tools, running.tools);
+    assert_eq!(status.stats.answers, running.answers);
+    assert_eq!(status.stats.turns, running.turns);
+    assert_eq!(status.stats.tokens, running.tokens);
+    assert_eq!(status.session.usage, totals(100, 10));
+    assert_eq!(c.list().await.unwrap()[0].state, State::Saved);
+    // Every saved event has its time.
+    let text = fs::read_to_string(saved_dir(&fx).join("events.jsonl")).unwrap();
+    assert!(text.lines().all(|line| line.contains("\"at\":")), "{text}");
+
+    let error = c
+        .request(Request::SessionStatus {
+            session: "nope".into(),
+        })
+        .await
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("no session named nope"),
+        "{error}"
+    );
+    fx.stop().await;
+}
+
+#[tokio::test]
+async fn session_status_of_a_model_no_longer_configured() {
+    let fx = Fixture::start(vec![Script::new(Vec::new())]).await;
+    let mut c = fx.client("tui", true).await;
+    c.request(Request::New {
+        workspace: fx.ws.clone(),
+        name: Some("s".into()),
+        model: Some("fake/two".into()),
+    })
+    .await
+    .unwrap();
+    let without_two = CONFIG.split("[providers.fake.models.two]").next().unwrap();
+    fs::write(&fx.config, without_two).unwrap();
+    assert!(matches!(notice(&mut c).await, Notice::ConfigReloaded));
+    let status = session_status(&mut c, "s").await;
+    assert_eq!(status.session.model, "fake/two");
+    assert!(status.model.is_none());
+    assert!(status.limits.is_some());
     fx.stop().await;
 }

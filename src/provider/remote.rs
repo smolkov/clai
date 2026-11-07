@@ -114,6 +114,19 @@ pub(crate) struct Sink {
 }
 
 impl Sink {
+    /// Says that the request is tried again; a retry is still possible
+    /// after it, as nothing of the answer was sent.
+    pub async fn retry(&mut self, attempt: u32, max: u32, reason: String) {
+        let _ = self
+            .tx
+            .send(Ok(Event::Retry {
+                attempt,
+                max,
+                reason,
+            }))
+            .await;
+    }
+
     pub async fn send(&mut self, event: Event) -> Result<(), ProviderError> {
         self.sent = true;
         self.tx
@@ -194,6 +207,8 @@ impl<C: Codec> Inner<C> {
                         attempt = attempt + 1,
                         "retrying"
                     );
+                    sink.retry(attempt + 1, self.retry.max_retries, e.message.clone())
+                        .await;
                     tokio::time::sleep(wait).await;
                     attempt += 1;
                 }

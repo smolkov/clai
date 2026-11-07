@@ -13,6 +13,7 @@ mod picker;
 mod prompt;
 mod sessions;
 mod settings;
+mod status;
 mod style;
 pub mod terminal;
 mod themes;
@@ -286,7 +287,7 @@ fn colouring() -> style::Colouring {
 
 /// The offset of local time from UTC in seconds, from `date`: the standard
 /// library has no local time, and it is not worth a dependency.
-fn local_offset() -> i64 {
+pub(crate) fn local_offset() -> i64 {
     Command::new("date")
         .arg("+%z")
         .output()

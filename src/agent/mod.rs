@@ -26,9 +26,10 @@ use crate::tools::{self, Env, Prepared, PreparedCall, ToolOutput};
 
 pub use events::{
     CallResult, CallState, EndReason, EventSink, SessionEvent, State, ToolCallEvent, TurnEnd,
+    retry_text,
 };
 pub use history::{History, INTERRUPTED, Journal, Record};
-pub use prompt::{now_secs, system_prompt, today};
+pub use prompt::{date_of, now_ms, now_secs, system_prompt, today};
 pub use question::{
     Answer, Asker, CallInfo, Choice, Closed, LIMIT_CHOICES, Limit, PERMISSION_CHOICES, Permission,
     PolicyAsker, Question, QuestionKind, Reply, SessionRef, TurnInfo,

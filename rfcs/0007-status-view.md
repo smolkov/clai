@@ -1,7 +1,7 @@
 # Status view
 
 - RFC: 0007
-- Status: draft
+- Status: done
 - Spec: [`spec/tui.md`](../spec/tui.md), "Input editor" (commands), "Footer";
   [`spec/sessions.md`](../spec/sessions.md), "Persistence";
   [`spec/architecture.md`](../spec/architecture.md) (protocol);
@@ -264,42 +264,42 @@ aligned as in the box. `/usage` prints only the "tokens" and "context" rows.
 ## Implementation plan
 
 1. **Timestamps in the log**
-   - Status: todo
+   - Status: done
    - Files: `session/store.rs`,
      `spec/sessions.md`
    - Result: new events carry `at`; old logs load unchanged
    - Tests: round trip; old log
 2. **Retry event**
-   - Status: todo
+   - Status: done
    - Files: `provider/remote.rs`, `agent/events.rs`, `agent/` loop,
      `tui/conversation.rs`, `command/chat/`, `spec/agent-loop.md`
    - Result: retries are logged and shown as notices
    - Tests: HTTP test with 503s; TUI and chat notice
 3. **Statistics**
-   - Status: todo
+   - Status: done
    - Files: `session/stats.rs` (new), `session/mod.rs`, `protocol/mod.rs`
      (`TokenTotals` into `Stats`)
    - Result: running counters, built on resume and from a saved log
    - Tests: `Stats::count` unit tests
 4. **`session_status` request**
-   - Status: todo
+   - Status: done
    - Files: `protocol/mod.rs`, `server/requests.rs`, `session/mod.rs`,
      `server/tests.rs`, `spec/architecture.md`
    - Result: protocol 4; the status of running and saved sessions
    - Tests: server tests above
 5. **Status box in the TUI**
-   - Status: todo
+   - Status: done
    - Files: `tui/status.rs`, `tui/view/status_box.rs`, `tui/app.rs`,
      `tui/commands.rs`, `tui/tests.rs`, `spec/tui.md`
    - Result: `/status [NAME]`, live, scrollable
    - Tests: App and snapshot tests
 6. **`clai chat`**
-   - Status: todo
+   - Status: done
    - Files: `command/chat/talk.rs`, `spec/command.md`
    - Result: `/status [NAME]` as text; `/usage` short
    - Tests: text output
 7. **Docs**
-   - Status: todo
+   - Status: done
    - Files: `readme.md`, `todo.md`, `implementation.md`, this RFC
    - Result: status `done`
 
@@ -319,11 +319,29 @@ aligned as in the box. `/usage` prints only the "tokens" and "context" rows.
 
 ## Open questions
 
-1. Should the box update while open, as proposed, or only show the moment it
-   was opened (with `r` to refresh)?
-2. Should the context bar turn to the warning colour at 80 %, and should the
-   footer do the same?
-3. Should a turn's time be shown per turn, for example the five longest
-   turns, or are the totals enough?
-4. Should the `retry` notice stay in the conversation, or show only in the
-   status row while it lasts?
+None left. The user asked to build it without answering them; the proposals
+were taken:
+
+1. The box updates while open: every second while the session works, and at
+   the next second after an event of the attached session. No `r` key.
+2. The context row turns to the warning colour at 80 %. The footer is not
+   changed.
+3. Totals only; no list of the longest turns.
+4. The `retry` notice stays in the conversation, as other notices do.
+
+## Notes from building
+
+- The retry reaches the agent as a provider stream event (`Event::Retry`,
+  sent by the adapter's `Sink` before the wait) rather than through a
+  callback. It does not count as the start of the stream, so the request can
+  still be retried after it.
+- "requests" counts `usage` events, and at the end of a turn adds the
+  requests of `turn_end` that reported no usage. Otherwise a provider without
+  usage reports would show none.
+- The session directory comes as a display path (`~/…`) from the server,
+  like the workspace, so clients need no home directory.
+- The box also closes with `q`, and scrolls with `Home` / `End`.
+- `text::status` builds the sections once, for the box and for `clai chat`.
+- Check: a pseudo-terminal run of the real TUI with a fake model server. It
+  covered a turn with a question, `/status`, scrolling and closing, and a 503
+  that shows `retrying (1/2): HTTP 503: busy` and `1 retry` in the box.

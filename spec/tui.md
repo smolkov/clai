@@ -119,6 +119,9 @@ thing cut on a narrow terminal, and left out until the first `usage` event.
 The TUI sums the `usage` events of the log it replays, and starts again on a
 reconnect, so a reconnect never counts anything twice.
 
+When the provider retries a request, the conversation shows a notice:
+`retrying (2/3): HTTP 503: busy`.
+
 ## Model picker
 
 Each session has its own provider and model. The model picker chooses them.
@@ -302,6 +305,7 @@ The prompt takes keys only for the prompt bar, as for permission prompts.
 | `/new [NAME]` | Start a new session in the same workspace and attach to it; the model picker opens on `default_model` first. |
 | `/attach [NAME]` | Attach to another session; without a name, open the session list. A name that is not in the list stays in the input with a notice. |
 | `/rename NAME` | Rename the attached session. |
+| `/status [NAME]` | Open the status box: the full status of the attached session, or of session `NAME`, running or saved, and its statistics. See [Status box](#status-box). |
 | `/settings` | Open the settings box: the `[tui]` settings, changed with a preview and saved into the user file. See [Settings](#settings). |
 | `/theme [NAME]` | Open the theme list; with a name, switch to that theme. Either way the theme is saved as the default. See [Theme list](#theme-list). |
 | `/kill`    | End the attached session, after confirmation, and open the session list. |
@@ -460,6 +464,87 @@ Mouse wheel scrolls the conversation. Mouse capture can be turned off with
   stop it, cancel the turn or kill the session.
 - On exit, the terminal is restored before anything else is printed. A panic
   hook and signal handlers (`SIGTERM`, `SIGHUP`) restore it too.
+
+## Status box
+
+`/status [NAME]` opens a box with the status of a session and statistics over
+its whole log, from the `session_status` request (see
+[`architecture.md`](architecture.md), "Protocol"). `NAME` is completed from the
+session list, the attached session included; a name that is not in the list
+stays in the input with a notice. A saved session is shown without being
+resumed. The box opens at once ("asking the server…") and fills with the
+answer; a first answer that fails closes it with the error.
+
+```
+┌ Status ─ project ────────────────────────────────────────────────────────────┐
+│ Session                                                                      │
+│   name         project  (id 1)                                               │
+│   state        working                                                       │
+│   workspace    ~/ws/project                                                  │
+│   extra dirs   ~/ws/shared-lib  ⚠ missing                                    │
+│   created      2026-11-01 01:00  (2h 10m ago)                                │
+│   last active  2h 08m ago                                                    │
+│   clients      2: chat pts/5 (watching), tui pts/3 (this)                    │
+│   queued       1 message                                                     │
+│   saved in     ~/.local/state/clai/sessions/1  (1.2 MB)                      │
+│                                                                              │
+│ Model                                                                        │
+│   model        anthropic/sonnet  (claude-sonnet-5-5)                         │
+│   api          anthropic  https://api.anthropic.com                          │
+│   key          set in the environment                                        │
+│   context      170k / 200k  █████████████████░░░  85%                        │
+│   settings     temperature default ─ max output default ─ max_retries 3      │
+│   changes      1; first anthropic/haiku                                      │
+│                                                                              │
+│ This turn                                                                    │
+│   requests     0 / 50                                                        │
+│   tool calls   0 / 120                                                       │
+│   running      2h 08m                                                        │
+│                                                                              │
+│ Totals                                                                       │
+│   turns        1: 1 done                                                     │
+│   requests     1 ─ 1 retry                                                   │
+│   tokens       in 2.1M ─ out 84.3k                                           │
+│   working      2h 09m of 2h 10m                                              │
+│                                                                              │
+│ Tool calls     calls  done  error  denied  cancelled                         │
+│   read_file        2     2      0       0          0                         │
+│   edit_file        1     0      0       1          0                         │
+│   all              3     2      0       1          0                         │
+│                                                                              │
+│ Questions      1: 1 yes                                                      │
+│                by tui pts/3 1                                                │
+│                                                                              │
+│ Server         0.4.0 ─ pid 4242 ─ 3 sessions, 2 running ─ 3 clients          │
+│                                                                              │
+│ Up Down PgUp PgDn scroll ─ Esc close                                         │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+- Rows that do not apply are left out: extra dirs when there are none, the
+  clients and "This turn" of a saved session, "queued" without a queue,
+  "changes" when the model never changed. "This turn" is shown while a turn
+  runs; its counts start again after `continue` on a limit question.
+- The model rows are the configuration in effect now for the session's
+  workspace; a model that is no longer configured is marked. The key row says
+  where the key comes from; `api_key_cmd` is not run. The context row turns to
+  the warning colour from 80 % of the context window on.
+- Times come from the event log. A log of an older `clai` has none: its
+  stretches count as unknown, and "working" then shows `≥`; a session with no
+  known time shows `?`. "working" counts the time in `working`, not the time
+  waiting for an answer.
+- "requests" counts the model requests that answered: from `usage` events, and
+  from the counts at the end of a turn for requests that reported no usage.
+  "retries" counts `retry` events, "error" the `error` events.
+- The box updates while it is open: every second while the session works, and
+  at the next second after an event of the attached session changed it. It
+  does not poll an idle session. A refresh that fails keeps what is shown.
+- `Up` / `Down`, `PgUp` / `PgDn` and `Home` / `End` scroll a box taller than
+  the screen; `Esc`, `q` and `Ctrl-C` close it. A question that opens closes
+  the box, as it closes the other boxes; so does a switch to another session,
+  and the end of the session it shows.
+- With ASCII symbols, the bar is `[####......]`, separators are `-` and the
+  warning mark is `!`.
 
 ## Settings
 

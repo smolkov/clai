@@ -350,8 +350,11 @@ The test passes now.
   elsewhere closes with `answered in tui pts/3: allow`.
 - Commands: `/cancel` cancels the running turn, `/model [PROVIDER/MODEL]`
   shows or changes the model, `/usage` prints the tokens used
-  (`tokens: in 45.1k, out 3.2k; context 12.3k`), `/detach` leaves, `/kill` ends
-  the session and leaves, `/help` lists them.
+  (`tokens: in 45.1k, out 3.2k; context 12.3k`), `/status [NAME]` prints the
+  status and statistics of the attached session or of session `NAME` as the
+  TUI's status box shows them (see [`tui.md`](tui.md), "Status box"), as text,
+  `/detach` leaves, `/kill` ends the session and leaves, `/help` lists them.
+  A `retry` event prints `clai: retrying (1/3): …`.
 - Sessions: `/sessions` prints the table of `clai ls`, the attached session
   marked `*`. `/attach NAME` attaches to another session and shows its history.
   `/new [NAME] [PROVIDER/MODEL]` creates a session in the attached session's

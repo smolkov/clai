@@ -247,7 +247,7 @@ stop, a crash or a reboot. `clai run` sessions are not saved.
   |------|---------|---------|
   | `session.json` | Format version, `clai` version, name, workspace, `provider/model`, created and updated time, number of turns, queued messages, tokens used (`usage`). | Replaced atomically (temporary file, then rename) on every change. |
   | `history.jsonl` | What the model sees: each message (text, tool calls, tool results), full tool outputs that were cut for the model, and allow rules added by `always` answers (as text). | Appended as the agent adds them. |
-  | `events.jsonl` | What clients see: the event log. Streamed text is kept as whole blocks (`text_done`), a command's live output only as the call's final result; `ended` is not kept. | Appended as events happen. |
+  | `events.jsonl` | What clients see: the event log. Streamed text is kept as whole blocks (`text_done`), a command's live output only as the call's final result; `ended` is not kept. Each line has `at`, the time it was logged in milliseconds since 1970. | Appended as events happen. |
 
   Token totals are written after each model request. On resume they are summed
   from the log, which is the truth: this covers a session of an older `clai` (it
@@ -259,6 +259,13 @@ stop, a crash or a reboot. `clai run` sessions are not saved.
   value per line; a last line cut by a crash is left out when loading. A
   file of a newer format than the running `clai` reads is refused and left
   untouched.
+- **Statistics:** the session counts every event as it publishes it, for
+  `session_status` (see [`architecture.md`](architecture.md), "Protocol"). On
+  resume, and for a saved session, which is not resumed for it, the log is
+  counted again: it is the truth, and the counts are not saved. A line without
+  `at` (an older `clai`) has an unknown time; the format stays `1`. Events that
+  close a turn left open by a crash get the time of the last event, so the time
+  the server was away does not count as work. `clai export` keeps the times.
 - **Saved state:** a server that starts lists every saved session with the
   state `saved`, reading only `session.json`. A command that names it
   resumes it: `attach`, `send`, `set_model` (`clai chat NAME`, `clai send`,

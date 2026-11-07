@@ -247,7 +247,7 @@ need the network. Build output goes to `target/`, the spec book to
 Clients and the server exchange JSON messages over the Unix socket, one
 message per line (at most 16 MiB). Every message is an object with a
 `type`. The first message in each direction is `hello` with the protocol
-version (now `3`); on a mismatch the server sends `error` and closes the
+version (now `4`); on a mismatch the server sends `error` and closes the
 connection, and the message tells the user to restart the server with
 `clai server stop` (see [`sessions.md`](sessions.md), "Server"). The code
 is in `src/protocol/`.
@@ -257,9 +257,9 @@ Message kinds:
 | Direction | Kind | Content |
 |-----------|------|---------|
 | client → server | `hello` | Protocol version; client kind (`tui`, `chat`, `cli`, `bridge`) and name (e.g. `tui pts/3`, `clai chat`), which is shown as who answered; whether it answers questions. |
-| client → server | `request` | An id and a command: `new`, `list`, `kill`, `rename`, `attach`, `detach`, `send` (message), `set_model`, `cancel`, `answer`, `export`, `import`, `status`, `models`, `stop`. Each gets exactly one `response`. Sessions are named by their current name; `attach`, `send` and `set_model` resume a saved session. |
+| client → server | `request` | An id and a command: `new`, `list`, `kill`, `rename`, `attach`, `detach`, `send` (message), `set_model`, `cancel`, `answer`, `export`, `import`, `status`, `session_status`, `models`, `stop`. Each gets exactly one `response`. Sessions are named by their current name; `attach`, `send` and `set_model` resume a saved session. |
 | server → client | `hello` | Protocol version and the server's PID. |
-| server → client | `response` | The request's id and its `result`: `ok` with a payload (`done`, a session, the session list, the status, the models) or `error` with a message, marked `usage` when the request itself was wrong (the command then exits `2`). |
+| server → client | `response` | The request's id and its `result`: `ok` with a payload (`done`, a session, the session list, the status, a session's status, the models) or `error` with a message, marked `usage` when the request itself was wrong (the command then exits `2`). |
 | server → client | `event` | Something that happened in an attached session, with the session's id, and `replay` when it is part of the log sent on attach (see below). |
 | server → client | `notice` | Server-wide: `config_reloaded`, `config_rejected` (with the errors), `session_created`, `stopping`. |
 | server → client | `error` | The connection cannot go on: wrong version, a message that is not valid. |
@@ -285,6 +285,7 @@ Session events, in the order they happen:
 | `question`, `question_closed` | A question with all its details, and its answer with the client that gave it (see [`sessions.md`](sessions.md), "Questions"). |
 | `usage` | Tokens of a request, context size. The session sums them; the session info has the totals as `usage`. |
 | `error` | A provider or session error that ended a request or turn. |
+| `retry` | A model request failed and is tried again: the attempt (from 1), `max_retries` and the reason. |
 | `turn_end` | The turn ended: done, cancelled, limit reached or failed. |
 | `model_changed`, `renamed`, `ended` | Session settings and lifetime; `model_changed` has the new model and, as `from`, the old one (none in a log of an older `clai`); `ended` has a reason: `killed`, `failed`, `server stopped`. |
 
@@ -298,6 +299,19 @@ client that attaches late shows the same conversation as one that was there
 from the start (see [`tui.md`](tui.md), "Switching sessions"). The log is
 kept in memory, whole, while the session runs, and on disk without the
 streamed pieces; a resumed session replays it from disk.
+
+The `session_status` request names a session, running or saved, and answers
+with its full status: the session info; its statistics, counted from the log
+(tokens, context size, turns by how they ended, requests, retries, errors, tool
+calls per tool and final state, answers per kind and per client, model
+changes, time in `working`, last activity, and the running turn's progress);
+the attached clients; the session directory as shown and its size; the extra
+directories of the workspace and whether they exist; the model as configured
+now (with API, base URL, `temperature`, `max_output_tokens`, `max_retries`), or
+none when it is no longer configured; the limits in effect for the workspace;
+the server's clock and its `status`. A saved session is counted from its
+`events.jsonl` and stays saved (see [`sessions.md`](sessions.md),
+"Statistics").
 
 The session list has the state `saved` besides `idle`, `working` and
 `waiting`: a session on disk, not loaded. `status` reports the sessions,

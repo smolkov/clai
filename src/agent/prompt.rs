@@ -47,9 +47,16 @@ pub fn now_secs() -> u64 {
         .map_or(0, |d| d.as_secs())
 }
 
+/// Milliseconds since 1970, for the times of logged events.
+pub fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
+}
+
 /// The UTC date of a time in seconds since 1970 (H. Hinnant's
 /// `civil_from_days`).
-fn date_of(secs: u64) -> String {
+pub fn date_of(secs: u64) -> String {
     let days = i64::try_from(secs / 86_400).unwrap_or(0) + 719_468;
     let era = days.div_euclid(146_097);
     let doe = days.rem_euclid(146_097);

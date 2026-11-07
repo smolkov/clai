@@ -2,8 +2,14 @@
 //! "Protocol"): one JSON object per line over the Unix socket. The first
 //! message in each direction is `hello` with the protocol version.
 
+mod stats;
 #[cfg(test)]
 mod tests;
+
+pub use stats::{
+    AnswerCounts, ClientInfo, DirInfo, LimitsInfo, ModelStatus, RunningTurn, SessionStatus, Stats,
+    ToolCounts, TurnCounts,
+};
 
 use std::path::PathBuf;
 
@@ -14,7 +20,7 @@ use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWrite, AsyncWr
 use crate::agent::{Answer, Question, SessionEvent, State};
 
 /// The protocol version; a new message or event kind needs a new one.
-pub const VERSION: u32 = 3;
+pub const VERSION: u32 = 4;
 
 /// The longest message accepted, in bytes.
 pub const MAX_LINE: usize = 16 << 20;
@@ -118,6 +124,11 @@ pub enum Request {
         name: Option<String>,
     },
     Status,
+    /// The full status of a session, running or saved, with its statistics;
+    /// a saved session is not resumed.
+    SessionStatus {
+        session: String,
+    },
     /// The models of the server's configuration.
     Models,
     /// Stops the server; running sessions stop and stay saved.
@@ -196,6 +207,9 @@ pub enum Payload {
         sessions: Vec<SessionInfo>,
     },
     Status(Status),
+    SessionStatus {
+        status: Box<SessionStatus>,
+    },
     Models {
         models: Vec<ModelInfo>,
         /// The user config file the server reads.

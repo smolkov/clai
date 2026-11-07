@@ -119,6 +119,15 @@ pub async fn collect(
                     input_tokens,
                     output_tokens,
                 } => out.usage = Some((input_tokens, output_tokens)),
+                Event::Retry {
+                    attempt,
+                    max,
+                    reason,
+                } => events.emit(SessionEvent::Retry {
+                    attempt,
+                    max,
+                    reason,
+                }),
                 Event::Done { stop_reason } => {
                     out.stop = Some(stop_reason);
                     break;

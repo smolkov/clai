@@ -20,7 +20,9 @@ use crate::agent::{
     SessionRef, State,
 };
 use crate::config::Model;
-use crate::protocol::{ErrorReply, Outcome, Payload, ServerMessage, SessionInfo, TokenTotals};
+use crate::protocol::{
+    ClientInfo, ErrorReply, Outcome, Payload, ServerMessage, SessionInfo, Stats,
+};
 use crate::provider::Provider;
 
 use questions::{Pending, Questions};
@@ -41,6 +43,15 @@ pub struct Spec {
     pub agent: Agent,
     /// The event log so far, if resumed.
     pub log: Vec<SessionEvent>,
+    /// Counted from the log, with its times.
+    pub stats: Stats,
+}
+
+/// What a running session says about itself for `session_status`.
+pub struct Report {
+    pub info: SessionInfo,
+    pub stats: Stats,
+    pub clients: Vec<ClientInfo>,
 }
 
 /// Commands to a session.
@@ -75,6 +86,9 @@ enum Msg {
     },
     Info {
         reply: oneshot::Sender<SessionInfo>,
+    },
+    Report {
+        reply: oneshot::Sender<Report>,
     },
     Kill {
         reason: String,
@@ -168,6 +182,12 @@ impl SessionHandle {
     pub async fn info(&self) -> Option<SessionInfo> {
         let (reply, rx) = oneshot::channel();
         self.send(Msg::Info { reply }).ok()?;
+        rx.await.ok()
+    }
+
+    pub async fn report(&self) -> Option<Report> {
+        let (reply, rx) = oneshot::channel();
+        self.send(Msg::Report { reply }).ok()?;
         rx.await.ok()
     }
 
@@ -274,6 +294,7 @@ struct Actor {
     state: State,
     queue: VecDeque<String>,
     log: Vec<SessionEvent>,
+    stats: Stats,
     clients: HashMap<ClientId, Client>,
     questions: Questions,
     rx: mpsc::UnboundedReceiver<Msg>,
@@ -302,7 +323,7 @@ impl Actor {
         // The log is the truth: this covers a session of an older `clai`, and a
         // crash between writing an event and writing the meta.
         let meta = Meta {
-            usage: TokenTotals::of_log(&spec.log),
+            usage: spec.stats.tokens,
             ..spec.meta
         };
         Actor {
@@ -317,6 +338,7 @@ impl Actor {
             state: State::Idle,
             queue,
             log: spec.log,
+            stats: spec.stats,
             clients: HashMap::new(),
             questions: Questions::default(),
             rx,
@@ -421,6 +443,22 @@ impl Actor {
             Msg::Info { reply } => {
                 let _ = reply.send(self.info());
             }
+            Msg::Report { reply } => {
+                let mut clients: Vec<ClientInfo> = self
+                    .clients
+                    .values()
+                    .map(|c| ClientInfo {
+                        name: c.outbox.name.clone(),
+                        answers: c.answers,
+                    })
+                    .collect();
+                clients.sort_by(|a, b| a.name.cmp(&b.name));
+                let _ = reply.send(Report {
+                    info: self.info(),
+                    stats: self.stats.clone(),
+                    clients,
+                });
+            }
             Msg::Kill {
                 reason,
                 keep,
@@ -489,7 +527,9 @@ impl Actor {
         }
         // First the event, then the meta: after a crash between the two, the
         // log has the count and the next resume sums it.
-        self.save_event(&event);
+        let at = crate::agent::now_ms();
+        self.stats.count(&event, Some(at));
+        self.save_event(&event, at);
         if matches!(event, SessionEvent::Usage { .. }) {
             self.meta.usage.count(&event);
             self.save_meta();
@@ -500,12 +540,15 @@ impl Actor {
     /// Appends an event to the saved log. `ended` is never saved: a
     /// killed session's files are deleted, a stopped server's sessions
     /// are resumed.
-    fn save_event(&mut self, event: &SessionEvent) {
+    fn save_event(&mut self, event: &SessionEvent, at: u64) {
         if matches!(event, SessionEvent::Ended { .. }) {
             return;
         }
         let result = match &self.store {
-            Some(store) => store.append_event(event),
+            Some(store) => store.append_stamped(&store::Stamped {
+                at: Some(at),
+                event: event.clone(),
+            }),
             None => return,
         };
         self.saved(result);

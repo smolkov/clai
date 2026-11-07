@@ -13,6 +13,7 @@ pub mod prompt;
 mod sessions;
 mod settings;
 mod status;
+mod status_box;
 mod themes;
 
 use ratatui::Frame;
@@ -42,6 +43,11 @@ pub struct Areas {
     pub input: Rect,
     pub status: Rect,
     pub info: Rect,
+}
+
+/// How far the status box can scroll on a screen of `size`.
+pub fn status_max_top(app: &App, size: Rect) -> usize {
+    status_box::max_top(app, size)
 }
 
 /// The areas for a screen of `size`; `None` if it is too small.
@@ -122,6 +128,7 @@ pub fn draw(app: &App, frame: &mut Frame<'_>) {
                 && app.picker.is_none()
                 && app.session_list.is_none()
                 && app.settings_box.is_none()
+                && app.status_box.is_none()
                 && app.theme_list.is_none() =>
         {
             frame.set_cursor_position((x, y));
@@ -134,6 +141,7 @@ pub fn draw(app: &App, frame: &mut Frame<'_>) {
     picker::draw(app, frame, size);
     settings::draw(app, frame, size);
     themes::draw(app, frame, size);
+    status_box::draw(app, frame, size);
     paint(frame.buffer_mut(), look);
 }
 

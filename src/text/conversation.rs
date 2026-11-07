@@ -95,6 +95,11 @@ impl Conversation {
                 let line = format!("clai: error: {message}");
                 format!("{}{}\n", self.break_line(), self.paint(RED, &line))
             }
+            SessionEvent::Retry {
+                attempt,
+                max,
+                reason,
+            } => self.note(&crate::agent::retry_text(*attempt, *max, reason)),
             SessionEvent::ModelChanged { model, .. } => self.note(&format!("model is now {model}")),
             SessionEvent::Renamed { name } => self.note(&format!("session renamed to {name}")),
             SessionEvent::Ended { reason } => self.note(&format!("session ended: {reason}")),

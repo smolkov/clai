@@ -153,7 +153,9 @@ An adapter:
   `retry_after` when it is given (at most 60 s). It retries only before the
   first event is sent; once the stream has started, an error ends it and
   the agent loop decides. A stream that breaks before its first event is
-  retried as `Network`. **(assumption)**
+  retried as `Network`. **(assumption)** Before each wait it sends a `Retry`
+  event with the attempt, the limit and the error, which the loop passes on as
+  the session event `retry`; it does not count as the start of the stream.
 - reads the API key on the first request and keeps it; if reading fails,
   the request ends with `Auth` and the next request tries again;
 - ignores fields it does not know, so new API fields do not break `clai`;

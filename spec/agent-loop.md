@@ -330,6 +330,7 @@ The loop emits these session events (see [`architecture.md`](architecture.md),
 | `notice` | `rules added: allow run_command(cargo test)`, `answer cut at max_output_tokens`, `limit reached`, `turn cancelled`, … |
 | `usage` | After each request: its input and output tokens, and the context size (input plus output tokens of the last request). |
 | `error` | A provider or session error that ended a request. |
+| `retry` | The adapter tries the request again (see [`providers.md`](providers.md), "Adapters"): the attempt, `max_retries` and the reason. Sent before the wait. |
 | `turn_end` | How the turn ended: `done`, `cancelled`, `limit` or `failed`; the counts of requests and tool calls and the tokens used. |
 
 The events of a turn are complete: a client that shows only the events

@@ -30,6 +30,7 @@ const HELP: &str = "\
 commands:
   /cancel          cancel the running turn
   /model [MODEL]   show or change the model (PROVIDER/MODEL)
+  /status [NAME]   status and statistics of this or another session
   /usage           show the tokens used so far
   /sessions        list the sessions; * is this one
   /attach NAME     attach to another session
@@ -85,6 +86,19 @@ pub fn talk(config: Option<&Path>, target: Target) -> Result<()> {
         talk.run().await
     })
 }
+
+/// What `/status` prints.
+fn status_text(status: &crate::protocol::SessionStatus, unicode: bool, offset: i64) -> String {
+    let options = crate::text::status::Options {
+        unicode,
+        offset,
+        me: CLIENT_NAME,
+    };
+    crate::text::status::text(&crate::text::status::sections(status, &options))
+}
+
+/// The name this client has for the server.
+const CLIENT_NAME: &str = "clai chat";
 
 /// Attaches and says so on standard error.
 async fn attach(client: &mut Client, name: &str) -> Result<SessionInfo> {
@@ -264,7 +278,8 @@ impl Talk {
         self.replay().await
     }
 
-    /// `/new`, `/attach`, `/sessions`, `/models`; `None` for other commands.
+    /// `/new`, `/attach`, `/sessions`, `/models`, `/status`; `None` for other
+    /// commands.
     async fn session_command(&mut self, name: &str, argument: &str) -> Option<Result<()>> {
         let result = match name {
             "sessions" => match self.client.list().await {
@@ -283,6 +298,26 @@ impl Talk {
                 Ok(other) => Err(unexpected(&other)),
                 Err(e) => Err(e),
             },
+            "status" => {
+                let session = if argument.is_empty() {
+                    self.session.name.clone()
+                } else {
+                    argument.to_owned()
+                };
+                match self
+                    .client
+                    .request(Request::SessionStatus { session })
+                    .await
+                {
+                    Ok(Payload::SessionStatus { status }) => {
+                        let text = status_text(&status, self.unicode, crate::tui::local_offset());
+                        self.out(&text);
+                        Ok(())
+                    }
+                    Ok(other) => Err(unexpected(&other)),
+                    Err(e) => Err(e),
+                }
+            }
             "attach" if argument.is_empty() => Err(Error::Usage(
                 "usage: /attach NAME; /sessions lists them".into(),
             )),
@@ -682,5 +717,18 @@ mod tests {
              local/qwen        qwen3              32k\n"
         );
         assert_eq!(models_text(&[]), "no models are configured\n");
+    }
+
+    #[test]
+    fn status_marks_this_client() {
+        let mut status = crate::text::status::tests::saved();
+        status.session.state = State::Idle;
+        status.clients = vec![crate::protocol::ClientInfo {
+            name: "clai chat".into(),
+            answers: true,
+        }];
+        let text = status_text(&status, true, 0);
+        assert!(text.contains("clients      1: clai chat (this)"), "{text}");
+        assert!(text.contains("⚠ not configured"), "{text}");
     }
 }

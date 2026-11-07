@@ -99,6 +99,13 @@ pub enum Event {
         input_tokens: u64,
         output_tokens: u64,
     },
+    /// The request failed and is tried again, before anything was sent;
+    /// `attempt` counts from 1.
+    Retry {
+        attempt: u32,
+        max: u32,
+        reason: String,
+    },
     /// Last event of a stream.
     Done {
         stop_reason: StopReason,

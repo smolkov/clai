@@ -13,9 +13,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::agent::{
     CallResult, CallState, Closed, EndReason, INTERRUPTED, Question, Record, SessionEvent, State,
-    ToolCallEvent, TurnEnd,
+    ToolCallEvent, TurnEnd, now_ms,
 };
-use crate::protocol::{SessionInfo, TokenTotals};
+use crate::protocol::{SessionInfo, Stats, TokenTotals};
 
 /// The version of the files; a later `clai` reads older ones, never newer.
 pub const FORMAT: u32 = 1;
@@ -90,13 +90,44 @@ impl Meta {
     }
 }
 
+/// A line of `events.jsonl`: the event's fields and `at`, the time it was
+/// logged in milliseconds since 1970. A line of an older `clai` has no
+/// `at`; the format stays the same.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Stamped {
+    pub at: Option<u64>,
+    pub event: SessionEvent,
+}
+
+impl Serialize for Stamped {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut value = serde_json::to_value(&self.event).map_err(serde::ser::Error::custom)?;
+        if let (Some(at), serde_json::Value::Object(map)) = (self.at, &mut value) {
+            map.insert("at".to_owned(), at.into());
+        }
+        value.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Stamped {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Stamped, D::Error> {
+        let mut value = serde_json::Value::deserialize(deserializer)?;
+        let at = match &mut value {
+            serde_json::Value::Object(map) => map.remove("at").and_then(|at| at.as_u64()),
+            _ => None,
+        };
+        let event = serde_json::from_value(value).map_err(serde::de::Error::custom)?;
+        Ok(Stamped { at, event })
+    }
+}
+
 /// A saved session as one file, for `clai export` and `clai import`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Bundle {
     pub format: u32,
     pub meta: Meta,
     pub history: Vec<Record>,
-    pub events: Vec<SessionEvent>,
+    pub events: Vec<Stamped>,
 }
 
 /// A loaded session.
@@ -106,6 +137,8 @@ pub struct Loaded {
     pub history: Vec<Record>,
     /// The log as clients get it on attach.
     pub events: Vec<SessionEvent>,
+    /// Counted from the log, with its times.
+    pub stats: Stats,
 }
 
 /// The directory of one session.
@@ -185,31 +218,64 @@ impl Store {
         append(&self.dir.join(HISTORY), record)
     }
 
-    /// Appends an event to the log, if it is one that is kept (see
-    /// [`kept`]).
+    /// Appends an event to the log with the time now, if it is one that
+    /// is kept (see [`kept`]).
     pub fn append_event(&self, event: &SessionEvent) -> Result<(), String> {
-        if kept(event) {
-            append(&self.dir.join(EVENTS), event)
+        self.append_stamped(&Stamped {
+            at: Some(now_ms()),
+            event: event.clone(),
+        })
+    }
+
+    /// Appends an event with its time, if it is kept.
+    pub fn append_stamped(&self, stamped: &Stamped) -> Result<(), String> {
+        if kept(&stamped.event) {
+            append(&self.dir.join(EVENTS), stamped)
         } else {
             Ok(())
         }
     }
 
     /// Loads the session, repairing a turn that a stopped server left
-    /// open; the repair is written to the files too.
+    /// open; the repair is written to the files too, with the time of the
+    /// last event, so that the time the server was away does not count as
+    /// work.
     pub fn load(&self) -> Result<Loaded, String> {
         let meta = self.read_meta()?;
         let history: Vec<Record> = read_lines(&self.dir.join(HISTORY))?;
-        let mut events: Vec<SessionEvent> = read_lines(&self.dir.join(EVENTS))?;
+        let mut stamped: Vec<Stamped> = read_lines(&self.dir.join(EVENTS))?;
+        let events: Vec<SessionEvent> = stamped.iter().map(|s| s.event.clone()).collect();
+        let last = stamped.iter().filter_map(|s| s.at).max();
         for event in repair_events(&events) {
-            self.append_event(&event)?;
-            events.push(event);
+            let repair = Stamped { at: last, event };
+            self.append_stamped(&repair)?;
+            stamped.push(repair);
         }
+        let stats = Stats::of_log(stamped.iter().map(|s| (s.at, &s.event)));
         Ok(Loaded {
             meta,
             history,
-            events: expand(events),
+            events: expand(stamped.into_iter().map(|s| s.event).collect()),
+            stats,
         })
+    }
+
+    /// The statistics of a saved session, from its log; the session is
+    /// not loaded.
+    pub fn stats(&self) -> Result<Stats, String> {
+        let stamped: Vec<Stamped> = read_lines(&self.dir.join(EVENTS))?;
+        let mut stats = Stats::of_log(stamped.iter().map(|s| (s.at, &s.event)));
+        stats.settle();
+        Ok(stats)
+    }
+
+    /// The size of the session's files in bytes.
+    pub fn size(&self) -> u64 {
+        [META, HISTORY, EVENTS]
+            .iter()
+            .filter_map(|name| fs::metadata(self.dir.join(name)).ok())
+            .map(|m| m.len())
+            .sum()
     }
 
     pub fn remove(&self) -> Result<(), String> {
@@ -237,7 +303,7 @@ impl Store {
             self.append_record(record)?;
         }
         for event in &bundle.events {
-            self.append_event(event)?;
+            self.append_stamped(event)?;
         }
         self.write_meta(meta)
     }
@@ -633,5 +699,67 @@ mod tests {
         let loaded = copy.load().unwrap();
         assert_eq!(loaded.meta.name, "t");
         assert_eq!(loaded.history, bundle.history);
+    }
+
+    #[test]
+    fn events_carry_their_time() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = Store::create(&tmp.path().join("sessions")).unwrap();
+        store.write_meta(&meta()).unwrap();
+        // A line of an older `clai`, without `at`, then lines with it.
+        fs::write(
+            store.dir().join(EVENTS),
+            "{\"event\":\"state\",\"state\":\"working\"}\n",
+        )
+        .unwrap();
+        store
+            .append_stamped(&Stamped {
+                at: Some(1_000),
+                event: SessionEvent::UserMessage { text: "hi".into() },
+            })
+            .unwrap();
+        store
+            .append_stamped(&Stamped {
+                at: Some(3_000),
+                event: SessionEvent::Usage {
+                    input_tokens: 5,
+                    output_tokens: 1,
+                    context_tokens: 6,
+                },
+            })
+            .unwrap();
+        let line = fs::read_to_string(store.dir().join(EVENTS)).unwrap();
+        assert!(
+            line.lines().nth(1).unwrap().contains("\"at\":1000"),
+            "{line}"
+        );
+
+        // Clients get the events without times; the open turn is closed at
+        // the time of the last event.
+        let loaded = store.load().unwrap();
+        assert_eq!(
+            loaded.events[1],
+            SessionEvent::UserMessage { text: "hi".into() }
+        );
+        assert_eq!(loaded.stats.requests, 1);
+        assert_eq!(loaded.stats.turns.cancelled, 1);
+        assert_eq!(loaded.stats.last_active, Some(3_000));
+        assert_eq!(loaded.stats.working_time(9_000), (0, false));
+        let stamped: Vec<Stamped> = read_lines(&store.dir().join(EVENTS)).unwrap();
+        assert_eq!(stamped[0].at, None);
+        assert!(stamped[3..].iter().all(|s| s.at == Some(3_000)));
+
+        // A saved session's statistics, without loading it.
+        let stats = store.stats().unwrap();
+        assert_eq!(stats.requests, 1);
+        assert!(stats.turn.is_none());
+        assert!(store.size() > 0);
+
+        // A bundle keeps the times.
+        let bundle = store.bundle().unwrap();
+        assert_eq!(bundle.events[1].at, Some(1_000));
+        let text = serde_json::to_string(&bundle).unwrap();
+        let back: Bundle = serde_json::from_str(&text).unwrap();
+        assert_eq!(back, bundle);
     }
 }

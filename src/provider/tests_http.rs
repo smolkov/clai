@@ -268,6 +268,7 @@ async fn rate_limit_is_retried() {
     .await;
     let events = collect(&provider(&server, Api::Anthropic)).await;
     assert!(events.iter().all(Result::is_ok), "{events:?}");
+    assert!(matches!(&events[0], Ok(Event::Retry { attempt: 1, .. })));
     assert_eq!(server.requests(), 2);
 }
 
@@ -275,7 +276,23 @@ async fn rate_limit_is_retried() {
 async fn gives_up_after_max_retries() {
     let server = serve(vec![Reply::status(503, "busy"); 5]).await;
     let events = collect(&provider(&server, Api::Anthropic)).await;
-    assert_eq!(events.len(), 1);
+    let retries: Vec<(u32, u32, &str)> = events
+        .iter()
+        .filter_map(|e| match e {
+            Ok(Event::Retry {
+                attempt,
+                max,
+                reason,
+            }) => Some((*attempt, *max, reason.as_str())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        retries,
+        [(1, 2, "HTTP 503: busy"), (2, 2, "HTTP 503: busy")],
+        "each retry is told before it is made"
+    );
+    assert_eq!(events.len(), 3);
     let err = last_error(&events);
     assert_eq!(err.kind, ErrorKind::Overloaded);
     assert_eq!(err.message, "HTTP 503: busy");

@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, MouseEvent, MouseEventKind};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
 
 use crate::agent::{Closed, QuestionKind, SessionEvent, State, now_secs};
@@ -24,6 +24,7 @@ use super::picker::{Picker, Purpose};
 use super::prompt::Prompt;
 use super::sessions::{ListAction, SessionList};
 use super::settings::{BoxAction, SettingsBox};
+use super::status::StatusBox;
 use super::style::{Colouring, Look, Styles};
 use super::themes::{self, ThemeList};
 use super::view;
@@ -270,6 +271,8 @@ pub struct App {
     stopping: bool,
     pub settings_box: Option<SettingsBox>,
     pub theme_list: Option<ThemeList>,
+    /// The status box of `/status`.
+    pub status_box: Option<StatusBox>,
     /// A theme taken in this run: it wins over `CLAI_THEME` on a reload.
     chosen_theme: Option<String>,
     /// What the save on its way is for.
@@ -345,6 +348,7 @@ impl App {
             greeting: None,
             stopping: false,
             settings_box: None,
+            status_box: None,
             theme_list: None,
             chosen_theme: None,
             saving: None,
@@ -386,6 +390,7 @@ impl App {
         // be opened over the prompt; they take the keys until they close.
         let asked_now = self.prompt.as_ref().map(|p| p.id());
         if asked_now.is_some() && asked_now != asked_before.as_deref() {
+            self.status_box = None;
             let mut restored = self.close_theme_boxes();
             effects.append(&mut restored);
             self.picker = None;
@@ -418,6 +423,7 @@ impl App {
             || self.session_list.is_some()
             || self.settings_box.is_some()
             || self.theme_list.is_some()
+            || self.status_box.is_some()
             || self.prompt.is_some()
             || self.dialog.is_some()
             || self.ended.is_some();
@@ -847,6 +853,7 @@ impl App {
         self.session_list = None;
         self.list_wanted = false;
         self.command_list = None;
+        self.status_box = None;
         self.ended = None;
         self.new_output = false;
         self.reveal = None;
@@ -937,6 +944,20 @@ impl App {
     }
 
     fn event(&mut self, event: SessionEvent, replay: bool) {
+        if !replay
+            && let Some(open) = &mut self.status_box
+            && open.id() == Some(self.session.id)
+        {
+            match &event {
+                SessionEvent::Renamed { name } => {
+                    open.name.clone_from(name);
+                    open.stale = true;
+                }
+                SessionEvent::Ended { .. } => self.status_box = None,
+                SessionEvent::TextDelta { .. } => {}
+                _ => open.stale = true,
+            }
+        }
         let conversation = &mut self.conversation;
         match event {
             SessionEvent::State { state } => self.session.state = state,
@@ -966,6 +987,11 @@ impl App {
                 self.requests += 1;
             }
             SessionEvent::Error { message } => conversation.error(message),
+            SessionEvent::Retry {
+                attempt,
+                max,
+                reason,
+            } => conversation.notice(crate::agent::retry_text(attempt, max, &reason)),
             SessionEvent::TurnEnd(_) => conversation.close_text(),
             SessionEvent::ModelChanged { from, model } => {
                 conversation.notice(if from.is_empty() {
@@ -1043,6 +1069,27 @@ impl App {
             }
             (Request::New { .. }, Ok(Payload::Session { session })) => {
                 return self.created(&session);
+            }
+            (Request::SessionStatus { session }, result) => {
+                let Some(open) = self.status_box.as_mut().filter(|b| b.name == session) else {
+                    return Vec::new();
+                };
+                open.asking = false;
+                match result {
+                    Ok(Payload::SessionStatus { status }) => {
+                        open.name.clone_from(&status.session.name);
+                        open.status = Some(status);
+                    }
+                    // A refresh that fails keeps what is shown; a first
+                    // answer that fails closes the box.
+                    Err(message) if open.status.is_none() => {
+                        self.status_box = None;
+                        if !lost {
+                            self.conversation.error(message);
+                        }
+                    }
+                    _ => {}
+                }
             }
             (Request::Send { text, .. }, Err(message)) => {
                 self.conversation.unqueue(&text);
@@ -1145,6 +1192,35 @@ impl App {
     }
 
     // Sessions.
+
+    /// `/status`: the box opens at once and fills with the answer.
+    fn open_status(&mut self, name: String) -> Vec<Effect> {
+        self.status_box = Some(StatusBox::new(name.clone()));
+        vec![Effect::Request(Request::SessionStatus { session: name })]
+    }
+
+    /// A key while the status box is open: it scrolls and closes.
+    fn status_box_key(&mut self, key: KeyEvent) -> Vec<Effect> {
+        let effects = vec![Effect::Redraw];
+        let Some(open) = &mut self.status_box else {
+            return effects;
+        };
+        let page = isize::try_from(self.view_height.max(2) - 1).unwrap_or(isize::MAX);
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') => self.status_box = None,
+            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.status_box = None;
+            }
+            KeyCode::Up => open.scroll(-1),
+            KeyCode::Down => open.scroll(1),
+            KeyCode::PageUp => open.scroll(-page),
+            KeyCode::PageDown => open.scroll(page),
+            KeyCode::Home => open.top = 0,
+            KeyCode::End => open.top = open.max_top,
+            _ => {}
+        }
+        effects
+    }
 
     /// Asks for the sessions; the answer opens the list.
     fn open_sessions(&mut self) -> Vec<Effect> {
@@ -1268,6 +1344,16 @@ impl App {
         if self.conversation.tick() {
             effects.push(Effect::Redraw);
         }
+        if self.lost_since.is_none()
+            && let Some(open) = &mut self.status_box
+            && open.due()
+        {
+            open.asking = true;
+            open.stale = false;
+            effects.push(Effect::Request(Request::SessionStatus {
+                session: open.name.clone(),
+            }));
+        }
         effects
     }
 
@@ -1306,6 +1392,9 @@ impl App {
                 return self.session_list_key(key);
             }
             return self.prompt_key(key);
+        }
+        if self.status_box.is_some() {
+            return self.status_box_key(key);
         }
         if self.theme_list.is_some() {
             return self.theme_list_key(key);
@@ -1505,11 +1594,12 @@ impl App {
                     search_description: false,
                 })
                 .collect()
-        } else if command == "attach" {
+        } else if command == "attach" || command == "status" {
             let symbols = &self.settings.look.symbols;
+            // `/status` shows the attached session too.
             self.sessions
                 .iter()
-                .filter(|s| s.id != self.session.id)
+                .filter(|s| command == "status" || s.id != self.session.id)
                 .map(|s| commands::Value {
                     value: s.name.clone(),
                     description: format!(
@@ -1825,6 +1915,15 @@ impl App {
                 // The input stays, so that it can be corrected.
                 None => return Vec::new(),
             },
+            ("status", "") => self.open_status(session),
+            ("status", name) => {
+                if !self.sessions.iter().any(|s| s.name == name) && name != session {
+                    self.conversation
+                        .notice(format!("no session named {name}; /sessions lists them"));
+                    return Vec::new();
+                }
+                self.open_status(name.to_owned())
+            }
             ("new", "") => self.new_session(None),
             ("new", name) => self.new_session(Some(name.to_owned())),
             ("clear" | "permissions" | "commit", _) => {
@@ -1871,6 +1970,11 @@ impl App {
     /// Brings the lines and the scroll position up to date for a screen of
     /// `size`. Runs before each frame; drawing then only reads.
     pub fn layout(&mut self, size: Rect) {
+        let max_top = view::status_max_top(self, size);
+        if let Some(open) = &mut self.status_box {
+            open.max_top = max_top;
+            open.top = open.top.min(max_top);
+        }
         let Some(areas) = view::areas(self, size) else {
             return;
         };

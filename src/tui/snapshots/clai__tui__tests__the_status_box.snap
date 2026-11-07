@@ -1,0 +1,60 @@
+---
+source: src/tui/tests.rs
+expression: "screen(&mut app, 80, 56)"
+---
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+┌ Status ─ project ────────────────────────────────────────────────────────────┐
+│ Session                                                                      │
+│   name         project  (id 1)                                               │
+│   state        working                                                       │
+│   workspace    ~/ws/project                                                  │
+│   extra dirs   ~/ws/shared-lib  ⚠ missing                                    │
+│   created      2026-11-01 01:00  (2h 10m ago)                                │
+│   last active  2h 08m ago                                                    │
+│   clients      2: chat pts/5 (watching), tui pts/3 (this)                    │
+│   queued       1 message                                                     │
+│   saved in     ~/.local/state/clai/sessions/1  (1.2 MB)                      │
+│                                                                              │
+│ Model                                                                        │
+│   model        anthropic/sonnet  (claude-sonnet-5-5)                         │
+│   api          anthropic  https://api.anthropic.com                          │
+│   key          set in the environment                                        │
+│   context      170k / 200k  █████████████████░░░  85%                        │
+│   settings     temperature default ─ max output default ─ max_retries 3      │
+│   changes      1; first anthropic/haiku                                      │
+│                                                                              │
+│ This turn                                                                    │
+│   requests     0 / 50                                                        │
+│   tool calls   0 / 120                                                       │
+│   running      2h 08m                                                        │
+│                                                                              │
+│ Totals                                                                       │
+│   turns        1: 1 done                                                     │
+│   requests     1 ─ 1 retry                                                   │
+│   tokens       in 2.1M ─ out 84.3k                                           │
+│   working      2h 09m of 2h 10m                                              │
+│                                                                              │
+│ Tool calls     calls  done  error  denied  cancelled                         │
+│   read_file        2     2      0       0          0                         │
+│   edit_file        1     0      0       1          0                         │
+│   all              3     2      0       1          0                         │
+│                                                                              │
+│ Questions      1: 1 yes                                                      │
+│                by tui pts/3 1                                                │
+│                                                                              │
+│ Server         0.4.0 ─ pid 4242 ─ 3 sessions, 2 running ─ 3 clients          │
+│                                                                              │
+│ Up Down PgUp PgDn scroll ─ Esc close                                         │
+└──────────────────────────────────────────────────────────────────────────────┘
+                                                                                
+                                                                                
+────────────────────────────────────────────────────────────────────────────────
+>                                                                               
+────────────────────────────────────────────────────────────────────────────────
+  idle · /help · Ctrl-D detach                                                  
+  project · ~/ws/project · anthropic/sonnet · 1/1 · 0/200k

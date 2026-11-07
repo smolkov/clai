@@ -129,6 +129,12 @@ pub enum SessionEvent {
     Error {
         message: String,
     },
+    /// A model request failed and is tried again; `attempt` counts from 1.
+    Retry {
+        attempt: u32,
+        max: u32,
+        reason: String,
+    },
     TurnEnd(TurnEnd),
     /// The session's model changed; applies from the next request.
     ModelChanged {
@@ -145,6 +151,11 @@ pub enum SessionEvent {
     Ended {
         reason: String,
     },
+}
+
+/// The notice for a `retry` event: `retrying (2/3): rate limited`.
+pub fn retry_text(attempt: u32, max: u32, reason: &str) -> String {
+    format!("retrying ({attempt}/{max}): {reason}")
 }
 
 /// Where the loop sends its events. Sending never blocks for long; events

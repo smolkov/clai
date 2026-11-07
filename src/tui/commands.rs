@@ -75,6 +75,10 @@ pub const COMMANDS: &[Command] = &[
         "[NAME]",
     ),
     required(command("rename", "Rename the session"), "NAME"),
+    optional(
+        command("status", "Show the status and statistics of a session"),
+        "[NAME]",
+    ),
     command("settings", "Change the TUI settings and save them"),
     optional(
         command("theme", "Choose the colour theme, saved as the default"),
@@ -124,7 +128,7 @@ pub fn search_text(text: &str) -> Option<&str> {
 }
 
 /// The commands whose argument the list completes.
-pub const COMPLETED: &[&str] = &["attach", "model", "theme"];
+pub const COMPLETED: &[&str] = &["attach", "model", "status", "theme"];
 
 /// A value the argument list offers: what goes in the input, and a hint.
 #[derive(Debug, Clone, PartialEq, Eq)]

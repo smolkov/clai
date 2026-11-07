@@ -189,6 +189,14 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [ ] Look at the `dark` and `light` palettes in a real terminal (RFC 0006,
       open question 10).
 
+## Status view
+
+- [x] Times in `events.jsonl` (`at`), statistics counted from the log, also for
+      a saved session (RFC 0007).
+- [x] `retry` event and notice.
+- [x] `session_status` request, protocol 4.
+- [x] `/status [NAME]` in the TUI (live, scrollable) and in `clai chat`.
+
 ## Refactoring
 
 - [x] A: `Choice::name`, `text::ansi`, `text::Terminal`, `sync::lock`,
@@ -204,7 +212,8 @@ Milestones and their order: [`implementation.md`](implementation.md).
 ## Next milestones
 
 - [ ] TUI sessions and settings: the rest (syntax highlighting; a server notice
-      for session state changes, protocol 4, in place of polling `list`)
+      for session state changes, a new protocol version, in place of polling
+      `list`)
 - [ ] Commit (needs `spec/commit.md`)
 - [ ] Context management (needs `spec/context.md`)
 - [ ] Release
