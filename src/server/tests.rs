@@ -1456,3 +1456,43 @@ async fn an_older_client_gets_the_version_error() {
     assert!(message.contains("clai server stop"), "{message}");
     fx.stop().await;
 }
+
+/// `e` in the TUI: the call is denied with the message, the question closes
+/// and the turn goes on to the model's next answer.
+#[tokio::test]
+async fn deny_with_a_message_closes_the_question_and_goes_on() {
+    let script = Script::new(vec![write_call("c1", "a.txt"), say("ok, not writing")]);
+    let fx = Fixture::start(vec![script]).await;
+    let mut tui = fx.client("tui pts/3", true).await;
+    new_session(&mut tui, &fx.ws, Some("s")).await;
+    attach(&mut tui, "s").await;
+    send(&mut tui, "s", "write a.txt").await;
+    let q = question(&mut tui).await;
+    let text = "use b.txt instead".to_owned();
+    answer(
+        &mut tui,
+        "s",
+        &q.id,
+        Answer::DenyMessage { text: text.clone() },
+    )
+    .await
+    .unwrap();
+    let (closed, _) = until(&mut tui, |e, _| match e {
+        SessionEvent::QuestionClosed { closed, .. } => Some(closed.clone()),
+        _ => None,
+    })
+    .await;
+    assert_eq!(
+        closed,
+        Closed::Answered {
+            answer: Answer::DenyMessage { text },
+            by: "tui pts/3".into()
+        }
+    );
+    until(&mut tui, |e, _| match e {
+        SessionEvent::TextDone { text } if text == "ok, not writing" => Some(()),
+        _ => None,
+    })
+    .await;
+    fx.stop().await;
+}

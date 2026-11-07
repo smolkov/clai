@@ -3608,3 +3608,103 @@ fn opening_reads_the_theme_files_again() {
     assert_eq!(app.settings.tui.theme, "dark");
     assert!(command(&mut self::app(), "/settings").contains(&Effect::ReloadConfig));
 }
+
+/// Two calls in one answer of the model: the first denied with a message,
+/// then the second asks at once. Its prompt must take keys.
+#[test]
+fn after_a_message_the_next_question_takes_keys() {
+    let mut app = asked();
+    app.update(ch('e'));
+    typed(&mut app, "use b.rs");
+    let effects = app.update(key(KeyCode::Enter));
+    let request = requests(&effects).remove(0);
+    let first = permission();
+    app.update(live(SessionEvent::QuestionClosed {
+        id: first.id.clone(),
+        closed: Closed::Answered {
+            answer: Answer::DenyMessage {
+                text: "use b.rs".into(),
+            },
+            by: "tui pts/3".into(),
+        },
+    }));
+    app.update(live(SessionEvent::ToolCall(call(
+        "c2",
+        "edit_file",
+        CallState::Waiting,
+    ))));
+    let mut second = permission();
+    second.id = "q2".into();
+    if let QuestionKind::Permission(p) = &mut second.kind {
+        p.call.id = "c2".into();
+    }
+    app.update(live(SessionEvent::Question(Box::new(second))));
+    // The answer to the first question comes back only now.
+    app.update(Input::Response {
+        request,
+        result: Ok(Payload::Done),
+    });
+    let effects = app.update(ch('y'));
+    assert_eq!(
+        requests(&effects),
+        [Request::Answer {
+            session: "project".into(),
+            question: "q2".into(),
+            answer: Answer::Allow,
+        }]
+    );
+}
+
+/// A session waiting on a question can be left for another one: the
+/// question stays open on the server, and nothing is answered.
+#[test]
+fn a_waiting_session_can_be_left() {
+    let mut app = asked();
+    app.update(sessions_answer(three()));
+    let effects = app.update(ctrl('n'));
+    assert_eq!(switches(&effects), ["docs"]);
+    assert!(
+        !requests(&effects)
+            .iter()
+            .any(|r| matches!(r, Request::Answer { .. }))
+    );
+    app.update(attached_to(2, "docs", Vec::new()));
+    assert!(app.prompt.is_none());
+    assert_eq!(switches(&app.update(ctrl('p'))), ["project"]);
+}
+
+/// `Ctrl-S` opens the session list over the prompt; its keys go to the
+/// list, not to the question.
+#[test]
+fn the_session_list_opens_over_a_prompt() {
+    let mut app = asked();
+    let effects = app.update(ctrl('s'));
+    assert_eq!(requests(&effects), [Request::List]);
+    app.update(sessions_answer(three()));
+    assert!(app.session_list.is_some());
+    assert!(app.prompt.is_some());
+    // The arrow moves in the list and answers nothing.
+    let effects = app.update(key(KeyCode::Down));
+    assert!(requests(&effects).is_empty());
+    let effects = app.update(key(KeyCode::Enter));
+    assert_eq!(switches(&effects), ["docs"]);
+    assert!(
+        !requests(&effects)
+            .iter()
+            .any(|r| matches!(r, Request::Answer { .. }))
+    );
+    // `Esc` closes the list, and the prompt takes keys again.
+    let mut app = asked();
+    app.update(ctrl('s'));
+    app.update(sessions_answer(three()));
+    app.update(key(KeyCode::Esc));
+    assert!(app.session_list.is_none());
+    assert_eq!(
+        requests(&app.update(ch('y'))),
+        [Request::Answer {
+            session: "project".into(),
+            question: permission().id,
+            answer: Answer::Allow,
+        }]
+    );
+}

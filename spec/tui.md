@@ -241,8 +241,11 @@ The TUI:
    the choices.
 3. Takes keys for the prompt bar only, until the user answers or cancels.
    What answers nothing still works: `PgUp` / `PgDn`, `Ctrl-Home` / `Ctrl-End`
-   and the mouse wheel scroll, to read what is asked, and `Ctrl-D` detaches and
-   leaves the question open for another client. `Ctrl-C` acts like `Esc`.
+   and the mouse wheel scroll, to read what is asked; `Ctrl-N` / `Ctrl-P`
+   attach to another session and `Ctrl-S` opens the session list over the
+   prompt, which then takes the keys until it closes; `Ctrl-D` detaches. The
+   question stays open, for later or for another client: attaching to the
+   session again shows the prompt again. `Ctrl-C` acts like `Esc`.
 
 | Key   | Action |
 |-------|--------|

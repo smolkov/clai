@@ -379,10 +379,13 @@ impl App {
 
     /// Takes one input.
     pub fn update(&mut self, input: Input) -> Vec<Effect> {
+        let asked_before = self.prompt.as_ref().map(|p| p.id().to_owned());
         let mut effects = self.handle(input);
-        // Keys go to an open prompt, so no box must hide it: what is typed for
-        // a filter would answer the question.
-        if self.prompt.is_some() {
+        // A question that opens closes the boxes, so that none hides it. The
+        // session list, and the picker for a new session from it, may then
+        // be opened over the prompt; they take the keys until they close.
+        let asked_now = self.prompt.as_ref().map(|p| p.id());
+        if asked_now.is_some() && asked_now != asked_before.as_deref() {
             let mut restored = self.close_theme_boxes();
             effects.append(&mut restored);
             self.picker = None;
@@ -1295,6 +1298,13 @@ impl App {
         }
         self.message = None;
         if self.prompt.is_some() {
+            // Opened over the prompt with `Ctrl-S`.
+            if self.picker.is_some() {
+                return self.picker_key(key);
+            }
+            if self.session_list.is_some() {
+                return self.session_list_key(key);
+            }
             return self.prompt_key(key);
         }
         if self.theme_list.is_some() {
@@ -1328,10 +1338,18 @@ impl App {
     }
 
     /// A key while a question is open. Besides the prompt's own keys, only
-    /// what answers nothing works: scrolling, to read what is asked, and
-    /// `Ctrl-D` to leave the question for another client.
+    /// what answers nothing works: scrolling, to read what is asked,
+    /// `Ctrl-S` / `Ctrl-N` / `Ctrl-P` to go to another session and `Ctrl-D`
+    /// to leave; the question stays open for later or another client.
     fn prompt_key(&mut self, key: KeyEvent) -> Vec<Effect> {
         if let Some(action) = keys::scrolling(key) {
+            let mut effects = self.act(action);
+            effects.push(Effect::Redraw);
+            return effects;
+        }
+        if let action @ (Action::SessionList | Action::NextSession | Action::PreviousSession) =
+            keys::action(key, self.focus)
+        {
             let mut effects = self.act(action);
             effects.push(Effect::Redraw);
             return effects;

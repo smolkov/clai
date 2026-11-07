@@ -50,27 +50,39 @@ impl Questions {
 
     /// A question closed: the answer being checked gets its verdict, those
     /// waiting are told why they came too late.
+    ///
+    /// Only what belongs to `id` is touched. The agent's ask and the closing
+    /// event reach the actor on different channels, so with two calls in one
+    /// answer of the model the agent may already ask the next question when
+    /// the close of the previous one comes in; clearing that ask would leave
+    /// its answer waiting for ever.
     pub fn closed(&mut self, id: &str, closed: &Closed) {
         if self.open.as_ref().is_some_and(|q| q.id == id) {
             self.open = None;
         }
-        self.asking = None;
+        if self.asking.as_ref().is_some_and(|(asked, _)| asked == id) {
+            self.asking = None;
+        }
         let why = match closed {
             Closed::Answered { by, .. } => format!("already answered by {by}"),
             Closed::NoOne => "the question was closed".to_owned(),
             Closed::Cancelled => "the question was closed: the turn was cancelled".to_owned(),
         };
-        if let Some(pending) = self.checking.take() {
-            let counted = matches!(closed, Closed::Answered { by, .. } if *by == pending.by)
-                && pending.question == id;
+        if let Some(pending) = self.checking.take_if(|p| p.question == id) {
+            let counted = matches!(closed, Closed::Answered { by, .. } if *by == pending.by);
             let _ = pending
                 .reply
                 .send(if counted { Ok(()) } else { Err(why.clone()) });
         }
-        for pending in self.answers.drain(..) {
+        let (late, other): (VecDeque<Pending>, VecDeque<Pending>) =
+            self.answers.drain(..).partition(|p| p.question == id);
+        self.answers = other;
+        for pending in late {
             let _ = pending.reply.send(Err(why.clone()));
         }
         self.closed.insert(id.to_owned(), why);
+        // An answer to the next question may have waited for this one.
+        self.deliver();
     }
 
     /// An answer from a client of session `session`.
@@ -305,6 +317,60 @@ mod tests {
             Reply::Answer {
                 answer: Answer::Continue,
                 by: "a".to_owned()
+            }
+        );
+    }
+
+    /// Two calls in one answer of the model: the agent asks the second
+    /// question before the actor sees the first one close. The close must not
+    /// forget that ask, or the answer to the second question never arrives.
+    #[test]
+    fn the_next_ask_survives_the_close_of_the_previous_question() {
+        let (mut questions, mut heard) = asking("q1");
+        let (first, mut first_verdict) = pending("q1", "tui");
+        questions.answer(first, "s");
+        assert!(heard.try_recv().is_ok());
+        let (reply, mut heard_next) = oneshot::channel();
+        questions.ask("q2".to_owned(), reply);
+        questions.closed("q1", &answered("tui"));
+        questions.opened(question("q2"));
+        assert_eq!(first_verdict.try_recv().unwrap(), Ok(()));
+
+        let (next, mut next_verdict) = pending("q2", "tui");
+        questions.answer(next, "s");
+        assert_eq!(
+            heard_next.try_recv().unwrap(),
+            Reply::Answer {
+                answer: Answer::Continue,
+                by: "tui".to_owned()
+            }
+        );
+        questions.closed("q2", &answered("tui"));
+        assert_eq!(next_verdict.try_recv().unwrap(), Ok(()));
+    }
+
+    /// The answer to the next question comes while the previous answer is
+    /// still being checked: it waits, is not told it came too late, and goes
+    /// to the agent once the previous question closed.
+    #[test]
+    fn an_answer_to_the_next_question_waits_for_the_close() {
+        let (mut questions, mut heard) = asking("q1");
+        let (first, _first_verdict) = pending("q1", "tui");
+        questions.answer(first, "s");
+        assert!(heard.try_recv().is_ok());
+        let (reply, mut heard_next) = oneshot::channel();
+        questions.ask("q2".to_owned(), reply);
+        let (next, mut next_verdict) = pending("q2", "chat");
+        questions.answer(next, "s");
+        assert_eq!(heard_next.try_recv(), Err(TryRecvError::Empty));
+
+        questions.closed("q1", &answered("tui"));
+        assert_eq!(next_verdict.try_recv(), Err(TryRecvError::Empty));
+        assert_eq!(
+            heard_next.try_recv().unwrap(),
+            Reply::Answer {
+                answer: Answer::Continue,
+                by: "chat".to_owned()
             }
         );
     }
