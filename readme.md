@@ -53,7 +53,8 @@ All options and exit codes: [`spec/command.md`](spec/command.md).
 
 `clai` creates a session in the current directory and opens the full-screen
 interface; `clai new [DIR]` does the same for `DIR`, and `clai attach NAME`
-returns to a session. Leaving only detaches: the session keeps running.
+returns to a session (without a name and with several sessions, it opens the
+session list). Leaving only detaches: the session keeps running.
 
 | Key | Action |
 |-----|--------|
@@ -64,6 +65,8 @@ returns to a session. Leaving only detaches: the session keeps running.
 | `Ctrl-C` twice, `Ctrl-D` on empty input | Detach. |
 | `PgUp` / `PgDn`, mouse wheel | Scroll. `Ctrl-Home` / `Ctrl-End`: start / end, and follow again. |
 | `Ctrl-O` | Choose the model: type to filter, `Up` / `Down` select, `Enter` changes it, `Esc` closes. |
+| `Ctrl-S` | Session list: `Enter` attach, `n` new (workspace, name, then the model), `r` rename, `k` kill, `Esc` close. |
+| `Ctrl-N` / `Ctrl-P` | Attach to the next / previous session. |
 | `Tab` | Switch to the conversation: `Up` / `Down` select, `Enter` expands a tool call, `?` shows help. |
 
 A tool call that needs permission opens a prompt: `y` yes, `a` always (`Tab`
@@ -71,11 +74,16 @@ widens the rule, `Enter` confirms), `n` no, `e` no with a message to the model,
 `Esc` no and cancel the turn. A turn at its limit asks `y` continue, `n` stop.
 
 Commands: `/help`, `/model [PROVIDER/MODEL]` (without one, choose it as with
-`Ctrl-O`), `/rename NAME`, `/kill`, `/detach`,
-`/quit`. `/` in the empty input lists them: type to search, `Up` / `Down` select,
-`Enter` runs, `Tab` completes, `Esc` closes the list and keeps the text. The list
-also shows commands of later versions, dimmed. A message that starts with `/` is
-written `//…`.
+`Ctrl-O`), `/sessions`, `/new [NAME]` (a session in the same workspace; the model
+picker starts on `default_model`, so `Enter` takes it), `/attach [NAME]`,
+`/rename NAME`, `/kill`, `/detach`, `/quit`. `/` in the empty input lists them:
+type to search, `Up` / `Down` select, `Enter` runs, `Tab` completes, `Esc` closes
+the list and keeps the text. After `/attach ` and `/model ` a list offers the
+session names and models the same way. The list also shows commands of later
+versions, dimmed. A message that starts with `/` is written `//…`.
+
+Switching keeps each session's unsent input, scroll position and expanded tool
+calls. When the attached session ends, the session list opens.
 
 The session row ends with the tokens the session has used, `in 45.1k out 3.2k`.
 Input counts the history again with each request, so this is neither the context
@@ -129,7 +137,8 @@ clai import api.json                  # add it again (e.g. on another machine)
 `clai chat` is a plain-text chat: lines you type go to the model, its text
 streams back with one line per tool call. `Ctrl-C` cancels the running
 turn, `Ctrl-D` detaches (the session keeps working), `/help` lists the
-commands (`/cancel`, `/model`, `/usage`, `/detach`, `/kill`). It shows each question
+commands (`/cancel`, `/model`, `/usage`, `/sessions`, `/attach NAME`,
+`/new [NAME] [PROVIDER/MODEL]`, `/models`, `/detach`, `/kill`). It shows each question
 with the diff or command and reads the answer as a line: `y` allow, `a` always (then a rule), `n` deny, `e` deny
 with a message, `c` cancel the turn; for a limit question `y` continue,
 `n` stop.

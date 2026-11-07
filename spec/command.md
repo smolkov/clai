@@ -224,10 +224,9 @@ clai attach [NAME]
 ```
 
 Attaches the TUI to session `NAME`. Without `NAME`: attaches directly if
-exactly one session exists, opens the session list if there are several, and
-fails with `1` (`no sessions`) if there are none. Until the session list
-exists, several sessions fail with `1` too:
-`clai: several sessions: a, b, c; name one`.
+exactly one session exists, and fails with `1` (`no sessions`) if there are
+none. With several, the TUI opens on the session list, over the first session
+of the list; `Esc` there exits `0` with the detach line of that session.
 
 An unknown `NAME` fails with `1`. Configuration and terminal are checked as
 for [`clai`](#clai), before anything else.
@@ -353,6 +352,14 @@ The test passes now.
   shows or changes the model, `/usage` prints the tokens used
   (`tokens: in 45.1k, out 3.2k; context 12.3k`), `/detach` leaves, `/kill` ends
   the session and leaves, `/help` lists them.
+- Sessions: `/sessions` prints the table of `clai ls`, the attached session
+  marked `*`. `/attach NAME` attaches to another session and shows its history.
+  `/new [NAME] [PROVIDER/MODEL]` creates a session in the attached session's
+  workspace, with the note of `clai new`, and attaches to it; a word with a `/`
+  is the model, and without one it is `default_model`. `/models` lists the
+  server's models as `clai models` does. The session left keeps running, and a
+  question open there stays open for other clients; the line on leaving names
+  the session attached last.
 - `Ctrl-C` cancels the running turn. With no running turn it prints a hint;
   a second `Ctrl-C` within 1 s detaches.
 - `Ctrl-D` (end of input) detaches; the session keeps running and `clai

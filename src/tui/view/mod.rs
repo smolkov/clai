@@ -10,6 +10,7 @@ mod input;
 mod picker;
 mod popup;
 pub mod prompt;
+mod sessions;
 mod status;
 
 use ratatui::Frame;
@@ -113,13 +114,16 @@ pub fn draw(app: &App, frame: &mut Frame<'_>) {
     footer_row(buffer, areas.status, &status::text(app), look);
     footer_row(buffer, areas.info, &info::text(app), look);
     match cursor(app, &areas) {
-        Some((x, y)) if app.dialog.is_none() && app.picker.is_none() => {
+        Some((x, y))
+            if app.dialog.is_none() && app.picker.is_none() && app.session_list.is_none() =>
+        {
             frame.set_cursor_position((x, y));
         }
         _ => {}
     }
     commands::draw(app, frame, areas.conversation, areas.input.y - 1);
     popup::draw(app, frame, size);
+    sessions::draw(app, frame, size);
     picker::draw(app, frame, size);
 }
 

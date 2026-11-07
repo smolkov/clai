@@ -14,11 +14,12 @@ use crate::protocol::{
 };
 
 use super::commands::{self, Command};
-use super::conversation::{Conversation, Kind};
+use super::conversation::{Conversation, Expansion, Kind};
 use super::editor::{Browse, Edit, Editor};
 use super::keys::{self, Action, Focus};
-use super::picker::Picker;
+use super::picker::{Picker, Purpose};
 use super::prompt::Prompt;
+use super::sessions::{ListAction, SessionList};
 use super::style::Look;
 use super::view;
 
@@ -90,8 +91,11 @@ pub enum Input {
     /// The 1 s timer.
     Tick,
     Disconnected,
+    /// Attached again after a lost connection, or to another session.
     Attached(Box<Attachment>),
     ReconnectFailed,
+    /// A switch to another session failed; the current one stays.
+    SwitchFailed(String),
 }
 
 /// What the shell has to do.
@@ -101,7 +105,38 @@ pub enum Effect {
     Redraw,
     /// Try to connect again, after a short wait.
     Reconnect,
+    /// Attach to another session on a new connection; the old one is dropped
+    /// when it is there, which detaches it.
+    Switch(String),
     Exit(Exit),
+}
+
+/// What the TUI keeps of a session while it shows another one (see
+/// `spec/tui.md`, "Switching sessions"). The conversation is built again from
+/// the log.
+#[derive(Debug, Clone)]
+struct View {
+    top: usize,
+    follow: bool,
+    focus: Focus,
+    selected: Option<usize>,
+    expanded: HashMap<String, Expansion>,
+    queued: Vec<String>,
+    editor: Editor,
+}
+
+impl Default for View {
+    fn default() -> Self {
+        View {
+            top: 0,
+            follow: true,
+            focus: Focus::Input,
+            selected: None,
+            expanded: HashMap::new(),
+            queued: Vec::new(),
+            editor: Editor::default(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -127,11 +162,30 @@ pub struct App {
     pub prompt: Option<Prompt>,
     pub dialog: Option<Dialog>,
     pub picker: Option<Picker>,
-    /// A `models` request is on its way to open the picker.
-    picker_wanted: bool,
+    /// A `models` request is on its way to open the picker for this.
+    picker_wanted: Option<Purpose>,
+    pub session_list: Option<SessionList>,
+    /// A `list` request is on its way to open the session list.
+    list_wanted: bool,
+    /// The sessions of the last `list`, in the server's order.
+    pub sessions: Vec<SessionInfo>,
+    /// The models of the last `models` answer.
+    pub models: Vec<ModelInfo>,
+    /// A switch to this session is on its way.
+    pub switching: Option<String>,
+    /// The view of each session shown before, by id.
+    views: HashMap<u64, View>,
+    /// A notice for a session once it is attached, by id.
+    greeting: Option<(u64, String)>,
+    /// The server is stopping: it is not started again for the session list.
+    stopping: bool,
     /// The selected row of the open command list. The search is the input's
     /// text, so nothing else needs keeping in step.
     pub command_list: Option<usize>,
+    /// The selected row of the open argument list of `/attach` or `/model`.
+    pub argument_list: Option<usize>,
+    /// A `models` request for the argument list is on its way.
+    models_asked: bool,
     pub focus: Focus,
     /// The selected entry, with focus on the conversation.
     pub selected: Option<usize>,
@@ -186,8 +240,18 @@ impl App {
             prompt: None,
             dialog: None,
             picker: None,
-            picker_wanted: false,
+            picker_wanted: None,
+            session_list: None,
+            list_wanted: false,
+            sessions: Vec::new(),
+            models: Vec::new(),
+            switching: None,
+            views: HashMap::new(),
+            greeting: None,
+            stopping: false,
             command_list: None,
+            argument_list: None,
+            models_asked: false,
             focus: Focus::Input,
             selected: None,
             top: 0,
@@ -217,16 +281,51 @@ impl App {
     /// Takes one input.
     pub fn update(&mut self, input: Input) -> Vec<Effect> {
         let effects = self.handle(input);
-        // Keys go to an open prompt, so the picker must not hide it: what is
-        // typed for the filter would answer the question.
-        if self.prompt.is_some() || self.ended.is_some() {
+        // Keys go to an open prompt, so no box must hide it: what is typed for
+        // a filter would answer the question.
+        if self.prompt.is_some() {
             self.picker = None;
-            self.picker_wanted = false;
+            self.picker_wanted = None;
+            self.session_list = None;
+            self.list_wanted = false;
+            self.command_list = None;
+        }
+        // An ended session has no model to change; a new session still can
+        // be made from the session list.
+        if self.ended.is_some() {
+            if self
+                .picker
+                .as_ref()
+                .is_some_and(|p| p.purpose == Purpose::Change)
+            {
+                self.picker = None;
+            }
+            if self.picker_wanted == Some(Purpose::Change) {
+                self.picker_wanted = None;
+            }
             self.command_list = None;
         }
         // The picker can open late, when the server answers.
         if self.picker.is_some() || commands::search_text(&self.editor.text()).is_none() {
             self.command_list = None;
+        }
+        let mut effects = effects;
+        let boxed = self.picker.is_some()
+            || self.session_list.is_some()
+            || self.prompt.is_some()
+            || self.dialog.is_some()
+            || self.ended.is_some();
+        match commands::argument_text(&self.editor.text()) {
+            _ if boxed => self.argument_list = None,
+            None => self.argument_list = None,
+            // The models come with the first answer to `models`.
+            Some(("model", _))
+                if self.argument_list.is_some() && self.models.is_empty() && !self.models_asked =>
+            {
+                self.models_asked = true;
+                effects.push(Effect::Request(Request::Models));
+            }
+            Some(_) => {}
         }
         effects
     }
@@ -247,6 +346,11 @@ impl App {
                 vec![Effect::Redraw]
             }
             Input::ReconnectFailed => self.reconnect_failed(),
+            Input::SwitchFailed(message) => {
+                self.switching = None;
+                self.conversation.error(message);
+                vec![Effect::Redraw]
+            }
         }
     }
 
@@ -265,6 +369,10 @@ impl App {
             sessions,
             backlog,
         } = attachment;
+        if session.id != self.session.id {
+            self.leave_for(session.id);
+        }
+        self.switching = None;
         self.session = session;
         self.conversation.clear();
         self.conversation.stamp = None;
@@ -296,10 +404,61 @@ impl App {
             },
             None => None,
         };
-        self.set_place(&sessions);
+        self.set_place(sessions);
+        if let Some((id, text)) = self.greeting.take() {
+            if id == self.session.id {
+                self.conversation.notice(text);
+            } else {
+                self.greeting = Some((id, text));
+            }
+        }
     }
 
-    fn set_place(&mut self, sessions: &[SessionInfo]) {
+    /// Keeps the view of the session the TUI leaves and takes the one of the
+    /// session it goes to, as it was left or a fresh one.
+    fn leave_for(&mut self, id: u64) {
+        let (expanded, queued) = self.conversation.take_choices();
+        let left = View {
+            top: self.top,
+            follow: self.follow,
+            focus: self.focus,
+            selected: self.selected,
+            expanded,
+            queued,
+            editor: std::mem::take(&mut self.editor),
+        };
+        // An ended session has nothing to come back to.
+        if self.ended.is_none() {
+            self.views.insert(self.session.id, left);
+        }
+        let view = self.views.remove(&id).unwrap_or_default();
+        self.top = view.top;
+        self.follow = view.follow;
+        self.focus = view.focus;
+        self.selected = view.selected;
+        self.conversation.set_choices(view.expanded, view.queued);
+        self.editor = view.editor;
+        self.prompt = None;
+        self.dialog = None;
+        self.picker = None;
+        self.session_list = None;
+        self.list_wanted = false;
+        self.command_list = None;
+        self.ended = None;
+        self.new_output = false;
+        self.reveal = None;
+        self.resume_follow = false;
+        self.width = None;
+        self.last_interrupt = None;
+    }
+
+    /// The last `list`, for the session row, the session list and switching.
+    fn set_place(&mut self, sessions: Vec<SessionInfo>) {
+        // Views of sessions that are gone are dropped.
+        self.views
+            .retain(|id, _| sessions.iter().any(|s| s.id == *id));
+        self.sessions = sessions;
+        let sessions = &self.sessions;
         let Some(at) = sessions.iter().position(|s| s.id == self.session.id) else {
             return;
         };
@@ -323,7 +482,14 @@ impl App {
                 event,
             } if session == self.session.id => {
                 self.conversation.stamp = if replay { None } else { self.stamp() };
+                let ended = matches!(event, SessionEvent::Ended { .. });
                 self.event(event, replay);
+                // The spec's way on: choose another session or make one.
+                if ended && !replay && !self.stopping {
+                    let mut effects = self.open_sessions();
+                    effects.push(Effect::Redraw);
+                    return effects;
+                }
                 vec![Effect::Redraw]
             }
             ServerMessage::Notice { notice } => {
@@ -339,7 +505,10 @@ impl App {
                                 .error(format!("configuration rejected: {error}"));
                         }
                     }
-                    Notice::Stopping => self.conversation.notice("the server is stopping"),
+                    Notice::Stopping => {
+                        self.stopping = true;
+                        self.conversation.notice("the server is stopping");
+                    }
                     Notice::SessionCreated { .. } => return Vec::new(),
                 }
                 vec![Effect::Redraw]
@@ -449,11 +618,19 @@ impl App {
         let lost = matches!(&result, Err(message) if message == LOST);
         match (request, result) {
             (Request::List, Ok(Payload::Sessions { sessions })) => {
-                let before = self.place;
-                self.set_place(&sessions);
-                if before == self.place {
+                let before = (self.place, self.sessions.clone());
+                self.set_place(sessions);
+                let wanted = std::mem::take(&mut self.list_wanted);
+                if let Some(list) = &mut self.session_list {
+                    list.set_sessions(self.sessions.clone(), now_secs());
+                } else if wanted && self.picker.is_none() && self.dialog.is_none() {
+                    self.show_sessions();
+                } else if before == (self.place, self.sessions.clone()) {
                     return Vec::new();
                 }
+            }
+            (Request::New { .. }, Ok(Payload::Session { session })) => {
+                return self.created(&session);
             }
             (Request::Send { text, .. }, Err(message)) => {
                 self.conversation.unqueue(&text);
@@ -473,16 +650,27 @@ impl App {
                     }
                 }
             }
-            (Request::List, Err(_)) => return Vec::new(),
+            (Request::List, Err(_)) => {
+                self.list_wanted = false;
+                return Vec::new();
+            }
             (Request::Models, Ok(Payload::Models { models, config })) => {
+                self.models_asked = false;
                 self.models(models, config);
             }
             (Request::Models, Err(message)) => {
+                self.models_asked = false;
                 // A refresh after a reload fails quietly; the old list stays.
-                if !std::mem::take(&mut self.picker_wanted) || lost {
+                if self.picker_wanted.take().is_none() || lost {
                     return Vec::new();
                 }
                 self.conversation.error(message);
+            }
+            // A refused name or a failed kill is shown where it was asked.
+            (_, Err(message)) if !lost && self.session_list.is_some() => {
+                if let Some(list) = &mut self.session_list {
+                    list.message = Some(message);
+                }
             }
             (_, Err(message)) if !lost => self.conversation.error(message),
             _ => return Vec::new(),
@@ -497,17 +685,160 @@ impl App {
             .iter()
             .map(|m| (m.model.clone(), m.context_window))
             .collect();
-        let wanted = std::mem::take(&mut self.picker_wanted);
+        self.models.clone_from(&models);
+        let wanted = self.picker_wanted.take();
         if let Some(picker) = &mut self.picker {
             picker.set_models(models, config);
-        } else if wanted && self.dialog.is_none() {
-            self.picker = Some(Picker::new(models, config, &self.session.model));
+        } else if let Some(purpose) = wanted
+            && self.dialog.is_none()
+            && self.session_list.is_none()
+        {
+            self.picker = Some(Picker::new(models, config, &self.session.model, purpose));
         }
     }
 
-    fn open_picker(&mut self) -> Vec<Effect> {
-        self.picker_wanted = true;
+    fn open_picker(&mut self, purpose: Purpose) -> Vec<Effect> {
+        self.picker_wanted = Some(purpose);
         vec![Effect::Request(Request::Models)]
+    }
+
+    /// The model picker for a new session in the attached session's
+    /// workspace.
+    fn new_session(&mut self, name: Option<String>) -> Vec<Effect> {
+        let workspace = self.session.path.clone();
+        self.open_picker(Purpose::New { workspace, name })
+    }
+
+    /// A new session was made: attach to it, with a note if others work in
+    /// the same workspace, as `clai new` prints.
+    fn created(&mut self, session: &SessionInfo) -> Vec<Effect> {
+        let others: Vec<&str> = self
+            .sessions
+            .iter()
+            .filter(|s| s.path == session.path && s.id != session.id)
+            .map(|s| s.name.as_str())
+            .collect();
+        if !others.is_empty() {
+            let verb = if others.len() == 1 { "works" } else { "work" };
+            let text = format!(
+                "note: {} also {verb} in {}; sessions may change the same files",
+                others.join(", "),
+                session.workspace
+            );
+            self.greeting = Some((session.id, text));
+        }
+        let mut effects = self.switch(&session.name);
+        effects.push(Effect::Redraw);
+        effects
+    }
+
+    // Sessions.
+
+    /// Asks for the sessions; the answer opens the list.
+    fn open_sessions(&mut self) -> Vec<Effect> {
+        self.list_wanted = true;
+        vec![Effect::Request(Request::List)]
+    }
+
+    /// Opens the session list on the last `list`. After the attached session
+    /// ended, and at start for `clai attach` without a name, `Esc` leaves.
+    pub fn show_sessions(&mut self) {
+        let mut list = SessionList::new(self.sessions.clone(), &self.session, now_secs());
+        list.exit_on_esc = self.ended.is_some();
+        self.session_list = Some(list);
+    }
+
+    /// `clai attach` with several sessions: the list over the first one;
+    /// `Esc` there leaves.
+    pub fn choose_session(&mut self) {
+        self.show_sessions();
+        if let Some(list) = &mut self.session_list {
+            list.exit_on_esc = true;
+        }
+    }
+
+    /// Attaches to another session; nothing for the attached one, or while a
+    /// switch or a reconnect is on its way.
+    fn switch(&mut self, name: &str) -> Vec<Effect> {
+        if name == self.session.name && self.ended.is_none() {
+            return Vec::new();
+        }
+        if self.lost_since.is_some() {
+            self.message = Some("server disconnected".to_owned());
+            return Vec::new();
+        }
+        if self.switching.is_some() {
+            return Vec::new();
+        }
+        self.switching = Some(name.to_owned());
+        vec![Effect::Switch(name.to_owned())]
+    }
+
+    /// `Ctrl-N` / `Ctrl-P`: the next or previous session of the last `list`,
+    /// round the end.
+    fn cycle(&mut self, forward: bool) -> Vec<Effect> {
+        let count = self.sessions.len();
+        let Some(at) = self.sessions.iter().position(|s| s.id == self.session.id) else {
+            return Vec::new();
+        };
+        if count < 2 {
+            return Vec::new();
+        }
+        let next = if forward {
+            (at + 1) % count
+        } else {
+            (at + count - 1) % count
+        };
+        match self.sessions.get(next) {
+            Some(session) => {
+                let name = session.name.clone();
+                self.switch(&name)
+            }
+            None => Vec::new(),
+        }
+    }
+
+    fn session_list_key(&mut self, key: KeyEvent) -> Vec<Effect> {
+        let mut effects = vec![Effect::Redraw];
+        let Some(list) = &mut self.session_list else {
+            return effects;
+        };
+        let Some(action) = list.key(key) else {
+            return effects;
+        };
+        match action {
+            ListAction::Close => self.session_list = None,
+            ListAction::Exit => return vec![self.leave()],
+            ListAction::Attach(name) => {
+                if name == self.session.name && self.ended.is_none() {
+                    self.session_list = None;
+                } else {
+                    effects.extend(self.switch(&name));
+                }
+            }
+            ListAction::Rename { session, name } => {
+                effects.push(Effect::Request(Request::Rename { session, name }));
+            }
+            ListAction::Kill(session) => {
+                effects.push(Effect::Request(Request::Kill { session }));
+            }
+            ListAction::New { workspace, name } => {
+                self.session_list = None;
+                effects.extend(self.open_picker(Purpose::New { workspace, name }));
+            }
+        }
+        effects
+    }
+
+    /// Leaving the TUI: detached, or the session had ended.
+    fn leave(&self) -> Effect {
+        match &self.ended {
+            Some(reason) => Effect::Exit(Exit::Ended {
+                name: self.session.name.clone(),
+                reason: reason.clone(),
+            }),
+            None => self.detach(),
+        }
     }
 
     // Time and connection.
@@ -515,9 +846,10 @@ impl App {
     fn tick(&mut self) -> Vec<Effect> {
         self.ticks = self.ticks.wrapping_add(1);
         let mut effects = Vec::new();
+        // After the session ended only the session list needs it.
         if self.ticks.is_multiple_of(LIST_TICKS)
             && self.lost_since.is_none()
-            && self.ended.is_none()
+            && (self.ended.is_none() || self.session_list.is_some())
         {
             effects.push(Effect::Request(Request::List));
         }
@@ -553,17 +885,17 @@ impl App {
             return Vec::new();
         }
         self.message = None;
-        if let Some(reason) = &self.ended {
-            return vec![Effect::Exit(Exit::Ended {
-                name: self.session.name.clone(),
-                reason: reason.clone(),
-            })];
-        }
         if self.prompt.is_some() {
             return self.prompt_key(key);
         }
         if self.picker.is_some() {
             return self.picker_key(key);
+        }
+        if self.session_list.is_some() {
+            return self.session_list_key(key);
+        }
+        if self.ended.is_some() {
+            return vec![self.leave()];
         }
         if let Some(dialog) = self.dialog {
             return self.dialog_key(dialog, key);
@@ -571,6 +903,8 @@ impl App {
         let action = keys::action(key, self.focus);
         let mut effects = if self.command_list.is_some() {
             self.command_list_act(action)
+        } else if self.argument_list.is_some() {
+            self.argument_list_act(action)
         } else {
             self.act(action)
         };
@@ -620,12 +954,23 @@ impl App {
                 let Some(model) = picker.chosen().map(|m| m.model.clone()) else {
                     return effects;
                 };
+                let purpose = picker.purpose.clone();
                 self.picker = None;
-                if model != self.session.model {
-                    effects.push(Effect::Request(Request::SetModel {
-                        session: self.session.name.clone(),
-                        model,
-                    }));
+                match purpose {
+                    Purpose::Change if model != self.session.model => {
+                        effects.push(Effect::Request(Request::SetModel {
+                            session: self.session.name.clone(),
+                            model,
+                        }));
+                    }
+                    Purpose::Change => {}
+                    Purpose::New { workspace, name } => {
+                        effects.push(Effect::Request(Request::New {
+                            workspace,
+                            name,
+                            model: Some(model),
+                        }));
+                    }
                 }
             }
             _ => {
@@ -670,7 +1015,7 @@ impl App {
                 }
                 None => {}
             },
-            Action::ModelPicker => {
+            Action::ModelPicker | Action::SessionList => {
                 self.command_list = None;
                 return self.act(action);
             }
@@ -679,22 +1024,107 @@ impl App {
         Vec::new()
     }
 
-    /// Puts the command in the input, for its arguments, and closes the list.
+    /// Puts the command in the input, for its arguments, and closes the list;
+    /// the argument list opens for the commands it completes.
     fn complete(&mut self, command: &Command) {
         self.editor.set_text(&command.completed());
         self.command_list = None;
+        if commands::argument_text(&self.editor.text()).is_some() {
+            self.argument_list = Some(0);
+        }
     }
 
     /// Changes the input. `/` typed in the empty input opens the command list,
-    /// and a new search selects its first row.
+    /// and a new search selects its first row. The argument list opens when
+    /// the input becomes `/attach ` or `/model `, and is searched the same way.
     fn edit_input(&mut self, edit: impl FnOnce(&mut Editor), typed_slash: bool) {
         let before = self.editor.text();
         edit(&mut self.editor);
+        let after = self.editor.text();
         let opened = before.is_empty() && typed_slash;
-        let searched = self.command_list.is_some() && before != self.editor.text();
+        let searched = self.command_list.is_some() && before != after;
         if opened || searched {
             self.command_list = Some(0);
         }
+        let arguments = commands::argument_text(&after).is_some();
+        let entered = arguments && commands::argument_text(&before).is_none();
+        if entered || (arguments && self.argument_list.is_some() && before != after) {
+            self.argument_list = Some(0);
+        }
+    }
+
+    /// The values the argument list shows now.
+    pub fn arguments(&self) -> Vec<commands::Value> {
+        let text = self.editor.text();
+        let Some((command, typed)) = commands::argument_text(&text) else {
+            return Vec::new();
+        };
+        let values = if command == "attach" {
+            let symbols = &self.settings.look.symbols;
+            self.sessions
+                .iter()
+                .filter(|s| s.id != self.session.id)
+                .map(|s| commands::Value {
+                    value: s.name.clone(),
+                    description: format!(
+                        "{} {} {}",
+                        s.workspace,
+                        symbols.separator,
+                        crate::command::ls::state_name(s.state)
+                    ),
+                    search_description: false,
+                })
+                .collect()
+        } else {
+            self.models
+                .iter()
+                .map(|m| commands::Value {
+                    value: m.model.clone(),
+                    description: m.id.clone(),
+                    search_description: true,
+                })
+                .collect()
+        };
+        commands::search_values(values, typed)
+    }
+
+    /// An action while the argument list is open; as for the command list.
+    fn argument_list_act(&mut self, action: Action) -> Vec<Effect> {
+        let values = self.arguments();
+        let selected = self.argument_list.unwrap_or(0);
+        let chosen = values.get(selected).map(|v| v.value.clone());
+        let fill = |app: &mut App, value: &str| {
+            if let Some((command, _)) = commands::argument_text(&app.editor.text()) {
+                app.editor.set_text(&format!("/{command} {value}"));
+            }
+        };
+        match action {
+            Action::Cancel => self.argument_list = None,
+            Action::Up => self.argument_list = Some(selected.saturating_sub(1)),
+            Action::Down => {
+                let last = values.len().saturating_sub(1);
+                self.argument_list = Some((selected + 1).min(last));
+            }
+            Action::SwitchFocus => {
+                if let Some(value) = chosen {
+                    fill(self, &value);
+                    self.argument_list = None;
+                }
+            }
+            Action::Send => {
+                if let Some(value) = chosen {
+                    fill(self, &value);
+                }
+                self.argument_list = None;
+                return self.send();
+            }
+            Action::ModelPicker | Action::SessionList => {
+                self.argument_list = None;
+                return self.act(action);
+            }
+            _ => return self.act(action),
+        }
+        Vec::new()
     }
 
     fn dialog_key(&mut self, dialog: Dialog, key: KeyEvent) -> Vec<Effect> {
@@ -765,7 +1195,10 @@ impl App {
                 }
             }
             Action::Help => self.dialog = Some(Dialog::Help),
-            Action::ModelPicker => return self.open_picker(),
+            Action::ModelPicker => return self.open_picker(Purpose::Change),
+            Action::SessionList => return self.open_sessions(),
+            Action::NextSession => return self.cycle(true),
+            Action::PreviousSession => return self.cycle(false),
             Action::Detach | Action::Nothing => {}
         }
         Vec::new()
@@ -837,6 +1270,8 @@ impl App {
             prompt.paste(text);
         } else if let Some(picker) = &mut self.picker {
             picker.paste(text);
+        } else if let Some(list) = &mut self.session_list {
+            list.paste(text);
         } else if self.dialog.is_none() && self.ended.is_none() && self.focus == Focus::Input {
             self.edit_input(|editor| editor.paste(text), false);
         }
@@ -899,7 +1334,7 @@ impl App {
                 self.editor.clear();
                 return vec![self.detach()];
             }
-            ("model", "") => self.open_picker(),
+            ("model", "") => self.open_picker(Purpose::Change),
             ("model", model) => vec![Effect::Request(Request::SetModel {
                 session,
                 model: model.to_owned(),
@@ -916,7 +1351,19 @@ impl App {
                 self.dialog = Some(Dialog::ConfirmKill);
                 Vec::new()
             }
-            ("clear" | "permissions" | "sessions" | "new" | "attach" | "commit", _) => {
+            ("sessions" | "attach", "") => self.open_sessions(),
+            ("attach", name) => {
+                // A name not in the last list stays in the input, to correct.
+                if !self.sessions.iter().any(|s| s.name == name) {
+                    self.conversation
+                        .notice(format!("no session named {name}; /sessions lists them"));
+                    return Vec::new();
+                }
+                self.switch(name)
+            }
+            ("new", "") => self.new_session(None),
+            ("new", name) => self.new_session(Some(name.to_owned())),
+            ("clear" | "permissions" | "commit", _) => {
                 self.conversation
                     .notice(format!("`/{name}` comes with a later version"));
                 Vec::new()

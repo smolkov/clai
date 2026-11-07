@@ -9,7 +9,7 @@ use unicode_width::UnicodeWidthStr;
 use crate::protocol::ModelInfo;
 use crate::text::short_tokens;
 use crate::tui::app::App;
-use crate::tui::picker::Picker;
+use crate::tui::picker::{Picker, Purpose};
 use crate::tui::style::Look;
 use crate::tui::wrap::fit;
 
@@ -32,8 +32,12 @@ context_window = 32768"#;
 /// The marks of a row: `✓ current, default`, `⚠ no key`, `⚠ history 41k > 32k`.
 fn marks(app: &App, model: &ModelInfo) -> Vec<String> {
     let symbols = &app.settings.look.symbols;
+    let change = app
+        .picker
+        .as_ref()
+        .is_some_and(|p| p.purpose == Purpose::Change);
     let mut marks = Vec::new();
-    if model.model == app.session.model {
+    if change && model.model == app.session.model {
         marks.push(format!("{} current", symbols.done));
     }
     if model.default {
@@ -42,7 +46,7 @@ fn marks(app: &App, model: &ModelInfo) -> Vec<String> {
     if model.key == "missing" {
         marks.push(format!("{} no key", symbols.warning));
     }
-    if app.context_tokens > model.context_window {
+    if change && app.context_tokens > model.context_window {
         marks.push(format!(
             "{} history {} > {}",
             symbols.warning,
@@ -118,7 +122,10 @@ pub fn draw(app: &App, frame: &mut Frame<'_>, size: Rect) {
         return;
     };
     let look = &app.settings.look;
-    let title = format!(" Model for \"{}\" ", app.session.name);
+    let title = match &picker.purpose {
+        Purpose::Change => format!(" Model for \"{}\" ", app.session.name),
+        Purpose::New { .. } => " Model for a new session ".to_owned(),
+    };
     let cells = WIDTH.min(size.width.saturating_sub(4));
     let width = usize::from(cells);
     if !picker.has_models() {

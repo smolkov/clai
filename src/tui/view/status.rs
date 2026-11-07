@@ -26,6 +26,8 @@ pub fn text(app: &App) -> String {
     let mut parts: Vec<String> = Vec::new();
     if app.lost_since.is_some() {
         parts.push("server disconnected, retrying".to_owned());
+    } else if let Some(name) = &app.switching {
+        parts.push(format!("attaching {name}{}", symbols.more));
     } else {
         parts.push(state(app));
     }

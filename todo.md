@@ -157,10 +157,23 @@ Milestones and their order: [`implementation.md`](implementation.md).
 
 - [x] `/` in the empty input opens the list; search, `Up` / `Down`, `Tab`,
       `Enter`, `Esc`; one table for the list and `/help` (RFC 0004).
-- [ ] Argument completion: `/model` offers models, `/attach` session names.
-- [ ] Commands marked `later version`: `/clear`, `/permissions`, `/sessions`,
-      `/new`, `/attach`, `/commit`. Each box they open keeps the rule that a box
-      has a command.
+- [x] Argument completion: `/model` offers models, `/attach` session names
+      (RFC 0005).
+- [ ] Commands marked `later version`: `/clear`, `/permissions`, `/commit`.
+      Each box they open keeps the rule that a box has a command.
+
+## Session switching
+
+- [x] TUI: switching on a new connection, view state per session, `/attach`,
+      `Ctrl-N` / `Ctrl-P` (RFC 0005).
+- [x] Session list: `Ctrl-S`, `/sessions`; `Enter`, `n`, `r`, `k`, `Esc`; opens
+      when the attached session ended.
+- [x] New session: `/new [NAME]` and `n` with the model picker on
+      `default_model`.
+- [x] `clai attach` without a name and several sessions opens the list.
+- [x] `clai chat`: `/sessions`, `/attach NAME`, `/new [NAME] [MODEL]`, `/models`.
+- [ ] A pseudo-terminal test of switching in the real TUI (part of the TUI
+      core pseudo-terminal test above).
 
 ## Refactoring
 
@@ -176,8 +189,9 @@ Milestones and their order: [`implementation.md`](implementation.md).
 
 ## Next milestones
 
-- [ ] TUI sessions and settings (with a server notice for session state
-      changes, protocol 4, in place of polling `list`)
+- [ ] TUI sessions and settings: the rest (`[tui]` settings, themes, live
+      reload; a server notice for session state changes, protocol 4, in place
+      of polling `list`)
 - [ ] Commit (needs `spec/commit.md`)
 - [ ] Context management (needs `spec/context.md`)
 - [ ] Release

@@ -1,0 +1,16 @@
+---
+source: src/tui/tests.rs
+expression: text
+---
+                                            
+┌ Sessions ────────────────────────────────┐
+│     NAME       MODEL             STATE   │
+│   ✓ project    anthropic/sonnet  working │
+│ ▶   project-2  local/qwen        idle    │
+│     docs       anthropic/opus    ● wait… │
+│     old        anthropic/sonnet  saved   │
+│                                          │
+│                                          │
+│ Enter attach ─ n new ─ r rename ─ k kill │
+└──────────────────────────────────────────┘
+  project · ~/ws/project · anthropic/sonnet…

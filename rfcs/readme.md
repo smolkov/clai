@@ -126,3 +126,4 @@ Sections that do not apply may be left out.
 | [0002](0002-clai-without-command.md) | `clai` without a command opens the TUI | accepted |
 | [0003](0003-session-improvements.md) | Session improvements | done |
 | [0004](0004-tui-command-list.md) | TUI command list | done |
+| [0005](0005-session-switching.md) | Session switching | done |

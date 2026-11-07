@@ -40,9 +40,13 @@ fn row(
     Line::styled(fit(&text, width, look.symbols.more), style)
 }
 
-/// Draws the list with its last row above `bottom`, and a line over the list.
-/// The layout does not change, so the conversation does not jump.
+/// Draws the command list, or the argument list, with its last row above
+/// `bottom` and a line over it. The layout does not change, so the
+/// conversation does not jump.
 pub fn draw(app: &App, frame: &mut Frame<'_>, conversation: Rect, bottom: u16) {
+    if let Some(selected) = app.argument_list {
+        arguments(app, frame, conversation, bottom, selected);
+    }
     let Some(selected) = app.command_list else {
         return;
     };
@@ -73,6 +77,51 @@ pub fn draw(app: &App, frame: &mut Frame<'_>, conversation: Rect, bottom: u16) {
             .take(rows)
             .map(|(i, c)| row(app, c, i == selected, shown_width, width)),
     );
+    place(frame, lines, conversation, bottom);
+}
+
+/// The values of `/attach ` or `/model `: the value, then its hint.
+fn arguments(app: &App, frame: &mut Frame<'_>, conversation: Rect, bottom: u16, selected: usize) {
+    let look = &app.settings.look;
+    let width = usize::from(conversation.width);
+    let values = app.arguments();
+    let value_width = values
+        .iter()
+        .map(|v| v.value.chars().count())
+        .max()
+        .unwrap_or(0);
+    let room = usize::from(conversation.height).saturating_sub(1);
+    let rows = values.len().clamp(1, MAX_ROWS).min(room);
+    let first = (selected + 1).saturating_sub(rows);
+    let mut lines = vec![Line::styled(
+        look.symbols.rule.repeat(width),
+        look.styles.border,
+    )];
+    if values.is_empty() {
+        lines.push(Line::styled("  no match", look.styles.dim));
+    }
+    for (i, value) in values.iter().enumerate().skip(first).take(rows) {
+        let pointer = if i == selected {
+            look.symbols.pointer
+        } else {
+            " "
+        };
+        let text = format!(
+            "{pointer} {:<value_width$}  {}",
+            value.value, value.description
+        );
+        let style = if i == selected {
+            look.styles.selection
+        } else {
+            look.styles.text
+        };
+        lines.push(Line::styled(fit(&text, width, look.symbols.more), style));
+    }
+    place(frame, lines, conversation, bottom);
+}
+
+/// Puts the lines over the conversation, ending above `bottom`.
+fn place(frame: &mut Frame<'_>, lines: Vec<Line<'static>>, conversation: Rect, bottom: u16) {
     let height = u16::try_from(lines.len()).unwrap_or(0);
     let area = Rect::new(
         conversation.x,

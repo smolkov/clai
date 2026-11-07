@@ -11,6 +11,7 @@ mod keys;
 mod markdown;
 mod picker;
 mod prompt;
+mod sessions;
 mod style;
 pub mod terminal;
 mod view;
@@ -77,7 +78,7 @@ pub fn run(config: Option<&Path>, target: Target) -> Result<()> {
     let connect = Connect::tui(config, client_name());
     let exit = current_thread()?.block_on(async {
         let mut client = Client::connect(&connect).await?;
-        let name = session_name(&mut client, target).await?;
+        let (name, choose) = session_name(&mut client, target).await?;
         let attached = attach(client, &name).await?;
         terminal::install_panic_hook();
         let guard = terminal::Guard::new(loaded.tui.mouse)?;
@@ -86,6 +87,7 @@ pub fn run(config: Option<&Path>, target: Target) -> Result<()> {
             &loaded,
             connect.clone(),
             attached,
+            choose,
         )
         .await;
         // Restored before anything is printed, also after an error.
@@ -142,27 +144,22 @@ fn client_name() -> String {
     tty.map_or_else(|| "tui".to_owned(), |tty| format!("tui {tty}"))
 }
 
-/// The name of the session to attach to; creates it for [`Target::New`].
-async fn session_name(client: &mut Client, target: Target) -> Result<String> {
+/// The name of the session to attach to, and whether the user still has to
+/// choose one in the session list; creates it for [`Target::New`].
+async fn session_name(client: &mut Client, target: Target) -> Result<(String, bool)> {
     match target {
-        Target::New(request) => Ok(create(client, request).await?.name),
-        Target::Attach(Some(name)) => Ok(name),
-        Target::Attach(None) => only_session(&client.list().await?),
+        Target::New(request) => Ok((create(client, request).await?.name, false)),
+        Target::Attach(Some(name)) => Ok((name, false)),
+        Target::Attach(None) => first_session(&client.list().await?),
     }
 }
 
-/// The one session; until the session list exists, several are an error.
-fn only_session(sessions: &[SessionInfo]) -> Result<String> {
+/// The one session; with several, the first, under the session list.
+fn first_session(sessions: &[SessionInfo]) -> Result<(String, bool)> {
     match sessions {
         [] => Err(Error::Failed("no sessions".to_owned())),
-        [session] => Ok(session.name.clone()),
-        several => {
-            let names: Vec<&str> = several.iter().map(|s| s.name.as_str()).collect();
-            Err(Error::Failed(format!(
-                "several sessions: {}; name one",
-                names.join(", ")
-            )))
-        }
+        [session] => Ok((session.name.clone(), false)),
+        [first, ..] => Ok((first.name.clone(), true)),
     }
 }
 
@@ -246,6 +243,12 @@ enum Report {
     Attached(Box<Attached>),
 }
 
+/// Attaches to another session on a new connection.
+async fn switch(connect: Connect, name: String) -> Result<Attached> {
+    let client = Client::connect(&connect).await?;
+    attach(client, &name).await
+}
+
 /// One try to get back to the session: starts the server if needed.
 async fn reconnect(connect: Connect, id: u64, name: String) -> Result<Attached> {
     let mut client = Client::connect(&connect).await?;
@@ -273,6 +276,7 @@ async fn event_loop(
     config: &Config,
     connect: Connect,
     attached: Attached,
+    choose: bool,
 ) -> Result<Exit> {
     let drawing = Error::io("drawing the screen");
     let backend = CrosstermBackend::new(std::io::stdout());
@@ -281,6 +285,9 @@ async fn event_loop(
     let Attached { client, attachment } = attached;
     let mut connection = Some(Connection::spawn(client));
     let mut app = App::new(settings, attachment, std::time::Instant::now());
+    if choose {
+        app.choose_session();
+    }
     let (reports, mut incoming) = mpsc::unbounded_channel();
 
     let mut terminal_events = EventStream::new();
@@ -338,6 +345,16 @@ async fn event_loop(
                 Effect::Redraw => dirty = true,
                 Effect::Exit(exit) => return Ok(exit),
                 Effect::Request(request) => send(&mut connection, request, &reports),
+                Effect::Switch(name) => {
+                    let (connect, reports) = (connect.clone(), reports.clone());
+                    tokio::spawn(async move {
+                        let report = match switch(connect, name).await {
+                            Ok(attached) => Report::Attached(Box::new(attached)),
+                            Err(e) => Report::Input(Input::SwitchFailed(e.to_string())),
+                        };
+                        let _ = reports.send(report);
+                    });
+                }
                 Effect::Reconnect => {
                     let (connect, reports) = (connect.clone(), reports.clone());
                     let (id, name) = (app.session.id, app.session.name.clone());

@@ -468,6 +468,45 @@ fn chat_with_a_session() {
 }
 
 #[test]
+fn chat_switches_sessions() {
+    let port = model_server(vec![say("in other")]);
+    let env = Env::new("chat-switch", port);
+    let mut chat = Live::start(&env, &["chat"]);
+    chat.expect("clai: attached to ws (");
+    chat.send("/models");
+    chat.expect("test/m");
+    chat.send("/new other test/m");
+    chat.expect("clai: attached to other (");
+    chat.send("hello other");
+    chat.expect("in other");
+    chat.send("/sessions");
+    chat.expect("* other");
+    chat.send("/attach nope");
+    chat.expect("no session named nope");
+    chat.send("/attach ws");
+    chat.expect("clai: attached to ws (");
+    chat.send("/attach other");
+    // The history of the session it comes back to.
+    chat.expect("> hello other");
+    chat.expect("in other");
+    chat.send("/new a b");
+    chat.expect("usage: /new [NAME] [PROVIDER/MODEL]");
+    let (status, seen) = chat.finish();
+    assert_eq!(status, Some(0), "{seen}");
+    assert!(
+        seen.contains("`clai chat other` returns to other"),
+        "{seen}"
+    );
+    let mut names: Vec<String> = env
+        .sessions()
+        .iter()
+        .map(|s| s["name"].as_str().unwrap().to_owned())
+        .collect();
+    names.sort();
+    assert_eq!(names, ["other", "ws"]);
+}
+
+#[test]
 fn sessions_are_saved_and_resumed() {
     let port = model_server(vec![say("noted: 42"), say("it was 42")]);
     let env = Env::new("saved", port);

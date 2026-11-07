@@ -34,7 +34,7 @@ impl Ls {
     }
 }
 
-fn state_name(state: State) -> &'static str {
+pub fn state_name(state: State) -> &'static str {
     match state {
         State::Idle => "idle",
         State::Working => "working",

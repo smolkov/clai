@@ -33,6 +33,12 @@ pub enum Action {
     Help,
     /// `Ctrl-O`.
     ModelPicker,
+    /// `Ctrl-S`.
+    SessionList,
+    /// `Ctrl-N`.
+    NextSession,
+    /// `Ctrl-P`.
+    PreviousSession,
     Nothing,
 }
 
@@ -66,6 +72,9 @@ pub fn action(key: KeyEvent, focus: Focus) -> Action {
         KeyCode::Char('c') if ctrl(key) => return Action::Interrupt,
         KeyCode::Char('d') if ctrl(key) => return Action::Detach,
         KeyCode::Char('o') if ctrl(key) => return Action::ModelPicker,
+        KeyCode::Char('s') if ctrl(key) => return Action::SessionList,
+        KeyCode::Char('n') if ctrl(key) => return Action::NextSession,
+        KeyCode::Char('p') if ctrl(key) => return Action::PreviousSession,
         KeyCode::Tab | KeyCode::BackTab => return Action::SwitchFocus,
         _ => {}
     }

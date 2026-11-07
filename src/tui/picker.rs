@@ -8,8 +8,21 @@ use crate::protocol::ModelInfo;
 
 use super::editor::{Edit, Editor};
 
+/// What the chosen model is for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Purpose {
+    /// The attached session's model.
+    Change,
+    /// A new session, created when a model is chosen.
+    New {
+        workspace: PathBuf,
+        name: Option<String>,
+    },
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Picker {
+    pub purpose: Purpose,
     models: Vec<ModelInfo>,
     /// The user config file, for the text shown when there are no models.
     pub config: PathBuf,
@@ -19,10 +32,15 @@ pub struct Picker {
 }
 
 impl Picker {
-    /// Starts on the current model.
-    pub fn new(models: Vec<ModelInfo>, config: PathBuf, current: &str) -> Picker {
-        let selected = models.iter().position(|m| m.model == current).unwrap_or(0);
+    /// Starts on the current model; for a new session on `default_model`.
+    pub fn new(models: Vec<ModelInfo>, config: PathBuf, current: &str, purpose: Purpose) -> Picker {
+        let start = |m: &ModelInfo| match purpose {
+            Purpose::Change => m.model == current,
+            Purpose::New { .. } => m.default,
+        };
+        let selected = models.iter().position(start).unwrap_or(0);
         Picker {
+            purpose,
             models,
             config,
             filter: Editor::default(),

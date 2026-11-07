@@ -62,15 +62,18 @@ pub const COMMANDS: &[Command] = &[
         "permissions",
         "Show the permission rules in effect",
     )),
-    later(command("sessions", "Open the session list")),
-    later(optional(
-        command("new", "Start a new session and attach"),
+    command("sessions", "Open the session list"),
+    optional(
+        command("new", "Start a new session, choose its model"),
         "[NAME]",
-    )),
-    later(required(
-        command("attach", "Attach to another session"),
-        "NAME",
-    )),
+    ),
+    optional(
+        command(
+            "attach",
+            "Attach to another session; without one, choose it",
+        ),
+        "[NAME]",
+    ),
     required(command("rename", "Rename the session"), "NAME"),
     command("kill", "End the session, after a question"),
     later(optional(
@@ -113,6 +116,41 @@ impl Command {
 pub fn search_text(text: &str) -> Option<&str> {
     let rest = text.strip_prefix('/')?;
     (!rest.starts_with('/') && !rest.contains(char::is_whitespace)).then_some(rest)
+}
+
+/// The commands whose argument the list completes.
+pub const COMPLETED: &[&str] = &["attach", "model"];
+
+/// A value the argument list offers: what goes in the input, and a hint.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Value {
+    pub value: String,
+    pub description: String,
+    /// The description is searched too: a model's id, not a session's
+    /// workspace, which many sessions share.
+    pub search_description: bool,
+}
+
+/// The command and the typed part of its argument, if the input is one of
+/// [`COMPLETED`] followed by a space and at most one word.
+pub fn argument_text(text: &str) -> Option<(&'static str, &str)> {
+    let rest = text.strip_prefix('/')?;
+    let (name, argument) = rest.split_once(' ')?;
+    let name = COMPLETED.iter().find(|c| **c == name)?;
+    (!argument.contains(char::is_whitespace)).then_some((name, argument))
+}
+
+/// The values for a search, in any case: those that start with it first, then
+/// those that contain it, each in the given order.
+pub fn search_values(values: Vec<Value>, text: &str) -> Vec<Value> {
+    let text = text.to_lowercase();
+    let starts = |v: &Value| v.value.to_lowercase().starts_with(&text);
+    let (mut first, rest): (Vec<Value>, Vec<Value>) = values.into_iter().partition(starts);
+    first.extend(rest.into_iter().filter(|v| {
+        v.value.to_lowercase().contains(&text)
+            || (v.search_description && v.description.to_lowercase().contains(&text))
+    }));
+    first
 }
 
 /// The commands for a search, in any case: names that start with it first, then
@@ -187,6 +225,47 @@ mod tests {
         for text in ["", "mo", "//", "//mo", "/model a", "/model ", "/a\nb"] {
             assert_eq!(search_text(text), None, "{text}");
         }
+    }
+
+    #[test]
+    fn what_is_an_argument_search() {
+        assert_eq!(argument_text("/attach "), Some(("attach", "")));
+        assert_eq!(argument_text("/model loc"), Some(("model", "loc")));
+        for text in [
+            "/attach",
+            "/rename x",
+            "/model a b",
+            "/model a\nb",
+            "attach x",
+        ] {
+            assert_eq!(argument_text(text), None, "{text}");
+        }
+    }
+
+    #[test]
+    fn values_that_start_with_the_text_come_first() {
+        let value = |v: &str, d: &str| Value {
+            value: v.into(),
+            description: d.into(),
+            search_description: d != "hidden",
+        };
+        let values = vec![
+            value("anthropic/sonnet", "claude-sonnet"),
+            value("local/qwen", "qwen3-coder"),
+            value("anthropic/qwen-proxy", "hidden"),
+        ];
+        let found = |text| -> Vec<String> {
+            search_values(values.clone(), text)
+                .into_iter()
+                .map(|v| v.value)
+                .collect()
+        };
+        assert_eq!(found("LOC"), ["local/qwen"]);
+        assert_eq!(found("qwen"), ["local/qwen", "anthropic/qwen-proxy"]);
+        assert_eq!(found("claude"), ["anthropic/sonnet"]);
+        assert!(found("hidden").is_empty());
+        assert_eq!(found("").len(), 3);
+        assert!(found("zzz").is_empty());
     }
 
     #[test]

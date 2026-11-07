@@ -17,9 +17,9 @@ The test fails because parse drops the last line. Let me look.
   /clear                   later version                                        
   /model [PROVIDER/MODEL]  Change the model; without one, choose it             
   /permissions             later version                                        
-  /sessions                later version                                        
-  /new [NAME]              later version                                        
-  /attach NAME             later version                                        
+  /sessions                Open the session list                                
+  /new [NAME]              Start a new session, choose its model                
+  /attach [NAME]           Attach to another session; without one, choose it    
   /rename NAME             Rename the session                                   
 ────────────────────────────────────────────────────────────────────────────────
 > /                                                                             

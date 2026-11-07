@@ -69,24 +69,40 @@ The session list opens with `Ctrl-S`, `/sessions`, or `clai attach` without a
 name:
 
 ```
-┌ Sessions ─────────────────────────────────────────────────────────────────┐
-│   NAME        WORKSPACE           MODEL               STATE       AGE      │
-│ ▶ project     ~/ws/project        anthropic/sonnet    working     12 min   │
-│   project-2   ~/ws/project        local/qwen          idle        1 h      │
-│   docs        ~/ws/docs           anthropic/opus      ● waiting   3 min    │
-│                                                                           │
-│ Enter attach ─ n new ─ r rename ─ k kill ─ Esc back                       │
-└───────────────────────────────────────────────────────────────────────────┘
+┌ Sessions ────────────────────────────────────────────────────────────────────┐
+│     NAME       WORKSPACE     MODEL             STATE      AGE                │
+│   ✓ project    ~/ws/project  anthropic/sonnet  working    12m                │
+│ ▶   project-2  ~/ws/project  local/qwen        idle       2h                 │
+│     docs       ~/ws/docs     anthropic/opus    ● waiting  3m                 │
+│     old        ~/ws/old      anthropic/sonnet  saved      3d                 │
+│                                                                              │
+│                                                                              │
+│ Enter attach ─ n new ─ r rename ─ k kill ─ Esc back                          │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
+
+- The list holds every session the server knows, running and saved, in the
+  server's order, which is also the order of `1/3` and of `Ctrl-N` / `Ctrl-P`.
+  `✓` marks the attached session; it is selected when the list opens.
+- It asks the server for the sessions when it opens and every 2 s while open;
+  the selection stays on the same session.
+- On a narrow terminal the age, then the workspace, are left out.
+- A question that opens in the attached session closes the list: keys belong to
+  the prompt bar then.
 
 | Key in list | Action |
 |-------------|--------|
-| `Up` / `Down` | Select a session. |
-| `Enter`     | Attach to the selected session (detaches from the current one). |
-| `n`         | New session: asks for workspace (default: the current session's) and name, then opens the model picker (preselected: `default_model`), then attaches. |
-| `r`         | Rename the selected session. |
+| `Up` / `Down` | Select a session; they stop at the ends. |
+| `Enter`     | Attach to the selected session (detaches from the current one). On the attached session it only closes the list. |
+| `n`         | New session: asks for the workspace (default: the attached session's; `~` is the home directory, a relative path starts there) and the name (empty: the default name), then opens the model picker on `default_model`; `Enter` there creates the session and attaches. `Esc` goes back one step; in the picker it creates nothing. |
+| `r`         | Rename the selected session, in place; `Enter` renames, `Esc` goes back. A refused name is shown in the list. |
 | `k`         | Kill the selected session, after a `y`/`n` confirmation. |
-| `Esc`       | Close the list, stay on the current session. |
+| `Esc`       | Close the list, stay on the current session. Where the list stands for a choice not yet made (after the attached session ended, or for `clai attach` without a name), `Esc` exits the TUI. |
+
+`/new [NAME]` creates a session in the attached session's workspace the same
+way: the model picker opens on `default_model`, so `Enter` alone starts the new
+session with it. If other sessions work in that workspace, the new session's
+conversation starts with the note `clai new` prints.
 
 ## Token counters
 
@@ -107,7 +123,8 @@ reconnect, so a reconnect never counts anything twice.
 
 Each session has its own provider and model. The model picker chooses them.
 It opens with `Ctrl-O`, `/model` without an argument, or when creating a
-session.
+session; then its title is "Model for a new session", it starts on
+`default_model`, and it has no `current` or history marks.
 
 ```
 ┌ Model for "project" ──────────────────────────────────────────────────────┐
@@ -170,11 +187,17 @@ Changing the model of a running session:
 - On attach, the TUI loads the session's full history from the server, then
   follows it live. A turn that ran while detached appears as if it had been
   watched.
+- A switch attaches on a new connection to the server and drops the old one,
+  which detaches it. Until the new session is there, the old one stays on
+  screen and the status row says `attaching NAME…`; if it fails, the error is
+  shown and the old session stays. A question open in the session left stays
+  open for other clients and is counted in `●`.
 - If the attached session is killed (by this or another client), the TUI
-  shows a notice and opens the session list. If no session is left, it
-  offers to start a new one or exit. Until the session list exists: the
-  notice, the input is disabled, and any key exits with `0`. The same holds
-  for `clai server stop`; the TUI does not start the server again then.
+  shows a notice and opens the session list. If no session is left, the list
+  says `no sessions` and offers `n` new or `Esc` exit. `Esc` exits with `0`.
+  Until the list is there, any key exits. For `clai server stop` the TUI
+  opens no list: the notice, the input is disabled, and any key exits with
+  `0`; it does not start the server again.
 - If the connection to the server is lost, the TUI shows "server
   disconnected" and retries every 500 ms for 10 s, starting the server if
   needed, since sessions are saved. The conversation is rebuilt from the log;
@@ -273,8 +296,8 @@ The prompt takes keys only for the prompt bar, as for permission prompts.
 | `/model [PROVIDER/MODEL]` | Change the session's provider and model; without an argument, open the model picker. |
 | `/permissions` | Show the permission rules in effect: configuration, project file and session rules, with their source. |
 | `/sessions` | Open the session list. |
-| `/new [NAME]` | Start a new session in the same workspace and attach to it. |
-| `/attach NAME` | Attach to another session. |
+| `/new [NAME]` | Start a new session in the same workspace and attach to it; the model picker opens on `default_model` first. |
+| `/attach [NAME]` | Attach to another session; without a name, open the session list. A name that is not in the list stays in the input with a notice. |
 | `/rename NAME` | Rename the attached session. |
 | `/kill`    | End the attached session, after confirmation, and open the session list. |
 | `/commit [HINT]` | Generate a commit message for all changes in the workspace and commit them after confirmation; see [Commit](#commit) and [`commit.md`](commit.md). |
@@ -331,9 +354,13 @@ cancels the turn or clears the input, which closes the list.
 Every box the user can open has a command in the table above. The prompt bar has
 none: it opens when the agent asks a question.
 
-Not built yet: after the command name and a space, arguments are completed from
-current values where it makes sense: `/model` offers the configured models,
-`/attach` the session names. `Tab` completes the selected value.
+After `/attach ` and `/model ` (typed, or completed with `Tab`), a list of
+values lies in the same place: `/attach` offers the other sessions, with their
+workspace and state, `/model` the server's models, with their id. Typing
+searches them like commands, by name, and models also by id. `Up` / `Down`
+select, `Tab` completes the selected value, `Enter` runs the command with it,
+and with no match (`no match`) `Enter` runs the text as typed. `Esc` closes
+the list until the input no longer is such a command. A second word closes it.
 
 While the command list is open, `Up`/`Down` select in the list instead of
 browsing the message history.
@@ -400,7 +427,7 @@ the diff.
 | `Ctrl-C` twice within 1 s, or `Ctrl-D` with empty input | Detach and exit the TUI; the session keeps running. |
 | `Ctrl-S`             | Open the session list. |
 | `Ctrl-O`             | Open the model picker for the attached session. |
-| `Ctrl-N` / `Ctrl-P`  | Attach to the next / previous session in the list. |
+| `Ctrl-N` / `Ctrl-P`  | Attach to the next / previous session in the list, round the end. With one session, nothing. |
 | `PgUp` / `PgDn`      | Scroll the conversation. |
 | `Ctrl-Home` / `Ctrl-End` | Jump to start / end of the conversation. |
 | `Tab`                | Move focus between input and conversation. |

@@ -7,14 +7,18 @@ use std::time::{Duration, Instant};
 
 use tokio::signal::unix::{SignalKind, signal};
 
-use crate::agent::{Closed, Question, SessionEvent, State};
+use crate::agent::{Closed, Question, SessionEvent, State, now_secs};
 use crate::client::{Client, Connect, unexpected};
+use crate::command::ls::table;
 use crate::command::new::create;
 use crate::error::{Error, Result};
-use crate::protocol::{Notice, Payload, Request, ServerMessage, SessionInfo, TokenTotals};
+use crate::protocol::{
+    ModelInfo, Notice, Payload, Request, ServerMessage, SessionInfo, TokenTotals,
+};
 use crate::runtime::current_thread;
 use crate::text::{
-    Conversation, Dialog, Step, Style, Terminal, full_content, render_question_styled, usage_line,
+    Conversation, Dialog, Step, Style, Terminal, full_content, render_question_styled,
+    short_tokens, usage_line,
 };
 
 use super::{Lines, pager, symbols};
@@ -27,6 +31,11 @@ commands:
   /cancel          cancel the running turn
   /model [MODEL]   show or change the model (PROVIDER/MODEL)
   /usage           show the tokens used so far
+  /sessions        list the sessions; * is this one
+  /attach NAME     attach to another session
+  /new [NAME] [MODEL]  start a session in this workspace and attach;
+                   MODEL is PROVIDER/MODEL, default: default_model
+  /models          list the configured models
   /detach          leave; the session keeps running (also Ctrl-D)
   /kill            end the session and leave
   /help            this list
@@ -59,27 +68,12 @@ pub fn talk(config: Option<&Path>, target: Target) -> Result<()> {
             }
             Target::New(request) => create(&mut client, request).await?.name,
         };
-        let session = match client
-            .request(Request::Attach {
-                session: name.clone(),
-            })
-            .await?
-        {
-            Payload::Session { session } => session,
-            other => return Err(unexpected(&other)),
-        };
-        let _ = writeln!(
-            io::stderr(),
-            "clai: attached to {} ({}, {}); /help lists commands, Ctrl-D detaches",
-            session.name,
-            session.workspace,
-            session.model
-        );
+        let session = attach(&mut client, &name).await?;
         let mut talk = Talk {
             client,
             lines: Lines::start(),
             conversation: Conversation::new(unicode, colour),
-            session: *session,
+            session,
             usage: TokenTotals::default(),
             context_tokens: 0,
             dialog: None,
@@ -90,6 +84,88 @@ pub fn talk(config: Option<&Path>, target: Target) -> Result<()> {
         talk.replay().await?;
         talk.run().await
     })
+}
+
+/// Attaches and says so on standard error.
+async fn attach(client: &mut Client, name: &str) -> Result<SessionInfo> {
+    let session = match client
+        .request(Request::Attach {
+            session: name.to_owned(),
+        })
+        .await?
+    {
+        Payload::Session { session } => *session,
+        other => return Err(unexpected(&other)),
+    };
+    let _ = writeln!(
+        io::stderr(),
+        "clai: attached to {} ({}, {}); /help lists commands, Ctrl-D detaches",
+        session.name,
+        session.workspace,
+        session.model
+    );
+    Ok(session)
+}
+
+/// The words of `/new`: a word with a `/` is the model, another the name.
+fn new_words(argument: &str) -> std::result::Result<(Option<String>, Option<String>), String> {
+    let (mut name, mut model) = (None, None);
+    for word in argument.split_whitespace() {
+        let slot = if word.contains('/') {
+            &mut model
+        } else {
+            &mut name
+        };
+        if slot.is_some() {
+            return Err("usage: /new [NAME] [PROVIDER/MODEL]".to_owned());
+        }
+        *slot = Some(word.to_owned());
+    }
+    Ok((name, model))
+}
+
+/// `/sessions`: the table of `clai ls`, the attached session marked `*`.
+fn sessions_text(sessions: &[SessionInfo], attached: u64, now: u64) -> String {
+    let mut out = String::new();
+    for (line, session) in table(sessions, now).lines().zip(sessions) {
+        let mark = if session.id == attached { '*' } else { ' ' };
+        out.push_str(&format!("{mark} {line}\n"));
+    }
+    if out.is_empty() {
+        out.push_str("no sessions\n");
+    }
+    out
+}
+
+/// `/models`: as `clai models` prints them.
+fn models_text(models: &[ModelInfo]) -> String {
+    let width = |f: fn(&ModelInfo) -> usize| models.iter().map(f).max().unwrap_or(0);
+    let w_model = width(|m| m.model.chars().count());
+    let w_id = width(|m| m.id.chars().count());
+    let w_window = width(|m| short_tokens(m.context_window).len());
+    let mut out = String::new();
+    for m in models {
+        let mut marks = Vec::new();
+        if m.default {
+            marks.push("default");
+        }
+        if m.key == "missing" {
+            marks.push("no key");
+        }
+        let line = format!(
+            "{:<w_model$}  {:<w_id$}  {:>w_window$}  {}",
+            m.model,
+            m.id,
+            short_tokens(m.context_window),
+            marks.join(", ")
+        );
+        out.push_str(line.trim_end());
+        out.push('\n');
+    }
+    if out.is_empty() {
+        out.push_str("no models are configured\n");
+    }
+    out
 }
 
 /// What happens after a line or an event.
@@ -167,6 +243,74 @@ impl Talk {
             _ => self.prompt(),
         }
         Ok(())
+    }
+
+    /// Attaches to another session and shows its history; the one left
+    /// keeps running, and its open question stays for other clients.
+    async fn switch_to(&mut self, name: &str) -> Result<()> {
+        let left = self.session.name.clone();
+        let end = self.conversation.break_line();
+        self.out(end);
+        let session = attach(&mut self.client, name).await?;
+        // Its events still on their way are not this session's, so they are
+        // not shown.
+        let _ = self.client.request(Request::Detach { session: left }).await;
+        self.session = session;
+        self.conversation = Conversation::new(self.unicode, self.colour);
+        self.usage = TokenTotals::default();
+        self.context_tokens = 0;
+        self.dialog = None;
+        self.interrupted = None;
+        self.replay().await
+    }
+
+    /// `/new`, `/attach`, `/sessions`, `/models`; `None` for other commands.
+    async fn session_command(&mut self, name: &str, argument: &str) -> Option<Result<()>> {
+        let result = match name {
+            "sessions" => match self.client.list().await {
+                Ok(sessions) => {
+                    let text = sessions_text(&sessions, self.session.id, now_secs());
+                    self.out(&text);
+                    Ok(())
+                }
+                Err(e) => Err(e),
+            },
+            "models" => match self.client.request(Request::Models).await {
+                Ok(Payload::Models { models, .. }) => {
+                    self.out(&models_text(&models));
+                    Ok(())
+                }
+                Ok(other) => Err(unexpected(&other)),
+                Err(e) => Err(e),
+            },
+            "attach" if argument.is_empty() => Err(Error::Usage(
+                "usage: /attach NAME; /sessions lists them".into(),
+            )),
+            "attach" if argument == self.session.name => {
+                Err(Error::Usage(format!("already attached to {argument}")))
+            }
+            "attach" => return Some(self.switch_to(argument).await),
+            "new" => match new_words(argument) {
+                Ok((name, model)) => {
+                    let request = Request::New {
+                        workspace: self.session.path.clone(),
+                        name,
+                        model,
+                    };
+                    match create(&mut self.client, request).await {
+                        Ok(session) => return Some(self.switch_to(&session.name).await),
+                        Err(e) => Err(e),
+                    }
+                }
+                Err(usage) => Err(Error::Usage(usage)),
+            },
+            _ => return None,
+        };
+        if let Err(e) = result {
+            self.note(&e.to_string());
+        }
+        self.prompt();
+        Some(Ok(()))
     }
 
     async fn run(mut self) -> Result<()> {
@@ -389,6 +533,18 @@ impl Talk {
         let (name, argument) = command
             .split_once(char::is_whitespace)
             .map_or((command, ""), |(n, a)| (n, a.trim()));
+        if let Some(result) = self.session_command(name, argument).await {
+            return match result {
+                Ok(()) => Ok(Flow::Go),
+                // The session left is still attached; the others are lost.
+                Err(e @ (Error::Failed(_) | Error::Usage(_))) => {
+                    self.note(&e.to_string());
+                    self.prompt();
+                    Ok(Flow::Go)
+                }
+                Err(e) => Err(e),
+            };
+        }
         let session = self.session.name.clone();
         let request = match name {
             "help" => {
@@ -457,5 +613,74 @@ impl Talk {
         self.note("Ctrl-C again or Ctrl-D to detach");
         self.prompt();
         Ok(Flow::Go)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_takes_a_name_and_a_model_in_any_order() {
+        assert_eq!(new_words(""), Ok((None, None)));
+        assert_eq!(new_words("spike"), Ok((Some("spike".into()), None)));
+        assert_eq!(
+            new_words("local/qwen"),
+            Ok((None, Some("local/qwen".into())))
+        );
+        let both = Ok((Some("spike".into()), Some("local/qwen".into())));
+        assert_eq!(new_words("spike local/qwen"), both);
+        assert_eq!(new_words(" local/qwen  spike "), both);
+        for wrong in ["a b", "x/y z/w", "a b/c d"] {
+            assert!(new_words(wrong).is_err(), "{wrong}");
+        }
+    }
+
+    fn info(id: u64, name: &str) -> SessionInfo {
+        SessionInfo {
+            id,
+            name: name.into(),
+            workspace: "~/ws".into(),
+            path: "/home/u/ws".into(),
+            model: "test/m".into(),
+            state: State::Idle,
+            created: 0,
+            queued: 0,
+            question: None,
+            usage: TokenTotals::default(),
+        }
+    }
+
+    #[test]
+    fn the_session_table_marks_this_one() {
+        let text = sessions_text(&[info(1, "a"), info(2, "bb")], 2, 120);
+        assert_eq!(
+            text,
+            "  a   ~/ws  test/m  idle  2m\n* bb  ~/ws  test/m  idle  2m\n"
+        );
+        assert_eq!(sessions_text(&[], 1, 0), "no sessions\n");
+    }
+
+    #[test]
+    fn models_as_clai_models_prints_them() {
+        let model = |model: &str, id: &str, default: bool, key: &str| ModelInfo {
+            model: model.into(),
+            provider: String::new(),
+            name: String::new(),
+            id: id.into(),
+            context_window: 32_768,
+            default,
+            key: key.into(),
+        };
+        let text = models_text(&[
+            model("anthropic/sonnet", "claude-sonnet-5-5", true, "missing"),
+            model("local/qwen", "qwen3", false, "env"),
+        ]);
+        assert_eq!(
+            text,
+            "anthropic/sonnet  claude-sonnet-5-5  32k  default, no key\n\
+             local/qwen        qwen3              32k\n"
+        );
+        assert_eq!(models_text(&[]), "no models are configured\n");
     }
 }

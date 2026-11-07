@@ -133,6 +133,20 @@ impl Conversation {
         self.tops.clear();
     }
 
+    /// What the user chose to expand, and the queued messages: the part of a
+    /// session's view kept while the TUI shows another session.
+    pub fn take_choices(&mut self) -> (HashMap<String, Expansion>, Vec<String>) {
+        (
+            std::mem::take(&mut self.expanded),
+            std::mem::take(&mut self.queued),
+        )
+    }
+
+    pub fn set_choices(&mut self, expanded: HashMap<String, Expansion>, queued: Vec<String>) {
+        self.expanded = expanded;
+        self.queued = queued;
+    }
+
     fn push(&mut self, kind: Kind) {
         self.open_text = None;
         self.entries.push(Entry {

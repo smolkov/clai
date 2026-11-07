@@ -16,6 +16,8 @@ Tab              switch between input and conversation
 Enter            expand a tool call (conversation)
 /                list the commands; type to search, Esc closes the list
 Ctrl-O           choose the model
+Ctrl-S           sessions: attach, new, rename, kill
+Ctrl-N / Ctrl-P  next / previous session
 PgUp / PgDn      scroll; Ctrl-Home / Ctrl-End: start / end
 Esc / Ctrl-C     cancel the turn; Ctrl-C without one clears the input
 Ctrl-C twice, or Ctrl-D with empty input: detach
