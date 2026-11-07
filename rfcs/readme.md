@@ -129,3 +129,5 @@ Sections that do not apply may be left out.
 | [0005](0005-session-switching.md) | Session switching | done |
 | [0006](0006-tui-settings.md) | TUI settings | done |
 | [0007](0007-status-view.md) | Status view | done |
+| [0008](0008-trim-old-tool-results.md) | Trim old tool results | draft |
+| [0009](0009-command-layer-refactoring.md) | Refactoring the command layer | draft |

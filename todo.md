@@ -215,5 +215,6 @@ Milestones and their order: [`implementation.md`](implementation.md).
       for session state changes, a new protocol version, in place of polling
       `list`)
 - [ ] Commit (needs `spec/commit.md`)
-- [ ] Context management (needs `spec/context.md`)
+- [ ] Context management (history trimming of old tool results: RFC 0008,
+      draft; the rest needs `spec/context.md`)
 - [ ] Release
