@@ -236,6 +236,18 @@ as writes. Nothing outside the workspace (and `extra_dirs`) is ever read or
 written. Details, exceptions (`except`) and messages for the model:
 [`spec/config.md`](spec/config.md), "Permissions".
 
+Out of the box, `clai` keeps well-known secret files from the model:
+`.env` and `.env.*` (not `.env.example` and the like), key files (`*.pem`,
+`*.key`, `*.p12`, `*.pfx`, `id_rsa`, …), `.netrc` and `.pgpass`. They are
+not read, listed or searched, and an allowed command that names one, such
+as `cat .env`, asks first. No `allow` rule or `--yes` passes them; to let
+the model read one, add it to `builtin_except` in your own config file:
+
+```toml
+[permissions]
+builtin_except = ["deploy/certs/*.pem"]
+```
+
 ## Limits
 
 A turn pauses and asks whether to continue after 50 model requests or 120

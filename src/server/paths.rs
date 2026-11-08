@@ -2,7 +2,7 @@
 
 use std::fs::{self, DirBuilder};
 use std::io;
-use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
+use std::os::unix::fs::{DirBuilderExt, MetadataExt};
 use std::path::{Path, PathBuf};
 
 use crate::error::{Error, Result};
@@ -45,15 +45,13 @@ pub fn prepare(dir: &Path) -> Result<()> {
             dir.display()
         )));
     }
-    if meta.mode() & 0o777 != 0o700 {
-        fs::set_permissions(dir, fs::Permissions::from_mode(0o700)).map_err(&io_err)?;
-    }
-    Ok(())
+    crate::files::set_mode(dir, 0o700).map_err(io_err)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::fs::PermissionsExt;
 
     #[test]
     fn directory_mode() {

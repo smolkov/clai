@@ -78,6 +78,8 @@ pub struct PermissionsFile {
     pub rules: Vec<Spanned<DetailedRuleFile>>,
     /// Strings or tables; checked by hand for clear messages.
     pub extra_dirs: Option<Spanned<Vec<Spanned<toml::Value>>>>,
+    /// Paths the built-in rules do not deny (user file only).
+    pub builtin_except: Option<Spanned<Vec<Spanned<String>>>>,
 }
 
 /// `[permissions.allow]` and the like: tool or group → patterns.

@@ -28,7 +28,9 @@ use errors::FileCtx;
 use file::{LimitsFile, ModelFile, ProjectFile, ProviderFile, UserFile};
 
 pub use errors::{ConfigError, ConfigErrors, Origin};
-pub use permissions::{Access, Action, ExtraDir, Pattern, Permissions, Rule, Source, Tool};
+pub use permissions::{
+    Access, Action, ExtraDir, Pattern, Permissions, Rule, Source, Tool, builtin_rules,
+};
 pub use secret::{ApiKey, KEY_CMD_TIMEOUT, KeySource, KeyStatus};
 pub use themes::ThemeText;
 pub use tui::{BuiltinTheme, Colour, Symbols, Theme, ThemeSource, Tui};

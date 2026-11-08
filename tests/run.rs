@@ -306,6 +306,40 @@ fn deny_rules_apply_with_yes() {
 }
 
 #[test]
+fn secret_files_are_denied_with_yes() {
+    let server = Server::start(vec![
+        call("c1", "read_file", json!({"path": ".env"})),
+        say("I cannot read it."),
+    ]);
+    let env = Env::new("secret-files", &server, "");
+    fs::write(env.work().join(".env"), "PASSWORD=hunter2\n").unwrap();
+    let out = env.run(&["--yes", "show", ".env"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert!(
+        stderr(&out)
+            .contains("⊘ read_file .env — denied by permission rule: deny read(.env, .env.*)"),
+        "{}",
+        stderr(&out)
+    );
+    let second = &server.requests()[1];
+    let tool = second["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["role"] == "tool")
+        .unwrap();
+    let content = tool["content"].as_str().unwrap();
+    assert!(
+        content.contains("this file usually holds secrets"),
+        "{content}"
+    );
+    assert!(!content.contains("hunter2"));
+    // Nothing of the file reached the log either.
+    let log = fs::read_to_string(env.root.join("state/clai/clai.log")).unwrap_or_default();
+    assert!(!log.contains("hunter2"));
+}
+
+#[test]
 fn task_from_stdin() {
     let server = Server::start(vec![say("ok")]);
     let env = Env::new("stdin", &server, "");

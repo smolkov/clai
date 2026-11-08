@@ -55,6 +55,7 @@ maps to the code.
 | Module | Content | Spec |
 |--------|---------|------|
 | `error` | Crate error type (`thiserror`), `Result` alias. | `agent.md`, "Never crash" |
+| `files` | `set_mode` for private files and directories (log, socket directory). | `config.md`, "Logging" |
 | `config` | Loading, merging user/project/env/CLI, validation with file:line, reloading, model references. | `config.md` |
 | `provider` | Shared types, `Provider` trait, retries, `fake` provider for tests. | `providers.md` |
 | `provider::anthropic`, `provider::openai` | Adapters: encode requests, decode SSE streams, map errors. | `providers.md` |

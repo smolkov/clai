@@ -237,6 +237,30 @@ async fn list_files_entries() {
 }
 
 #[tokio::test]
+async fn builtin_rules_hide_secret_files() {
+    let f = Fixture::with("[permissions]\n");
+    f.write(".env", "KEY=parse");
+    f.write("certs/tls.key", "parse");
+    f.write(".env.example", "KEY=parse");
+    f.write("src/main.rs", "parse");
+    assert_eq!(
+        f.ok("list_files", json!({})).await,
+        ".env.example\ncerts/\nsrc/"
+    );
+    assert_eq!(
+        f.ok("search_files", json!({"pattern": "parse"})).await,
+        ".env.example:1: KEY=parse\nsrc/main.rs:1: parse\n(2 files skipped by permission rules; read them with read_file to be asked)"
+    );
+    let e = f.denied("read_file", json!({"path": ".env"}));
+    assert!(
+        e.starts_with(
+            "denied by permission rule: deny read(.env, .env.*): this file usually holds secrets"
+        ),
+        "{e}"
+    );
+}
+
+#[tokio::test]
 async fn list_files_limit() {
     let f = Fixture::new();
     for i in 0..1005 {

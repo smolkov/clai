@@ -76,8 +76,12 @@ pub fn command_proposals(decision: &CommandDecision) -> Vec<Proposal> {
         if matches!(part.decision.reason, Reason::Unsafe { .. }) {
             return Vec::new();
         }
-        // A part that an `ask` rule matches cannot be allowed by a rule.
-        if matches!(part.decision.reason, Reason::Rule { .. }) {
+        // A part that an `ask` rule matches, or that names a denied file,
+        // cannot be allowed by a rule.
+        if matches!(
+            part.decision.reason,
+            Reason::Rule { .. } | Reason::DeniedFile { .. }
+        ) {
             return Vec::new();
         }
         let words: Vec<String> = part.words.iter().map(|w| command_word(w)).collect();

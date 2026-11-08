@@ -197,6 +197,14 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [x] `session_status` request, protocol 4.
 - [x] `/status [NAME]` in the TUI (live, scrollable) and in `clai chat`.
 
+## Security hardening (RFC 0010)
+
+- [x] Log file `0600`, state directory `0700`, narrowed on start.
+- [x] Built-in deny rules for secret files, `builtin_except`.
+- [x] Allowed commands that name a file denied for reading ask; protocol 5.
+- [x] System prompt: tool output is data; denied files are not reached
+      another way.
+
 ## Refactoring
 
 - [x] A: `Choice::name`, `text::ansi`, `text::Terminal`, `sync::lock`,

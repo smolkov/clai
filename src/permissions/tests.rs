@@ -11,6 +11,7 @@ use super::*;
 const CONFIG: &str = r#"
 [permissions]
 read_file = "allow"
+builtin_except = ["config/public.key"]
 
 [permissions.allow]
 run_command = [
@@ -52,6 +53,10 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Fixture {
+        Fixture::with(CONFIG)
+    }
+
+    fn with(config: &str) -> Fixture {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path().join("ws");
         fs::create_dir_all(root.join("src")).unwrap();
@@ -60,7 +65,7 @@ impl Fixture {
         fs::create_dir_all(tmp.path().join("lib")).unwrap();
         let home = tmp.path().join("home");
         fs::create_dir_all(&home).unwrap();
-        let perms = parse_for_test(CONFIG, Some(&home));
+        let perms = parse_for_test(config, Some(&home));
         let extra = [
             ExtraDir {
                 path: tmp.path().join("docs"),
@@ -132,7 +137,7 @@ fn reasons_and_denials() {
     let d = f.path(Tool::EditFile, "src/main.rs");
     assert_eq!(
         d.reason.to_string(),
-        "rule ask edit(src/main.rs) (config.toml:14)"
+        "rule ask edit(src/main.rs) (config.toml:15)"
     );
     let d = f.path(Tool::EditFile, "tests/a.rs");
     assert_eq!(d.reason.to_string(), "default for edit_file");
@@ -144,6 +149,119 @@ fn reasons_and_denials() {
     assert_eq!(d.message(), Some("Keys stay private."));
     let d = f.path(Tool::ReadFile, "/etc/passwd");
     assert_eq!(d.denial(), "denied: /etc/passwd is outside the workspace");
+}
+
+#[test]
+fn builtin_rules() {
+    let f = Fixture::with("");
+    for path in [
+        ".env",
+        "src/.env.production",
+        "certs/server.pem",
+        "deploy/tls.key",
+        "id_ed25519",
+        ".netrc",
+    ] {
+        let d = f.path(Tool::ReadFile, path);
+        assert_eq!(d.action, Action::Deny, "{path}");
+        assert!(
+            d.reason.to_string().ends_with("(built-in)"),
+            "{path}: {}",
+            d.reason
+        );
+    }
+    for path in [".env.example", "src/env.rs", "keys.md"] {
+        assert_eq!(f.path(Tool::ReadFile, path).action, Action::Allow, "{path}");
+    }
+    assert_eq!(f.path(Tool::ListFiles, "conf/.env").action, Action::Deny);
+    assert_eq!(f.path(Tool::SearchFiles, "a.p12").action, Action::Deny);
+    assert_eq!(
+        f.path(Tool::ReadFile, ".env").denial(),
+        "denied by permission rule: deny read(.env, .env.*): this file usually holds secrets \
+         and is not shown to the model. Ask the user for the value you need; the user can \
+         add the path to permissions.builtin_except."
+    );
+    // Writing is not theirs: it asks, as by default.
+    assert_eq!(f.path(Tool::EditFile, ".env").action, Action::Ask);
+}
+
+#[test]
+fn builtin_rules_and_user_rules() {
+    // An allow rule does not override a built-in deny.
+    let f = Fixture::with("[permissions.allow]\nread = [\".env\", \"*.pem\"]\n");
+    assert_eq!(f.path(Tool::ReadFile, ".env").action, Action::Deny);
+    // builtin_except does; a user deny on the same path still denies.
+    let f = Fixture::with(
+        "[permissions]\nbuiltin_except = [\".env.test\", \"deploy/*.pem\"]\n\
+         [permissions.deny]\nread = [\"deploy/root.pem\"]\n",
+    );
+    assert_eq!(
+        f.path(Tool::ReadFile, "src/.env.test").action,
+        Action::Allow
+    );
+    assert_eq!(
+        f.path(Tool::ReadFile, "deploy/server.pem").action,
+        Action::Allow
+    );
+    assert_eq!(
+        f.path(Tool::ReadFile, "certs/server.pem").action,
+        Action::Deny
+    );
+    assert_eq!(f.path(Tool::ReadFile, ".env").action, Action::Deny);
+    let d = f.path(Tool::ReadFile, "deploy/root.pem");
+    assert_eq!(d.action, Action::Deny);
+    assert!(
+        d.reason.to_string().ends_with("(config.toml:4)"),
+        "{}",
+        d.reason
+    );
+    // Session rules cannot answer them either.
+    let mut f = Fixture::with("");
+    f.session
+        .add([Rule::parse_session("read_file(.env)", None).unwrap()]);
+    assert_eq!(f.path(Tool::ReadFile, ".env").action, Action::Deny);
+}
+
+#[test]
+fn commands_naming_denied_files() {
+    let f = Fixture::new();
+    let cases = [
+        ("cat .env", Action::Ask),
+        ("cat src/../.env.local", Action::Ask),
+        ("cat secrets/db", Action::Ask),
+        ("cat id_ed25519", Action::Ask),
+        ("ls -la src && cat config/a.key", Action::Ask),
+        // A search text is not told from a path: asks too (accepted).
+        ("echo .env", Action::Ask),
+        // Known limits: globs, options and paths outside are not checked.
+        ("cat .e*", Action::Allow),
+        ("cat --file=.env", Action::Allow),
+        ("cat README.md config/public.key", Action::Allow),
+        ("cat ../outside/.env", Action::Allow),
+        // A redirection is a read as before: denied.
+        ("cat < .env", Action::Deny),
+        // Commands that ask or deny anyway keep their reason.
+        ("git push .env", Action::Ask),
+        ("rm .env", Action::Deny),
+    ];
+    for (command, expected) in cases {
+        assert_eq!(f.action(command), expected, "{command}");
+    }
+    let d = f.command("cat .env");
+    assert_eq!(
+        d.decision.reason.to_string(),
+        ".env is denied for reading by rule deny read(.env*) (config.toml:20)"
+    );
+    assert!(command_proposals(&d).is_empty());
+    let f = Fixture::with("[permissions]\nrun_command = \"allow\"\n");
+    assert_eq!(f.action("cat .env.example"), Action::Allow);
+    let d = f.command("cat a/b.pem");
+    assert_eq!(d.decision.action, Action::Ask);
+    assert_eq!(
+        d.decision.reason.to_string(),
+        "a/b.pem is denied for reading by rule \
+         deny read(*.pem, *.key, *.p12, *.pfx, id_rsa, id_ecdsa, id_ed25519) (built-in)"
+    );
 }
 
 #[test]

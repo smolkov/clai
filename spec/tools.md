@@ -145,6 +145,7 @@ line range instead. **(assumption)**
 | Case | Result for the model (error) |
 |------|------------------------------|
 | Denied by a `deny` rule | `denied by permission rule: deny run_command(git push --force)`; with the rule's `message`: `denied by permission rule: deny read(.env*): Secrets are not shown …` |
+| Denied by a built-in rule (see [`config.md`](config.md), "Built-in rules") | `denied by permission rule: deny read(.env, .env.*): this file usually holds secrets and is not shown to the model. …` |
 | Denied by a tool default | `denied: run_command is not allowed` |
 | One part of a command denied | `denied by permission rule: deny run_command(rm), for the part "rm -rf target"` |
 | Path outside the workspace | `denied: /etc/passwd is outside the workspace` |

@@ -247,7 +247,7 @@ need the network. Build output goes to `target/`, the spec book to
 Clients and the server exchange JSON messages over the Unix socket, one
 message per line (at most 16 MiB). Every message is an object with a
 `type`. The first message in each direction is `hello` with the protocol
-version (now `4`); on a mismatch the server sends `error` and closes the
+version (now `5`); on a mismatch the server sends `error` and closes the
 connection, and the message tells the user to restart the server with
 `clai server stop` (see [`sessions.md`](sessions.md), "Server"). The code
 is in `src/protocol/`.
@@ -369,8 +369,8 @@ version is a bug, not an expected case; a new kind needs a new version.
 |--------|---------|-------|
 | User config file | Yes | Validation only. |
 | Project config file | No: comes with the repository | May only make permissions stricter; no providers, models or `[tui]` (see [`config.md`](config.md), "Files"). |
-| Model output (text, tool calls) | No | Argument checks, workspace boundary, permission rules, questions (see [`tools.md`](tools.md)). |
-| Tool output (file contents, command output) | No | Sent to the model as data; never interpreted by `clai`. |
+| Model output (text, tool calls) | No | Argument checks, workspace boundary, permission rules including the built-in rules for secret files (see [`config.md`](config.md), "Built-in rules"), questions (see [`tools.md`](tools.md)). |
+| Tool output (file contents, command output) | No | Sent to the model as data, and the system prompt says so; never interpreted by `clai`, never logged. |
 | Clients | Yes, same user | Socket directory mode `0700`; the server never listens on the network. |
 | A later web UI | Only through a bridge the user starts and authenticates | Same protocol and same answer checks as any client (see [`sessions.md`](sessions.md), "Clients"). |
 | Provider APIs | For their answers only | HTTPS (or a local address the user configured); keys only to the provider they belong to. |

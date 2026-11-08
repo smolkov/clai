@@ -294,17 +294,67 @@ For a call:
    (see below): allow.
 5. Otherwise the tool's default action.
 
+The built-in rules (see below) are checked with the others, in step 2.
+
 Rules from the action tables and detailed rules, and the rules of the user
 and the project file, are all checked together; their order in the files does not matter. To make an
 exception to a `deny` or `ask` rule, use `except`: an `allow` rule never
 overrides them.
 
 The rule that decided is kept with the decision, with its source (file and
-line, or "session"). The permission prompt shows why it asks, e.g.
+line, "session" or "built-in"). The permission prompt shows why it asks, e.g.
 `asks: rule ask edit(Cargo.toml) (config.toml:31)` or `asks: default for
 edit_file`; a denial tells the model which rule denied (see
 [`tools.md`](tools.md), "Denied and cancelled calls"). `/permissions` lists
-all rules with their source.
+all rules with their source, the built-in rules too.
+
+A `run_command` part that would be allowed (by a rule or by the default)
+asks instead if one of its plain arguments names a file inside the
+workspace or `extra_dirs` that a `deny` rule keeps from reading, e.g.
+`cat .env`. A plain argument is a word after the command name that does not
+start with `-` and is not built at run time. It asks rather than denies,
+because a word is not always a path (`grep .env README.md` searches for
+the text). The prompt says `asks: .env is denied for reading by rule deny
+read(.env*) (config.toml:12)` and offers no "always": no rule can make the
+call allowed. Globs (`cat .e*`), directories (`grep -r KEY .`) and options
+(`--file=.env`) are not caught; limiting what commands read needs a
+sandbox (open question 5 in [`readme.md`](readme.md)).
+
+### Built-in rules
+
+`clai` ships three `deny` rules for the `read` group, for files whose
+content is almost always a secret:
+
+| Rule | Patterns | Except |
+|------|----------|--------|
+| environment files | `.env`, `.env.*` | `.env.example`, `.env.sample`, `.env.template`, `.env.dist` |
+| key files | `*.pem`, `*.key`, `*.p12`, `*.pfx`, `id_rsa`, `id_ecdsa`, `id_ed25519` | |
+| credential files | `.netrc`, `.pgpass` | |
+
+The patterns have no `/`, so they match the name in any directory of the
+workspace and of `extra_dirs`. Files outside them are denied anyway.
+
+They are `deny` rules like any other: an `allow` rule, a session rule or
+`--yes` cannot pass them, and listing and searching leave the files out.
+Their source is shown as `built-in`, and the model gets this message with
+the denial:
+
+```
+this file usually holds secrets and is not shown to the model. Ask the
+user for the value you need; the user can add the path to
+permissions.builtin_except.
+```
+
+The user file can make exceptions with `builtin_except`, a list of path
+patterns added to the `except` of every built-in rule:
+
+```toml
+[permissions]
+builtin_except = ["deploy/certs/*.pem", ".env.test"]
+```
+
+It lifts only the built-in rules: a `deny` rule of the user or project
+file on the same path still denies.
 
 ### Extra directories
 
@@ -345,7 +395,7 @@ repository:
   `[permissions.ask]` and `[permissions.deny]` or detailed `ask` and `deny`
   rules, with `except` and `message`.
 - It may not set a tool key to `allow`, have a `[permissions.allow]` table,
-  add detailed `allow` rules, or set `extra_dirs`. Such a file is rejected with an error naming the file and key.
+  add detailed `allow` rules, or set `extra_dirs` or `builtin_except`. Such a file is rejected with an error naming the file and key.
 - Its rules are added to the user file's rules; for a tool key, the stricter
   value wins (`deny` over `ask` over `allow`).
 
@@ -655,7 +705,11 @@ terminal. **(assumption)**
   invalid value falls back to `info`.
 - If the log file cannot be opened, `clai` prints one warning on standard
   error and runs without a log.
-- API keys and other secrets are never written to the log.
+- API keys and other secrets are never written to the log, and neither
+  are file contents or command output.
+- The log file is created with mode `0600` and its directory with mode
+  `0700`; a wider mode of an existing file or directory is narrowed when
+  `clai` starts.
 
 ## Reloading
 

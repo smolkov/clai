@@ -145,15 +145,21 @@ fn unknown_tool(name: &str) -> String {
 /// Where a rule comes from.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Source {
-    File { path: PathBuf, line: Option<usize> },
+    File {
+        path: PathBuf,
+        line: Option<usize>,
+    },
     Session,
+    /// The rules for secret files that `clai` ships (see [`builtin_rules`]).
+    BuiltIn,
 }
 
 impl fmt::Display for Source {
-    /// `config.toml:31`, `.clai/config.toml:3`, `session`.
+    /// `config.toml:31`, `.clai/config.toml:3`, `session`, `built-in`.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Source::Session => f.write_str("session"),
+            Source::BuiltIn => f.write_str("built-in"),
             Source::File { path, line } => {
                 let name = path.file_name().map(|n| n.to_string_lossy());
                 let in_clai = path
@@ -300,7 +306,10 @@ pub struct ExtraDir {
 pub struct Permissions {
     /// Tool keys set in a file; other tools use their default action.
     tools: Vec<(Tool, Action)>,
+    /// The rules of the user and project files, in order.
     pub rules: Vec<Rule>,
+    /// The built-in rules, after `builtin_except`; checked with the others.
+    pub builtin: Vec<Rule>,
     pub extra_dirs: Vec<ExtraDir>,
 }
 
@@ -329,6 +338,7 @@ impl Permissions {
     ) -> Permissions {
         let mut perms = Permissions::default();
         let Some(file) = file else {
+            perms.builtin = builtin_rules(Vec::new());
             return perms;
         };
         for (tool, value) in tool_keys(&file) {
@@ -355,6 +365,18 @@ impl Permissions {
                 }
             }
         }
+        let mut except = Vec::new();
+        for text in file.builtin_except.iter().flat_map(|l| l.get_ref()) {
+            match PathPattern::parse(text.get_ref(), home) {
+                Ok(p) => except.push(Pattern::Path(p)),
+                Err(message) => errors.push(ctx.error(
+                    Some(text.span()),
+                    Some("permissions.builtin_except".into()),
+                    message,
+                )),
+            }
+        }
+        perms.builtin = builtin_rules(except);
         perms
     }
 
@@ -393,6 +415,13 @@ impl Permissions {
                 "a project file may not set extra_dirs",
             ));
         }
+        if let Some(except) = &file.builtin_except {
+            errors.push(ctx.error(
+                Some(except.span()),
+                Some("permissions.builtin_except".into()),
+                "a project file may not set builtin_except",
+            ));
+        }
         let loader = Loader { ctx, home };
         for (action, table) in action_tables(&file) {
             if action != Action::Allow {
@@ -411,6 +440,58 @@ impl Permissions {
             self.rules.extend(loader.detailed(rule, errors));
         }
     }
+}
+
+/// The message of the built-in rules, for the model.
+const BUILTIN_MESSAGE: &str = "this file usually holds secrets and is not shown to the model. \
+     Ask the user for the value you need; the user can add the path to \
+     permissions.builtin_except.";
+
+/// The built-in `deny` rules for well-known secret files (see
+/// `spec/config.md`, "Built-in rules"), with `extra` added to the
+/// exceptions of each.
+pub fn builtin_rules(extra: Vec<Pattern>) -> Vec<Rule> {
+    const RULES: [(&[&str], &[&str]); 3] = [
+        (
+            &[".env", ".env.*"],
+            &[".env.example", ".env.sample", ".env.template", ".env.dist"],
+        ),
+        (
+            &[
+                "*.pem",
+                "*.key",
+                "*.p12",
+                "*.pfx",
+                "id_rsa",
+                "id_ecdsa",
+                "id_ed25519",
+            ],
+            &[],
+        ),
+        (&[".netrc", ".pgpass"], &[]),
+    ];
+    let parse = |texts: &[&str]| -> Vec<Pattern> {
+        texts
+            .iter()
+            .filter_map(|t| PathPattern::parse(t, None).ok().map(Pattern::Path))
+            .collect()
+    };
+    RULES
+        .iter()
+        .map(|(patterns, except)| {
+            let mut except = parse(except);
+            except.extend(extra.iter().cloned());
+            Rule {
+                action: Action::Deny,
+                tools: tools_named("read").unwrap_or_default(),
+                label: "read".to_owned(),
+                patterns: parse(patterns),
+                except,
+                message: Some(BUILTIN_MESSAGE.to_owned()),
+                source: Source::BuiltIn,
+            }
+        })
+        .collect()
 }
 
 /// `[permissions]` from TOML text, for tests of the checks.

@@ -41,6 +41,15 @@ pub enum Reason {
     /// commands count (`sh -c`).
     Nothing,
     Inner,
+    /// An argument of the command names a file that a `deny` rule keeps
+    /// from reading (`cat .env`).
+    DeniedFile {
+        path: String,
+        /// `deny read(.env, .env.*)`.
+        rule: String,
+        /// `config.toml:31`, `built-in`.
+        source: String,
+    },
 }
 
 impl fmt::Display for Reason {
@@ -54,6 +63,9 @@ impl fmt::Display for Reason {
             Reason::Unsafe { why } => write!(f, "the command cannot be checked: {why}"),
             Reason::Nothing => f.write_str("nothing to run"),
             Reason::Inner => f.write_str("the commands inside are checked"),
+            Reason::DeniedFile { path, rule, source } => {
+                write!(f, "{path} is denied for reading by rule {rule} ({source})")
+            }
         }
     }
 }
@@ -171,7 +183,11 @@ const MAX_SHELLS: usize = 5;
 
 impl Checker<'_> {
     fn rules(&self) -> impl Iterator<Item = &Rule> {
-        self.permissions.rules.iter().chain(self.session.rules())
+        self.permissions
+            .rules
+            .iter()
+            .chain(&self.permissions.builtin)
+            .chain(self.session.rules())
     }
 
     fn default(&self, tool: Tool) -> Decision {
@@ -327,10 +343,44 @@ impl Checker<'_> {
             .rules()
             .filter(|r| r.action == Action::Allow)
             .find(|rule| command_rule_applies(rule, |p| p.matches(part)));
-        match allowed {
+        let decision = match allowed {
             Some(rule) => Decision::from_rule(rule),
             None => self.default(Tool::RunCommand),
+        };
+        if decision.action == Action::Allow
+            && let Some(denied) = self.denied_argument(part)
+        {
+            return denied;
         }
+        decision
+    }
+
+    /// `ask` if a plain argument of the part (not an option, not built at
+    /// run time) names a file inside the boundary that a `deny` rule keeps
+    /// from reading. Asks rather than denies: a word is not always a path
+    /// (`grep .env README.md` searches for the text).
+    fn denied_argument(&self, part: &Part) -> Option<Decision> {
+        part.command().iter().skip(1).find_map(|word| {
+            if word.dynamic || word.text.is_empty() || word.text.starts_with('-') {
+                return None;
+            }
+            let resolved = self.resolve_shell_path(&word.text);
+            if resolved.is_outside() {
+                return None;
+            }
+            let decision = self.rules_for_path(Tool::ReadFile, &resolved);
+            match (decision.action, decision.reason) {
+                (Action::Deny, Reason::Rule { rule, source, .. }) => Some(Decision::new(
+                    Action::Ask,
+                    Reason::DeniedFile {
+                        path: word.text.clone(),
+                        rule,
+                        source,
+                    },
+                )),
+                _ => None,
+            }
+        })
     }
 
     /// The first `deny`, else `ask` rule that matches the part.

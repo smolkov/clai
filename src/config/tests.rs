@@ -86,7 +86,8 @@ fn base_config() {
     assert_eq!(sonnet.max_output_tokens, Some(64000));
     assert_eq!(config.providers["local"].key, KeySource::None);
     assert_eq!(config.tui, Tui::default());
-    assert_eq!(config.permissions, Permissions::default());
+    assert!(config.permissions.rules.is_empty());
+    assert_eq!(config.permissions.builtin, builtin_rules(Vec::new()));
 }
 
 #[test]
@@ -526,6 +527,40 @@ fn detailed_rule_errors() {
             "{body}: {e:?} does not contain {expected}"
         );
     }
+}
+
+#[test]
+fn builtin_except() {
+    let config = ok(&with(
+        "[permissions]\nbuiltin_except = [\"deploy/*.pem\"]\n",
+    ));
+    let p = &config.permissions;
+    assert!(p.rules.is_empty());
+    assert_eq!(p.builtin.len(), builtin_rules(Vec::new()).len());
+    for rule in &p.builtin {
+        assert_eq!(rule.source, Source::BuiltIn);
+        assert_eq!(rule.except.last().map(Pattern::text), Some("deploy/*.pem"));
+    }
+    // Every shipped pattern parses.
+    let counts: Vec<usize> = p.builtin.iter().map(|r| r.patterns.len()).collect();
+    assert_eq!(counts, [2, 7, 2]);
+    assert_eq!(p.builtin[0].except.len(), 5);
+
+    let e = errs(&with("[permissions]\nbuiltin_except = [\"x/\"]\n"), None);
+    assert!(
+        e.iter()
+            .any(|e| e.contains("permissions.builtin_except") && e.contains("ends in `/`")),
+        "{e:?}"
+    );
+    let e = errs(
+        &with(""),
+        Some("[permissions]\nbuiltin_except = [\".env\"]\n"),
+    );
+    assert!(
+        e.iter()
+            .any(|e| e.contains("a project file may not set builtin_except")),
+        "{e:?}"
+    );
 }
 
 #[test]
