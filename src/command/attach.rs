@@ -1,10 +1,9 @@
 //! `clai attach` (see `spec/command.md`).
 
-use std::path::Path;
-
 use clap::Args;
 use clap_complete::ArgValueCompleter;
 
+use super::{Context, Execute};
 use crate::complete;
 use crate::error::Result;
 use crate::tui;
@@ -16,8 +15,12 @@ pub struct Attach {
     pub name: Option<String>,
 }
 
-impl Attach {
-    pub fn run(&self, config: Option<&Path>) -> Result<()> {
-        tui::run(config, tui::Target::Attach(self.name.clone()))
+impl Execute for Attach {
+    fn name(&self) -> &'static str {
+        "attach"
+    }
+
+    fn run(&self, ctx: &Context) -> Result<()> {
+        tui::run(ctx, tui::Target::Attach(self.name.clone()))
     }
 }

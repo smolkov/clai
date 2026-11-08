@@ -204,6 +204,9 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [x] B, the part in RFC 0003: session registry type, `Meta::info`, question
       state machine in the session.
 - [ ] B, the rest: agent split, shared chat answering, `paths`, `signals`.
+- [x] The command layer (RFC 0009): `Execute` and one dispatch, `Context`,
+      `command::common`, `text::sessions`, `output::note` and `columns`,
+      `clai run` in named parts.
 - [ ] C: shared test tools (model server, `Env`, fake provider), split
       server tests.
 - [ ] D (to decide): split `SessionEvent`, typed store errors, one text

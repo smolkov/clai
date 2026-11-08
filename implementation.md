@@ -68,9 +68,18 @@ maps to the code.
 | `client` | Connect, start the server if needed, request/response and event stream. | `sessions.md` |
 | `tui` | Layout, conversation, input editor, prompts, session list, model picker, commit dialog, themes. | `tui.md`, `config.md` "TUI" |
 | `commit` | Collect git changes, generate message, run git. | `commit.md` |
-| `cli` | `Cli`, the `Command` enum (one struct per variant), parsing, `Cli::into_command`. | `command.md` |
+| `cli` | `Cli`, the `Command` enum (one struct per variant), parsing, `Cli::into_command`, and `Command::execute`, the one dispatch over all commands. | `command.md` |
 | `complete` | Value completers for Tab completion (`--model`, later session names). | `command.md`, "clai completion" |
-| `command` | One file per command (`command/models.rs`, …) with its argument struct and `run`; `impl Command { name, run }` in `command/mod.rs`. Commands not built yet return "not implemented". | `command.md` |
+| `command` | One file per command (`command/models.rs`, …) with its argument struct and `impl Execute` (`name`, `run`); `Execute` and `Context` (the `--config` path, load options) in `command/mod.rs`; `command/common.rs` for what several commands and the TUI share (new-session request and creation, workspace check, text or `-`). Commands not built yet return "not implemented". | `command.md` |
+| `output` | Results on standard output, `clai: ` lines on standard error (`note`), table columns. | `command.md` |
+| `text` | Plain-text rendering: tool lines, notices, questions, the session table (`text::sessions`), the status (`text::status`). | `command.md`, `tui.md` |
+
+Adding a command (see [RFC 0009](rfcs/0009-command-layer-refactoring.md)):
+
+1. The variant in `Command` in `cli.rs`, with its `use`.
+2. Its arm in `Command::execute`; a missing one does not compile.
+3. The file `command/NAME.rs`: the argument struct and `impl Execute`.
+4. Its section in `spec/command.md`, and a test in `tests/cli.rs`.
 
 ## Dependencies
 

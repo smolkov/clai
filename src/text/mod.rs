@@ -8,6 +8,7 @@ mod conversation;
 mod dialog;
 mod events;
 mod question;
+pub mod sessions;
 pub mod status;
 
 #[cfg(test)]

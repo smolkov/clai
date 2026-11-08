@@ -7,8 +7,8 @@ use ratatui::widgets::Paragraph;
 use unicode_width::UnicodeWidthStr;
 
 use crate::agent::State;
-use crate::command::ls::age;
 use crate::protocol::SessionInfo;
+use crate::text::sessions::age;
 use crate::tui::app::App;
 use crate::tui::editor::Editor;
 use crate::tui::sessions::{Mode, SessionList};

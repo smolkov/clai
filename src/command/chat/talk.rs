@@ -2,26 +2,27 @@
 //! Lines typed are messages; the session's questions are answered inline.
 
 use std::io::{self, Write};
-use std::path::Path;
 use std::time::{Duration, Instant};
 
 use tokio::signal::unix::{SignalKind, signal};
 
 use crate::agent::{Closed, Question, SessionEvent, State, now_secs};
 use crate::client::{Client, Connect, unexpected};
-use crate::command::ls::table;
-use crate::command::new::create;
+use crate::command::common::create;
 use crate::error::{Error, Result};
+use crate::output::note;
 use crate::protocol::{
     ModelInfo, Notice, Payload, Request, ServerMessage, SessionInfo, TokenTotals,
 };
 use crate::runtime::current_thread;
+use crate::text::sessions::table;
 use crate::text::{
     Conversation, Dialog, Step, Style, Terminal, full_content, render_question_styled,
     short_tokens, usage_line,
 };
 
 use super::{Lines, pager, symbols};
+use crate::command::Context;
 
 /// A second `Ctrl-C` within this time detaches.
 const DOUBLE_INTERRUPT: Duration = Duration::from_secs(1);
@@ -51,10 +52,10 @@ pub enum Target {
     New(Request),
 }
 
-pub fn talk(config: Option<&Path>, target: Target) -> Result<()> {
-    let Terminal { unicode, colour } = Terminal::detect(symbols(config));
+pub fn talk(ctx: &Context, target: Target) -> Result<()> {
+    let Terminal { unicode, colour } = Terminal::detect(symbols(ctx));
     current_thread()?.block_on(async {
-        let mut client = Client::connect(&Connect::chat(config, true)).await?;
+        let mut client = Client::connect(&Connect::chat(ctx.config(), true)).await?;
         let name = match target {
             Target::Attach { name, model } => {
                 if let Some(model) = model {
@@ -111,13 +112,10 @@ async fn attach(client: &mut Client, name: &str) -> Result<SessionInfo> {
         Payload::Session { session } => *session,
         other => return Err(unexpected(&other)),
     };
-    let _ = writeln!(
-        io::stderr(),
-        "clai: attached to {} ({}, {}); /help lists commands, Ctrl-D detaches",
-        session.name,
-        session.workspace,
-        session.model
-    );
+    note(&format!(
+        "attached to {} ({}, {}); /help lists commands, Ctrl-D detaches",
+        session.name, session.workspace, session.model
+    ));
     Ok(session)
 }
 
@@ -375,19 +373,15 @@ impl Talk {
         let end = self.conversation.break_line();
         self.out(end);
         if self.session.state != State::Idle || self.dialog.is_some() {
-            let _ = writeln!(
-                io::stderr(),
-                "clai: detached; {} keeps working; `clai chat {}` returns to it",
-                self.session.name,
-                self.session.name
-            );
+            note(&format!(
+                "detached; {} keeps working; `clai chat {}` returns to it",
+                self.session.name, self.session.name
+            ));
         } else {
-            let _ = writeln!(
-                io::stderr(),
-                "clai: detached; `clai chat {}` returns to {}",
-                self.session.name,
-                self.session.name
-            );
+            note(&format!(
+                "detached; `clai chat {}` returns to {}",
+                self.session.name, self.session.name
+            ));
         }
         Ok(())
     }

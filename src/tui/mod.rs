@@ -39,8 +39,9 @@ use tokio::sync::mpsc;
 use tokio::time::{Instant, MissedTickBehavior, interval_at, sleep, sleep_until};
 
 use crate::client::{Client, Connect, Connection, unexpected};
-use crate::command::new::create;
-use crate::config::{self, Config, Environment, LoadOptions, Symbols};
+use crate::command::Context;
+use crate::command::common::create;
+use crate::config::{self, Config, LoadOptions, Symbols};
 use crate::error::{Error, Result};
 use crate::protocol::{Payload, Request, ServerMessage, SessionInfo};
 use crate::runtime::current_thread;
@@ -55,7 +56,7 @@ const RECONNECT_EVERY: Duration = Duration::from_millis(500);
 /// Which session to show.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Target {
-    /// A `new` request (see `command::new::request`).
+    /// A `new` request (see `command::common::request`).
     New(Request),
     /// A session by name; without one, the only session there is.
     Attach(Option<String>),
@@ -63,17 +64,14 @@ pub enum Target {
 
 /// Runs the TUI until the user leaves. Every failure before the terminal
 /// changes is an ordinary error (see `spec/command.md`, "clai").
-pub fn run(config: Option<&Path>, target: Target) -> Result<()> {
+pub fn run(ctx: &Context, target: Target) -> Result<()> {
+    let config = ctx.config();
     let workspace = match &target {
         Target::New(Request::New { workspace, .. }) => workspace.clone(),
         // No project file applies; the session has its own workspace.
         _ => runtime_dir(),
     };
-    let options = LoadOptions {
-        config_file: config.map(Path::to_path_buf),
-        workspace,
-        env: Environment::from_process(),
-    };
+    let options = ctx.load_options(workspace);
     let loaded = config::load(&options)?;
     check_terminal(
         std::io::stdin().is_terminal(),

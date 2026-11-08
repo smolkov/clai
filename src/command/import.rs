@@ -1,9 +1,10 @@
 //! `clai import` (see `spec/command.md`).
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use clap::{Args, ValueHint};
 
+use super::{Context, Execute};
 use crate::client::{unexpected, with_client};
 use crate::error::{Error, Result};
 use crate::output::write_stdout;
@@ -19,8 +20,13 @@ pub struct Import {
     pub name: Option<String>,
 }
 
-impl Import {
-    pub fn run(&self, config: Option<&Path>) -> Result<()> {
+impl Execute for Import {
+    fn name(&self) -> &'static str {
+        "import"
+    }
+
+    fn run(&self, ctx: &Context) -> Result<()> {
+        let config = ctx.config();
         let path =
             std::path::absolute(&self.file).map_err(Error::io(self.file.display().to_string()))?;
         let request = Request::Import {

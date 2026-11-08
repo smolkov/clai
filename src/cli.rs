@@ -7,6 +7,7 @@ use clap::error::ErrorKind;
 use clap::{Args, CommandFactory, Parser, Subcommand, ValueHint};
 use clap_complete::ArgValueCompleter;
 
+use crate::command::Execute;
 use crate::command::attach::Attach;
 use crate::command::chat::Chat;
 use crate::command::commit::Commit;
@@ -95,6 +96,27 @@ pub enum Command {
     Server(Server),
     /// Print the shell code for Tab completion.
     Completion(Completion),
+}
+
+impl Command {
+    /// The command to run: the one dispatch over all commands.
+    pub fn execute(&self) -> &dyn Execute {
+        match self {
+            Command::Run(c) => c,
+            Command::New(c) => c,
+            Command::Attach(c) => c,
+            Command::Ls(c) => c,
+            Command::Kill(c) => c,
+            Command::Send(c) => c,
+            Command::Chat(c) => c,
+            Command::Export(c) => c,
+            Command::Import(c) => c,
+            Command::Models(c) => c,
+            Command::Commit(c) => c,
+            Command::Server(c) => c,
+            Command::Completion(c) => c,
+        }
+    }
 }
 
 impl Cli {
@@ -353,12 +375,39 @@ mod tests {
         assert_eq!(args.dir, Some(PathBuf::from("src")));
     }
 
+    fn name(args: &[&str]) -> &'static str {
+        parse(args).into_command().execute().name()
+    }
+
     #[test]
     fn server_commands() {
-        let name = |args| parse(args).into_command().name();
         assert_eq!(name(&["server"]), "server");
         assert_eq!(name(&["server", "stop", "--force"]), "server stop");
         assert_eq!(name(&["server", "status"]), "server status");
+    }
+
+    /// Each command answers to its own name in log lines and messages.
+    #[test]
+    fn every_command_has_its_name() {
+        let cases: &[(&[&str], &str)] = &[
+            (&["run", "x"], "run"),
+            (&["fix", "it"], "run"),
+            (&[], "new"),
+            (&["new"], "new"),
+            (&["attach"], "attach"),
+            (&["ls"], "ls"),
+            (&["kill", "s"], "kill"),
+            (&["send", "s", "hi"], "send"),
+            (&["chat"], "chat"),
+            (&["export", "s", "f"], "export"),
+            (&["import", "f"], "import"),
+            (&["models"], "models"),
+            (&["commit"], "commit"),
+            (&["completion", "bash"], "completion"),
+        ];
+        for (args, expected) in cases {
+            assert_eq!(name(args), *expected, "{args:?}");
+        }
     }
 
     #[test]

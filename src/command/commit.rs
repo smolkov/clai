@@ -1,10 +1,11 @@
 //! `clai commit` (see `spec/command.md`).
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use clap::{Args, ValueHint};
 use clap_complete::ArgValueCompleter;
 
+use super::{Context, Execute};
 use crate::complete;
 use crate::error::{Error, Result};
 
@@ -24,8 +25,12 @@ pub struct Commit {
     pub dir: Option<PathBuf>,
 }
 
-impl Commit {
-    pub fn run(&self, _config: Option<&Path>) -> Result<()> {
+impl Execute for Commit {
+    fn name(&self) -> &'static str {
+        "commit"
+    }
+
+    fn run(&self, _: &Context) -> Result<()> {
         Err(Error::Unsupported { what: "commit" })
     }
 }

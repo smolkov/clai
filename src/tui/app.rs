@@ -1606,7 +1606,7 @@ impl App {
                         "{} {} {}",
                         s.workspace,
                         symbols.separator,
-                        crate::command::ls::state_name(s.state)
+                        crate::text::sessions::state_name(s.state)
                     ),
                     search_description: false,
                 })

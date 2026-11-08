@@ -13,15 +13,16 @@ use clap_complete::ArgValueCompleter;
 use serde_json::Value;
 use tokio::sync::mpsc;
 
+use super::{Context, Execute};
 use crate::agent::{Answer, Question, now_secs};
 use crate::client::{Client, Connect};
-use crate::command::ls::age;
 use crate::complete;
-use crate::config::{self, Environment, LoadOptions, Symbols};
+use crate::config::Symbols;
 use crate::error::{Error, Result};
-use crate::output::write_stdout;
+use crate::output::{note, write_stdout};
 use crate::protocol::{Request, SessionInfo};
 use crate::runtime::current_thread;
+use crate::text::sessions::age;
 
 /// Words that make `clai chat NAME CHOICE` the script form.
 const CHOICES: [&str; 6] = ["allow", "always", "deny", "cancel", "continue", "stop"];
@@ -83,22 +84,27 @@ enum Mode<'a> {
     },
 }
 
-impl Chat {
-    pub fn run(&self, config: Option<&Path>) -> Result<()> {
+impl Execute for Chat {
+    fn name(&self) -> &'static str {
+        "chat"
+    }
+
+    fn run(&self, ctx: &Context) -> Result<()> {
+        let config = ctx.config();
         match self.mode()? {
             Mode::List(names) => self.list(config, names),
             Mode::Script { name, answer } => script(config, name, answer, self.id.as_deref()),
-            Mode::Questions(names) => questions::questions(config, names),
+            Mode::Questions(names) => questions::questions(ctx, names),
             Mode::Attach(name) => talk::talk(
-                config,
+                ctx,
                 talk::Target::Attach {
                     name: name.to_owned(),
                     model: self.model.clone(),
                 },
             ),
             Mode::New(dir) => talk::talk(
-                config,
-                talk::Target::New(super::new::request(
+                ctx,
+                talk::Target::New(super::common::request(
                     self.name.clone(),
                     self.model.clone(),
                     dir.as_deref(),
@@ -106,7 +112,9 @@ impl Chat {
             ),
         }
     }
+}
 
+impl Chat {
     fn mode(&self) -> Result<Mode<'_>> {
         if self.list {
             return Ok(Mode::List(&self.words));
@@ -164,7 +172,7 @@ impl Chat {
             return Ok(());
         }
         for name in unknown {
-            let _ = writeln!(io::stderr(), "clai: no session named {name}");
+            note(&format!("no session named {name}"));
         }
         Err(Error::Exit(1))
     }
@@ -311,13 +319,9 @@ impl Lines {
 }
 
 /// `tui.symbols` from the configuration, if it loads.
-fn symbols(config: Option<&Path>) -> Symbols {
-    let options = LoadOptions {
-        config_file: config.map(Path::to_path_buf),
-        workspace: std::env::current_dir().unwrap_or_default(),
-        env: Environment::from_process(),
-    };
-    config::load(&options).map_or(Symbols::Auto, |c| c.tui.symbols)
+pub(super) fn symbols(ctx: &Context) -> Symbols {
+    ctx.load(std::env::current_dir().unwrap_or_default())
+        .map_or(Symbols::Auto, |c| c.tui.symbols)
 }
 
 /// Shows `text` through `$PAGER` (default `less`).
@@ -338,7 +342,7 @@ fn pager(text: &str) {
             let _ = child.wait();
         }
         Err(e) => {
-            let _ = writeln!(io::stderr(), "clai: pager {pager}: {e}");
+            note(&format!("pager {pager}: {e}"));
         }
     }
 }

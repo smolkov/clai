@@ -3,16 +3,17 @@
 
 use std::collections::HashMap;
 use std::io::{self, Write};
-use std::path::Path;
 
 use crate::agent::{Closed, Question, SessionEvent};
 use crate::client::{Client, Connect, unexpected};
 use crate::error::{Error, Result};
+use crate::output::note;
 use crate::protocol::{Notice, Payload, Request, ServerMessage, SessionInfo};
 use crate::runtime::current_thread;
 use crate::text::{Dialog, Step, Style, Terminal, full_content, render_question_styled};
 
 use super::{Lines, pager, symbols};
+use crate::command::Context;
 
 /// A question waiting to be shown.
 struct Open {
@@ -35,10 +36,10 @@ struct Interactive {
     colour: bool,
 }
 
-pub fn questions(config: Option<&Path>, names: &[String]) -> Result<()> {
-    let Terminal { unicode, colour } = Terminal::detect(symbols(config));
+pub fn questions(ctx: &Context, names: &[String]) -> Result<()> {
+    let Terminal { unicode, colour } = Terminal::detect(symbols(ctx));
     current_thread()?.block_on(async {
-        let mut client = Client::connect(&Connect::chat(config, true)).await?;
+        let mut client = Client::connect(&Connect::chat(ctx.config(), true)).await?;
         let all = client.list().await?;
         let chosen: Vec<&SessionInfo> = if names.is_empty() {
             all.iter().collect()
@@ -172,12 +173,12 @@ impl Interactive {
                     self.attach(&session.name).await?;
                 }
                 Notice::Stopping => {
-                    let _ = writeln!(io::stderr(), "clai: the server is stopping");
+                    note("the server is stopping");
                     return Ok(false);
                 }
                 Notice::ConfigRejected { errors } => {
                     for error in errors {
-                        let _ = writeln!(io::stderr(), "clai: configuration rejected: {error}");
+                        note(&format!("configuration rejected: {error}"));
                     }
                 }
                 Notice::SessionCreated { .. } | Notice::ConfigReloaded => {}

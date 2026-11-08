@@ -8,6 +8,7 @@ use clap::{Args, Subcommand};
 use tokio::signal::unix::{SignalKind, signal};
 use tokio_util::sync::CancellationToken;
 
+use super::{Context, Execute};
 use crate::client::{Client, Connect, unexpected};
 use crate::config::{Environment, LoadOptions};
 use crate::error::{Error, Result};
@@ -41,8 +42,8 @@ pub enum ServerAction {
     Status,
 }
 
-impl Server {
-    pub fn name(&self) -> &'static str {
+impl Execute for Server {
+    fn name(&self) -> &'static str {
         match self.action {
             None => "server",
             Some(ServerAction::Stop { .. }) => "server stop",
@@ -50,7 +51,8 @@ impl Server {
         }
     }
 
-    pub fn run(&self, config: Option<&Path>) -> Result<()> {
+    fn run(&self, ctx: &Context) -> Result<()> {
+        let config = ctx.config();
         match self.action {
             None => foreground(config, self.detached),
             Some(ServerAction::Stop { force }) => stop(config, force),

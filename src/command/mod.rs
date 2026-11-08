@@ -3,6 +3,7 @@
 pub mod attach;
 pub mod chat;
 pub mod commit;
+pub mod common;
 pub mod completion;
 pub mod export;
 pub mod import;
@@ -14,53 +15,49 @@ pub mod run;
 pub mod send;
 pub mod server;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use crate::cli::Command;
+use crate::config::{self, Config, Environment, LoadOptions};
 use crate::error::Result;
 
-impl Command {
-    /// Name of the command, as used in messages.
-    pub fn name(&self) -> &'static str {
-        match self {
-            Command::Run(_) => "run",
-            Command::New(_) => "new",
-            Command::Attach(_) => "attach",
-            Command::Ls(_) => "ls",
-            Command::Kill(_) => "kill",
-            Command::Send(_) => "send",
-            Command::Chat(_) => "chat",
-            Command::Export(_) => "export",
-            Command::Import(_) => "import",
-            Command::Models(_) => "models",
-            Command::Commit(_) => "commit",
-            Command::Server(server) => server.name(),
-            Command::Completion(_) => "completion",
+/// A command of `spec/command.md`. `Command::execute` in `cli.rs` is the one
+/// dispatch.
+pub trait Execute {
+    /// As used in log lines and messages: `kill`, `server stop`.
+    fn name(&self) -> &'static str;
+    fn run(&self, ctx: &Context) -> Result<()>;
+}
+
+/// What every command gets from `main`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Context {
+    /// The path given by `--config`, if any.
+    pub config_file: Option<PathBuf>,
+}
+
+impl Context {
+    pub fn config(&self) -> Option<&Path> {
+        self.config_file.as_deref()
+    }
+
+    /// Load options for `workspace`, with the process environment.
+    pub fn load_options(&self, workspace: PathBuf) -> LoadOptions {
+        LoadOptions {
+            config_file: self.config_file.clone(),
+            workspace,
+            env: Environment::from_process(),
         }
     }
 
-    /// Runs the command; `config` is the `--config` option.
-    pub fn run(&self, config: Option<&Path>) -> Result<()> {
-        match self {
-            Command::Run(c) => c.run(config),
-            Command::New(c) => c.run(config),
-            Command::Attach(c) => c.run(config),
-            Command::Ls(c) => c.run(config),
-            Command::Kill(c) => c.run(config),
-            Command::Send(c) => c.run(config),
-            Command::Chat(c) => c.run(config),
-            Command::Export(c) => c.run(config),
-            Command::Import(c) => c.run(config),
-            Command::Models(c) => c.run(config),
-            Command::Commit(c) => c.run(config),
-            Command::Server(c) => c.run(config),
-            Command::Completion(c) => c.run(config),
-        }
+    /// The configuration for `workspace`.
+    pub fn load(&self, workspace: PathBuf) -> Result<Config> {
+        config::load(&self.load_options(workspace))
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::Context;
     use crate::cli::Cli;
     use crate::error::Error;
 
@@ -71,8 +68,9 @@ mod tests {
         for (args, name) in cases {
             let cli = Cli::parse_args(std::iter::once("clai").chain(args.iter().copied())).unwrap();
             let command = cli.into_command();
+            let command = command.execute();
             assert_eq!(command.name(), *name);
-            match command.run(None) {
+            match command.run(&Context::default()) {
                 Err(Error::Unsupported { what }) => assert_eq!(what, *name, "{args:?}"),
                 other => panic!("{args:?}: {other:?}"),
             }

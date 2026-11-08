@@ -1,12 +1,11 @@
 //! `clai models`: list configured providers and models.
 
-use std::path::Path;
-
 use clap::Args;
 
-use crate::config::{self, Config, Environment, KeyStatus, LoadOptions};
+use super::{Context, Execute};
+use crate::config::{Config, KeyStatus};
 use crate::error::{Error, Result};
-use crate::output::write_stdout;
+use crate::output::{Align, columns, write_stdout};
 use crate::text::short_tokens;
 
 #[derive(Debug, Args)]
@@ -16,14 +15,14 @@ pub struct Models {
     pub json: bool,
 }
 
-impl Models {
-    pub fn run(&self, config_file: Option<&Path>) -> Result<()> {
+impl Execute for Models {
+    fn name(&self) -> &'static str {
+        "models"
+    }
+
+    fn run(&self, ctx: &Context) -> Result<()> {
         let workspace = std::env::current_dir().map_err(Error::io("current directory"))?;
-        let config = config::load(&LoadOptions {
-            config_file: config_file.map(Path::to_path_buf),
-            workspace,
-            env: Environment::from_process(),
-        })?;
+        let config = ctx.load(workspace)?;
         let getenv = |name: &str| std::env::var(name).ok();
         let text = if self.json {
             render_json(&config, getenv)
@@ -64,20 +63,13 @@ pub fn render_table(config: &Config, getenv: impl Fn(&str) -> Option<String>) ->
             });
         }
     }
-    let width = |f: fn(&Row) -> usize| rows.iter().map(f).max().unwrap_or(0);
-    let w_ref = width(|r| r.reference.chars().count());
-    let w_id = width(|r| r.id.chars().count());
-    let w_ctx = width(|r| r.context.len());
+    let cells: Vec<Vec<String>> = rows
+        .into_iter()
+        .map(|row| vec![row.reference, row.id, row.context, row.marks.join(", ")])
+        .collect();
     let mut out = String::new();
-    for row in &rows {
-        let line = format!(
-            "{:<w_ref$}  {:<w_id$}  {:>w_ctx$}  {}",
-            row.reference,
-            row.id,
-            row.context,
-            row.marks.join(", ")
-        );
-        out.push_str(line.trim_end());
+    for line in columns(&cells, &[Align::Left, Align::Left, Align::Right]) {
+        out.push_str(&line);
         out.push('\n');
     }
     out

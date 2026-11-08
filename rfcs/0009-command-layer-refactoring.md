@@ -1,7 +1,7 @@
 # Refactoring the command layer
 
 - RFC: 0009
-- Status: draft
+- Status: done
 - Milestone: none; it cleans the ground the "Context management" and
   "Commit" milestones build on
 - Spec: [`spec/command.md`](../spec/command.md) (no change of behaviour);
@@ -10,261 +10,400 @@
 
 ## Summary
 
-`src/cli.rs`, `src/command/` and `src/main.rs` are reordered without any
-change of behaviour: one dispatch instead of two hand-written matches, a
-small context in place of the threaded `--config` path, the helpers that
-several commands copy (`-` from standard input, the workspace check, the
-`clai: ` line on standard error, table alignment) in one place each, and
-`clai run` split into its concerns. Every command, option, message, exit
-code and completion works exactly as before.
+`src/cli.rs`, `src/command/` and `src/main.rs` are reordered without any change
+of behaviour:
+
+- **Dispatch:** one `match` instead of two, through an `Execute` trait that each
+  command implements.
+- **`Context`:** one value in place of the `--config` path threaded through every
+  `run`. It also builds the configuration's load options, which four places
+  build by hand today.
+- **Shared code:** what other modules borrow from single commands goes to shared
+  modules. Today the TUI and `clai chat` reach into `ls` and `new`.
+- **Helpers:** the helpers several commands copy each exist once: text or
+  standard input, the workspace check, the `clai: ` line on standard error, and
+  table columns.
+- **`clai run`:** it is split into named parts.
+
+Every command, option, message, exit code and completion works exactly as
+before. Tests pin the behaviour that no test covers yet, before anything moves.
 
 ## Motivation
 
-The command layer works but has grown uneven, and more commands are coming
-(`clai commit`, a possible `clai status` of RFC 0007):
+More commands are coming (`clai commit`; maybe `clai status`, which RFC 0007
+left out), and the command layer has grown uneven.
 
-- **Every new command touches the same five places:** the `Command` enum
-  and its import in `cli.rs`, the `match` in `Command::name`, the `match`
-  in `Command::run` in `command/mod.rs`, and the new file. All five must
-  agree; nothing checks that they do.
-- **`--config` is passed everywhere, also where it means nothing:**
-  `run(&self, config: Option<&Path>)` reaches `commit` and `completion`,
-  whose parameters are named `_config`. The signature invites more
-  threading later (`CLAI_*` overrides, terminal detection).
-- **The same helpers are copied, slightly differently:**
-  - `-` reads standard input in `run` and in `send`, two near-identical
-    blocks.
-  - The workspace check is inline in `run`, a function `workspace` in
-    `new`, with the same error text written twice.
-  - `clai: name` lines on standard error: `kill` prints its own failures,
-    `new` its note, `main::report` the rest — three spellings of the same
-    idea.
-  - Column alignment for a table exists twice: `ls::table` and
-    `models::render_table`.
-  - `chat` reaches into another command (`crate::command::ls::age`) for a
-    time format that has nothing to do with `ls`.
-- **`run` is one 80-line method** that reads the task, decides who answers,
-  validates the workspace, loads the config, resolves the model, builds the
-  provider, picks the asker and hands it all to a free `turn` function, all
-  in `Run::run`.
-- `run` sets up an agent in its own process (see
-  [`architecture.md`](../spec/architecture.md), "Modules"); everything that
-  wants a session instead talks to the server through `with_client`. The
-  two partnerships are hard to see in the file.
+**A new command touches five places, and nothing checks that they agree.**
+These are:
 
-Refactors without a behaviour change normally need no RFC (see
-[`rfcs/readme.md`](readme.md), "When to write one"); this one is written
-anyway because it spans the whole command layer — every file in
-`src/command/`, `cli.rs` and `main.rs` — and because its choices, once
-made, shape how later commands are added.
+- the `Command` variant in `cli.rs`, and its `use`;
+- the arm in `Command::name` in `command/mod.rs`;
+- the arm in `Command::run` in `command/mod.rs`;
+- the new file.
+
+`server` already breaks the pattern of the first match: its name depends on its
+action (`server stop`, `server status`).
+
+**`--config` reaches every command, also where it means nothing.** Every command
+gets it through `run(&self, config: Option<&Path>)`. `commit` and `completion`
+name it `_config`. Four places build the same `LoadOptions` from it:
+
+- `run`;
+- `models`;
+- `chat::symbols`;
+- `tui::run`.
+
+All four use the same `Environment::from_process()`, each with its own
+workspace.
+
+**Other modules reach into single commands.** Several modules use code that
+lives in one command's file:
+
+| Used by | Reaches into | For |
+|---------|--------------|-----|
+| `tui/app.rs` | `command::ls::state_name` | session states in the argument list |
+| `tui/view/sessions.rs` | `command::ls::age` | the age column of the session list |
+| `tui/mod.rs` | `command::new::create` | creating a session for `clai new` |
+| `command/chat/talk.rs` | `command::ls::table` | `/sessions` |
+| `command/chat/mod.rs` | `command::new::request` | `clai chat --new` |
+
+`ls` and `new` cannot change without looking at the TUI and `chat`.
+
+**The same helpers exist twice, slightly differently:**
+
+- **Standard input:** `run` and `send` read `-` from standard input in two
+  near-identical blocks. Only `run` also needs to know that it did: then nobody
+  answers questions on the terminal.
+- **The workspace check:** `run` has it inline, `new` as the function
+  `workspace`. The error text is the same, but only `new` makes the path
+  absolute. For `run` that changes nothing, because `Workspace::new` resolves
+  the path anyway.
+- **`clai: ` lines on standard error:** the command layer writes them with its
+  own `writeln!` in twelve places:
+  - three in `main` (`report` twice, `warn`);
+  - one each in `kill` and `new::create`;
+  - two each in `chat/mod.rs` and `chat/questions.rs`;
+  - three in `chat/talk.rs` (attached, and two detached lines).
+- **Table columns:** `ls::table` and `models::render_table` both pad columns to
+  the widest cell, leave the last column free and trim the line. `models` aligns
+  one column to the right.
+
+**`Run::run` is one 80-line method.** It reads the task, decides who answers,
+checks the workspace, loads the configuration, resolves the model, builds the
+provider and the agent's setup, and picks the asker. Only then does it hand
+everything to the free `turn` function.
+
+Refactors without a change of behaviour normally need no RFC (see
+[`rfcs/readme.md`](readme.md), "When to write one"). This one is written anyway
+for two reasons: it spans the whole command layer (every file in
+`src/command/`, `cli.rs` and `main.rs`, plus three imports in `src/tui/`), and
+its choices shape how later commands are added.
 
 ## Scope
 
 In:
 
-- Dispatch: a `run` per command file, `command/mod.rs` shrinks, no second
-  match on the command list anywhere outside `cli.rs`.
-- A `command::Context` created once in `main`, carrying what commands need:
-  the `--config` path.
-- Shared helpers in one place each: text-or-standard-input, the workspace
-  check, the `clai: ` standard-error line, table alignment, the session
-  age format.
-- `run` divided into named parts with the roles visible: task, answering,
-  setup, one-shot turn.
-- The same tests as before, plus tests for what moves.
+- **Dispatch:** the `Execute` trait, one `match` beside the enum in `cli.rs`, and
+  no `match` on the commands anywhere else.
+- **`command::Context`:** made once in `main`, with the `--config` path and the
+  load options.
+- **Shared modules:** `text::sessions` for the session table, states and ages;
+  `command::common` for what several commands and the TUI use (new-session
+  request, `create`, workspace, text or standard input).
+- **Helpers:** `output::note` for `clai: ` lines; `output::columns` for tables.
+- **`clai run`** in named parts: task, answering, setup, asker, one shot.
+- **Tests:** new tests that pin what is not tested yet. The moved code keeps its
+  tests.
 
 Out:
 
-- No change of behaviour: syntax, output text, exit codes, prefixes,
-  notes and completions stay as `spec/command.md` says. Where a detail is
-  not specified, the today's wording stays.
-- `clai chat` stays three files (`mod`, `talk`, `questions`); only its
-  imports change.
-- `src/client/`, the protocol and the server: untouched, apart from calls
-  that get shorter (`with_client` stays as it is).
-- `src/complete.rs`: unchanged.
-- New options or commands, `spec/command.md` edits, `clai commit` (its own
-  milestone under `spec/commit.md`).
+- **Behaviour:** nothing changes. Syntax, output text, exit codes, prefixes,
+  notes and completions stay as `spec/command.md` says, and where a detail is not
+  specified, today's wording stays.
+- **Rendered `clai: ` lines:** those that the text renderers (`text::events`,
+  `text::conversation`) and the TUI's exit line return as strings stay where
+  they are. Only the places that write to standard error themselves use
+  `output::note`.
+- **`clai chat`:** it stays three files (`mod`, `talk`, `questions`); only its
+  imports and its standard-error lines change. `deny MESSAGE...` does not learn
+  to read `-`: that would be new behaviour.
+- **Client, protocol and server:** `src/client/`, the protocol and the server
+  are untouched, and `with_client` stays as it is.
+- **`src/complete.rs`:** unchanged.
+- **New commands and options**, `spec/command.md` edits, and `clai commit`
+  (which has its own milestone).
 
 ## Design
 
 ### Dispatch
 
-Today `Command::name` and `Command::run` in `command/mod.rs` both match all
-thirteen variants; the enum is defined in `cli.rs`. After the change:
+Each command implements one trait, in its own file:
 
-- Each command file implements one trait, next to its arguments:
+```rust
+/// A command of `spec/command.md`.
+pub trait Execute {
+    /// As used in log lines and messages: `kill`, `server stop`.
+    fn name(&self) -> &'static str;
+    fn run(&self, ctx: &Context) -> Result<()>;
+}
+
+impl Execute for Kill {
+    fn name(&self) -> &'static str { "kill" }
+    fn run(&self, ctx: &Context) -> Result<()> { … }
+}
+```
+
+- **The trait's name:** it is `Execute`, not `Run`. `Run` is the argument struct
+  of `clai run`, and a trait of the same name would make every `use` ambiguous.
+- **`name` is a method, not a constant:** `Server` answers by its action, as it
+  does now.
+- **One `match` beside the enum:** `cli.rs` gets the only `match` on the
+  commands, next to the enum it dispatches on:
 
   ```rust
-  pub trait Named {
-      /// The command's name, as used in messages.
-      const NAME: &'static str;
+  impl Command {
+      pub fn execute(&self) -> &dyn Execute {
+          match self {
+              Command::Run(c) => c,
+              Command::New(c) => c,
+              // … one arm per command
+          }
+      }
   }
-
-  impl Run for Kill { fn run(&self, ctx: &Context) -> Result<()> { … } }
   ```
 
-  **(proposal for the shape; the file layout — arguments struct, `run`,
-  tests in the same file — stays as the spec's "Modules" table lists it.)**
+  `main` calls `command.execute().name()` and `command.execute().run(&ctx)`. The
+  two full matches in `command/mod.rs` are gone.
+- **Adding a command** then takes three places, all checked by the compiler:
+  - the variant with its `use`;
+  - the arm in `execute`;
+  - the file with its `impl Execute`.
 
-- `command/mod.rs` keeps one thing: the `match` that calls each `run` — or
-  the `impl Command` moves to `cli.rs`, beside the enum it dispatches on,
-  so one file owns the command list. **(proposal: move it to `cli.rs`; one
-  command, one enum, one dispatch, all next to each other.)**
-- `NAME` replaces `Command::name`'s match; `tracing::info!(command = …)`
-  in `main` reads it from the enum once, with a light `match` that only
-  names commands — the two duplicated full matches are gone.
-
-The number of places to touch for a new command falls from five to three:
-the enum, the dispatch beside it, and the new file itself.
+  A missing arm does not compile, and neither does a variant whose type does not
+  implement `Execute`. `implementation.md` gets this as a short checklist.
 
 ### Context
 
-`main` builds one `Context` and hands it to every `run`:
+`main` makes one `Context` and passes it to every `run`:
 
 ```rust
 pub struct Context {
     /// The path given by `--config`, if any.
     pub config_file: Option<PathBuf>,
 }
+
+impl Context {
+    /// Load options for `workspace`, with the process environment.
+    pub fn load_options(&self, workspace: PathBuf) -> LoadOptions { … }
+    /// `config::load` with those options.
+    pub fn load(&self, workspace: PathBuf) -> Result<Config> { … }
+}
 ```
 
-Commands that do not need it simply ignore the field; no `_config`
-parameter. The context is the one place later features can grow (terminal
-detection, environment overrides), without touching every signature again.
-**(proposal)**
+- **The four copies:** `run`, `models`, `chat::symbols` and `tui::run` use these
+  methods instead of their own `LoadOptions`.
+- **Unused parameters:** a command that needs no configuration ignores the
+  context, so no `_config` parameter is left.
+- **`tui::run` and `talk::talk`** take `&Context` instead of `Option<&Path>`.
+- **Nothing more for now:** no terminal detection and no `std::env` wrappers.
+  Nothing needs them yet, and they belong to their first use.
 
-### Shared helpers
+### Shared modules
 
-| Helper | Moves | Used by |
-|--------|-------|---------|
-| `text_or_stdin(words) -> Result<String>` | `command::Context` or `command::text` | `run`, `send` |
-| `workspace(dir) -> Result<PathBuf>` | `command` (from `new`) | `run`, `new` |
-| `stderr_line(text)` — the `clai: ` prefix | `output` (next to `write_stdout`) | `kill`, `new`, `main::report` |
-| table column alignment | `output` | `ls`, `models` |
-| `age(secs) -> String` | `text` (from `command::ls`) | `ls`, `chat` |
+| What | From | To | Used by |
+|------|------|----|---------|
+| `table(sessions, now)`, `state_name`, `age` | `command::ls` | `text::sessions` | `ls`, `chat` (`/sessions`), TUI session list and argument list |
+| `request(name, model, dir)`, `create(client, request)` | `command::new` | `command::common` | `new`, `chat --new`, `chat /new`, TUI `clai new` |
+| `workspace(dir)` | `command::new`, inline in `run` | `command::common` | `new`, `run` |
+| `input_text(words, what)` | `run`, `send` | `command::common` | `run`, `send` |
 
-- `output` gains the standard-error twin of its `write_stdout`; every
-  "clai: …" line goes through it, so the prefix is spelled once.
-- Table alignment becomes a small `align(rows: &[Vec<String>]) -> String`
-  in `output`; `ls` and `models` keep their own columns, wording and tests.
-- `age` moves from `command/ls.rs` to `text`; `chat` no longer reaches into
-  another command. **(proposal: `text`, next to `short_tokens`, which the
-  two tables already share.)**
+- **`text::sessions`:** the session table is text output shared by a command, a
+  chat and the TUI, like the other renderers in `text`. `ls` keeps only its
+  options, its JSON and its `run`.
+- **`command::common`:** this is code for several commands, not owned by any
+  one of them. The TUI imports `create` from there rather than from `new`.
+- **`input_text`:** it reads `-` from standard input or joins the words, trims
+  them, and refuses an empty text with `the {what} is empty` (exit `2`). It
+  returns `Input { text, from_stdin }`, because `run` asks no questions on the
+  terminal when the task came from standard input.
+
+### Output helpers
+
+- **`output::note(text)`:** writes `clai: {text}` and a newline to standard
+  error, and ignores a failure as the `writeln!` calls do today.
+  - It replaces the twelve `writeln!(stderr, "clai: …")` calls of the command
+    layer.
+  - `main::warn` becomes `note(&format!("warning: {message}"))`.
+  - `main::report` writes each configuration error and the final error through
+    it.
+- **`output::columns(rows, aligns)`:** pads each column to its widest cell with
+  two spaces between columns, leaves the last column as it is, and trims each
+  line. `aligns` says left or right per padded column, so `models` keeps its
+  right-aligned context column.
+  - `ls` adds the question summary after the columns, as now.
+  - Both tables keep their columns, wording and tests.
 
 ### `clai run`
 
-`Run::run` gives way to named parts, each short and matched by a test:
+`Run::run` becomes a short sequence of named parts:
 
-- `task(words) -> Result<String>` — the task text, `-` from standard input,
-  never empty.
-- `answering(…) -> Answering` — as today.
-- `workspace` and the model/provider resolution — through the shared
-  helpers; the config load stays `config::load`.
-- `one_shot(agent, asker,…) -> Result<()>` — the free `turn` function,
-  renamed and wrapped with its signal handling and event rendering, so the
-  in-process partnership (agent run here, not in the server) is a unit.
+```rust
+fn run(&self, ctx: &Context) -> Result<()> {
+    let task = input_text(&self.task, "task")?;
+    let answering = answering(self.yes, self.no_ask, !task.from_stdin && io::stdin().is_terminal());
+    let setup = self.setup(ctx)?;                 // workspace, config, model, provider, Setup
+    let asker = asker(answering, &setup.place, setup.unicode);
+    one_shot(Agent::new(setup.agent), task.text, asker, setup.unicode)
+}
+```
 
-Nothing about what `run` does changes: same options, messages, exit codes
-(`130`, `1`, `2`), same `Renderer` and `LineAsker`.
+- **`setup`** returns the agent's `Setup`, the workspace as shown, and the
+  symbol choice. It holds the config and model resolution that is inline today.
+- **`asker`** is the `match` on `Answering` that is inline today.
+- **`one_shot`** wraps the runtime, the free `turn` function (renamed, with its
+  signal handling and event rendering) and the runtime's shutdown. The
+  in-process partnership is then one unit: the agent runs here, not in the
+  server.
+
+Nothing about what `run` does changes: the same options, messages, exit codes
+(`130`, `1`, `2`), `Renderer` and `LineAsker`.
 
 ## Spec changes
 
-None. `spec/command.md` lists commands and their behaviour, and all of it
-stays; `spec/architecture.md`, "Modules" says "one file per command with its
-argument struct and `run`" — that stays true. If the dispatch moves to
-`cli.rs`, the module table's wording in `implementation.md` gains a
-sentence. **(proposal)**
+`spec/command.md` lists the commands and their behaviour, and all of it stays.
+`spec/architecture.md`, "Modules" says "one file per command with its argument
+struct and `run`", and that stays true.
+
+`implementation.md`, "Modules" changes:
+
+- **`cli`:** "the `Command` enum and `Command::execute`, the one dispatch".
+- **`command`:** "one file per command with its argument struct and `impl
+  Execute`; `Context`; `common` for what several commands share".
+- **`text`:** gains "the session table (`text::sessions`)".
+- **New checklist** "Adding a command": the variant, the arm in `execute`, the
+  file, the spec section, a test in `tests/cli.rs`.
 
 ## Testing
 
-The point of the refactor is that no behaviour changes, so the existing
-tests are the test:
+The point is that no behaviour changes, so the tests are pinned first and then
+left alone:
 
-- `tests/cli.rs`, `tests/completion.rs`, `tests/models.rs`, `tests/run.rs`,
-  `tests/server.rs` pass unchanged.
-- Unit tests move with the code that moves: `ls::age`'s tests to `text`,
-  the alignment helper's tests in `output`, `run`'s parts tested where they
-  were tested (`answering` keeps its table test, `task` gains tests for
-  `-` and the empty task).
-- `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
+- **Existing integration tests:** `tests/cli.rs`, `tests/completion.rs`,
+  `tests/configs.rs`, `tests/models.rs`, `tests/run.rs` and `tests/server.rs`
+  pass unchanged after every step. `tests/live.rs` is not run by default and is
+  not touched.
+- **New pins, added before anything moves:**
+  - `clai send NAME ""` and `clai send NAME -` with empty input both say "the
+    message is empty" and exit `2`.
+  - `clai run -C` with a missing directory says "… not a directory" and exits
+    `2`. Today only `clai new` has this test.
+  - The `clai: warning: …` line when logging cannot start.
+  - The `clai: ` lines of `chat --list` for an unknown session.
+- **Moved code keeps its tests:**
+  - `ls::age` and `ls::table` tests move to `text::sessions`.
+  - `models::render_table` keeps its expected strings.
+  - `output::columns` and `output::note` get their own tests.
+  - `input_text` gets tests for words, `-`, and empty text.
+- **Unit tests in `cli.rs`:**
+  - `unbuilt_commands_are_unsupported` uses `execute()` and a default
+    `Context`.
+  - A new test checks that `execute().name()` gives each command's name,
+    `server stop` and `server status` included.
+- **Checks:** `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
   `cargo test` after every step, as `agent.md` says.
 
 ## Implementation plan
 
 Each step leaves a working, tested state.
 
-1. **Context and the standard-error line**
-   - Status: todo
-   - Files: `src/command/mod.rs` (new `Context`), `src/output.rs`
-     (`stderr_line`), `src/main.rs`, all command files (signature change)
-   - Result: commands take `&Context`; `kill` and `new` write their
-     standard-error lines through one helper; `main::report` uses it too.
-   - Tests: the existing command tests pass; `stderr_line` has its own.
+1. **Pin the behaviour**
+   - Status: done
+   - Files: `tests/server.rs`, `tests/run.rs`, `tests/cli.rs`
+   - Result: the messages and exit codes listed under Testing are covered.
+   - Tests: the new tests pass against today's code.
 
-2. **Helpers into one place**
-   - Status: todo
-   - Files: `src/command/run.rs`, `src/command/send.rs`,
-     `src/command/new.rs`, `src/command/ls.rs`, `src/command/models.rs`,
-     `src/command/chat/mod.rs`, `src/text/mod.rs`, `src/output.rs`
-   - Result: `-` from standard input, the workspace check, column
-     alignment and `age` exist once; `ls` keeps only its columns and JSON,
-     `models` the same.
-   - Tests: the moved tests pass where they land; all output tests
-     unchanged in wording (`ls::table` and the two renderers keep their
-     expected strings).
+2. **Dispatch and context**
+   - Status: done
+   - Files: `src/command/mod.rs` (`Execute`, `Context`), `src/cli.rs`
+     (`execute`), `src/main.rs`, every command file, `src/tui/mod.rs`,
+     `src/command/chat/*.rs`, `implementation.md`
+   - Result: one `match`; every command implements `Execute` and takes
+     `&Context`; the four `LoadOptions` copies use `Context::load_options`.
+     This touches every command file once, for both changes.
+   - Tests: the parse tests, `unbuilt_commands_are_unsupported`, and the new
+     name test.
 
-3. **Dispatch**
-   - Status: todo
-   - Files: `src/cli.rs`, `src/command/mod.rs`, `src/command/*.rs`,
-     `src/main.rs`, `implementation.md`
-   - Result: each command file has `const NAME` and its `run`; the two
-     matches in `command/mod.rs` are gone; the dispatch lives next to the
-     enum.
-   - Tests: `unbuilt_commands_are_unsupported` and every parse test pass
-     unchanged.
+3. **Shared modules**
+   - Status: done
+   - Files: `src/text/sessions.rs` (new), `src/command/common.rs` (new),
+     `src/command/ls.rs`, `src/command/new.rs`, `src/command/run.rs`,
+     `src/command/send.rs`, `src/command/chat/*.rs`, `src/tui/app.rs`,
+     `src/tui/view/sessions.rs`, `src/tui/mod.rs`
+   - Result: no module outside `command/` imports a single command's file;
+     `-`, the workspace check and new-session creation exist once.
+   - Tests: the moved tests pass where they land; `input_text` tests.
 
-4. **`run` into named parts**
-   - Status: todo
+4. **Output helpers**
+   - Status: done
+   - Files: `src/output.rs`, `src/main.rs`, `src/command/kill.rs`,
+     `src/command/common.rs`, `src/command/chat/mod.rs`,
+     `src/command/chat/questions.rs`, `src/command/chat/talk.rs`,
+     `src/text/sessions.rs`,
+     `src/command/models.rs`
+   - Result: every `clai: ` line of the command layer goes through `note`; both
+     tables use `columns`.
+   - Tests: `note` and `columns`; the table tests keep their expected strings.
+
+5. **`run` into named parts**
+   - Status: done
    - Files: `src/command/run.rs`
-   - Result: `Run::run` reads as a short sequence: task, answering,
-     workspace, setup, one shot.
-   - Tests: `tests/run.rs` passes unchanged; new unit tests cover `task`
-     and the moved setup.
+   - Result: `Run::run` reads as the five-line sequence above.
+   - Tests: `tests/run.rs` unchanged; `who_answers` stays.
 
 ## Alternatives
 
-- **Leave it as it is.** The layer works and the tests hold it together.
-  But every added command pays the five-place cost and copies the helpers
-  again, and `run` grows further. Rejected: the coming commands would build
-  on the uneven parts.
-- **A macro that generates the dispatch.** One line per command, nothing to
-  forget. Rejected: a declarative macro hides what is now plain to read,
-  and the gain over one `match` next to the enum is small.
-- **A command registry: each file registers itself in a list.** Avoids
-  `cli.rs` knowing every command, but clap needs the enum anyway, so a
-  second list only adds a place to forget. Rejected.
+- **Leave it as it is.** The layer works and the tests hold it together. But
+  every new command pays the five-place cost and copies the helpers again, the
+  TUI keeps depending on `ls` and `new`, and `run` grows further. Rejected.
+- **A constant `NAME` per command** (the first draft of this RFC). It is simpler
+  than a method, but `server` has three names. A constant would need a second
+  `match` for it, and that is one of the two the RFC removes. Rejected.
+- **`enum_dispatch` or a declarative macro.** These generate the one `match`.
+  Rejected: a new dependency or a macro hides what one plain `match` shows, for
+  thirteen arms.
+- **A registry, where each file registers itself.** It avoids `cli.rs` knowing
+  every command, but clap needs the enum anyway, so a second list only adds a
+  place to forget. Rejected.
+- **The dispatch stays in `command/mod.rs`.** It works, but then the enum and
+  its only `match` live in two files, and a new variant is added in one and
+  matched in the other. Rejected in favour of `cli.rs`.
 - **Split `cli.rs` into one file per command's arguments.** The argument
-  structs are the interface to `spec/command.md`; keeping the enum and
-  all options in one file makes the review of the surface easy. Rejected:
-  `cli.rs` at ~400 lines of mostly declared options is not the problem.
-- **Fold `complete.rs` into `cli.rs`.** Completion is its own concern with
-  its own quietness rules (never an error, never output). Rejected: stays
-  its own module.
+  structs already live in the command files; `cli.rs` holds the enum, the
+  top-level options and the parse checks, about 140 lines besides tests. Not
+  the problem; rejected.
+- **Fold `complete.rs` into `cli.rs`.** Completion has its own quietness rules
+  (never an error, never output). Rejected: it stays its own module.
 
 ## Open questions
 
-1. Should the dispatch (`impl Command { name, run }`) move to `cli.rs`, as
-   proposed, or stay in `command/mod.rs` as the module table says today?
-   (Moving it means one sentence in `implementation.md`.)
-2. The `Context` shape: a struct of the `--config` path now; should it
-   already offer methods (terminal detection? `std::env` wrappers?) or
-   stay bare until a second consumer needs more?
-3. Should `Run` and `Send` share the `-` reading also with `clai chat
-   NAME CHOICE deny MESSAGE...`, or does that path stay as it is, writing
-   its own?
-4. Table alignment in `output` as one generic function, or a thin `Row`
-   builder per table, closer to what `ls` and `models` render today?
-5. Is `one_shot` the right name for `run`'s turn-plus-signals unit, given
-   the spec calls `clai run` one-shot ("run one task without the TUI and
-   exit")?
+None left. The user asked to build it; the proposals were taken:
+
+1. The shared module is `command::common`; `new.rs` keeps only its command.
+2. The attached-session marks of `/sessions` (`*`) and the TUI (`✓` / `+`)
+   stay with their clients; only the table moved to `text::sessions`.
+
+## Notes from building
+
+- **`Context::config()`:** commands that only pass the path on to
+  `with_client` call `ctx.config()`, which gives `Option<&Path>` as before.
+  `with_client` and `Connect` are unchanged.
+- **Unused context:** `commit` and `completion` take it as `_: &Context`; no
+  named parameter is left unused.
+- **`clai run`'s workspace:** the shared check makes the path absolute
+  before `Workspace::new` resolves it. Messages and behaviour are the same:
+  `tests/run.rs` checks "missing: not a directory".
+- **`input_text` for testing:** it reads standard input through a function
+  given to `input_from`, so its tests need no terminal.
+- **New pins:** the exact text of an empty `send` message (from words and
+  from `-`), and `chat --list` with an unknown session. They were added
+  before the move and passed on both sides of it.

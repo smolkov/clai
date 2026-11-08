@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use clap::Args;
 use clap_complete::env::Shells;
 
+use super::{Context, Execute};
 use crate::error::{Error, Result};
 use crate::output::write_stdout;
 
@@ -22,8 +23,12 @@ pub struct Completion {
     pub shell: Option<String>,
 }
 
-impl Completion {
-    pub fn run(&self, _config: Option<&Path>) -> Result<()> {
+impl Execute for Completion {
+    fn name(&self) -> &'static str {
+        "completion"
+    }
+
+    fn run(&self, _: &Context) -> Result<()> {
         let shell = match &self.shell {
             Some(shell) => shell.clone(),
             None => shell_from_env(std::env::var_os("SHELL").as_deref())?,

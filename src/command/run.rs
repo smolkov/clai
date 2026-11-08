@@ -1,7 +1,7 @@
 //! `clai run` and its short form `clai TASK...` (see `spec/command.md`).
 
-use std::io::{self, IsTerminal, Read, Write};
-use std::path::{Path, PathBuf};
+use std::io::{self, IsTerminal, Write};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -11,9 +11,11 @@ use clap_complete::ArgValueCompleter;
 use tokio::signal::unix::{SignalKind, signal};
 use tokio_util::sync::CancellationToken;
 
+use super::common::{input_text, workspace};
+use super::{Context, Execute};
 use crate::agent::{Agent, Asker, EndReason, EventSink, PolicyAsker, Setup, system_prompt, today};
 use crate::complete;
-use crate::config::{self, Environment, LoadOptions};
+use crate::config;
 use crate::error::{Error, Result};
 use crate::output::write_stdout;
 use crate::permissions::{SessionRules, Workspace};
@@ -60,44 +62,43 @@ pub enum Answering {
     Terminal,
 }
 
-impl Run {
-    pub fn run(&self, config_file: Option<&Path>) -> Result<()> {
-        let from_stdin = self.task == ["-"];
-        let task = if from_stdin {
-            let mut text = String::new();
-            io::stdin()
-                .read_to_string(&mut text)
-                .map_err(Error::io("standard input"))?;
-            text
-        } else {
-            self.task.join(" ")
-        };
-        let task = task.trim().to_owned();
-        if task.is_empty() {
-            return Err(Error::Usage("the task is empty".to_owned()));
-        }
+impl Execute for Run {
+    fn name(&self) -> &'static str {
+        "run"
+    }
+
+    fn run(&self, ctx: &Context) -> Result<()> {
+        let task = input_text(&self.task, "task")?;
         let answering = answering(
             self.yes,
             self.no_ask,
-            !from_stdin && io::stdin().is_terminal(),
+            !task.from_stdin && io::stdin().is_terminal(),
         );
+        let prepared = self.setup(ctx)?;
+        let asker = asker(answering, prepared.place, prepared.unicode);
+        one_shot(
+            Agent::new(prepared.setup),
+            task.text,
+            asker,
+            prepared.unicode,
+        )
+    }
+}
 
-        let workspace = match &self.dir {
-            Some(dir) => dir.clone(),
-            None => std::env::current_dir().map_err(Error::io("current directory"))?,
-        };
-        if !workspace.is_dir() {
-            return Err(Error::Usage(format!(
-                "{}: not a directory",
-                workspace.display()
-            )));
-        }
-        let env = Environment::from_process();
-        let config = config::load(&LoadOptions {
-            config_file: config_file.map(Path::to_path_buf),
-            workspace: workspace.clone(),
-            env: env.clone(),
-        })?;
+/// What the agent of a run is made from, with what the terminal output needs.
+struct Prepared {
+    setup: Setup,
+    /// The workspace as shown: `~/ws/clai`.
+    place: String,
+    unicode: bool,
+}
+
+impl Run {
+    /// The workspace, the configuration, the model and its provider.
+    fn setup(&self, ctx: &Context) -> Result<Prepared> {
+        let workspace = workspace(self.dir.as_deref())?;
+        let options = ctx.load_options(workspace.clone());
+        let config = config::load(&options)?;
         let model_ref = match &self.model {
             Some(text) => config.resolve_model(text).map_err(Error::Usage)?,
             None => config.default_model.clone(),
@@ -107,39 +108,51 @@ impl Run {
         };
         let provider = provider::from_config(provider_config)
             .map_err(|e| Error::Failed(format!("provider {}: {e}", provider_config.name)))?;
-        let workspace = Workspace::new(&workspace, &config.permissions.extra_dirs, env.home)
-            .map_err(Error::io(workspace.display().to_string()))?;
+        let workspace =
+            Workspace::new(&workspace, &config.permissions.extra_dirs, options.env.home)
+                .map_err(Error::io(workspace.display().to_string()))?;
         let place = workspace.tilde(workspace.root());
         let unicode = unicode(config.tui.symbols, |name| std::env::var(name).ok());
-        let setup = Setup {
-            provider,
-            model: model.clone(),
-            limits: config.limits,
-            system: system_prompt(&workspace, &today()),
-            env: Env {
-                permissions: Arc::new(config.permissions.clone()),
-                session: Arc::new(SessionRules::default()),
-                workspace: Arc::new(workspace),
-            },
-        };
         tracing::info!(model = %model_ref, "run");
-
-        let asker: Box<dyn Asker> = match answering {
-            Answering::Allow => Box::new(PolicyAsker::Allow),
-            Answering::Deny => Box::new(PolicyAsker::Deny),
-            Answering::Terminal => Box::new(LineAsker::new(
-                Box::new(io::BufReader::new(io::stdin())),
-                Box::new(io::stderr()),
-                place,
-                unicode,
-            )),
-        };
-        let runtime = crate::runtime::multi_thread()?;
-        let result = runtime.block_on(turn(Agent::new(setup), task, asker, unicode));
-        // A question may still wait for a line on standard input.
-        runtime.shutdown_timeout(Duration::from_millis(100));
-        result
+        Ok(Prepared {
+            setup: Setup {
+                provider,
+                model: model.clone(),
+                limits: config.limits,
+                system: system_prompt(&workspace, &today()),
+                env: Env {
+                    permissions: Arc::new(config.permissions.clone()),
+                    session: Arc::new(SessionRules::default()),
+                    workspace: Arc::new(workspace),
+                },
+            },
+            place,
+            unicode,
+        })
     }
+}
+
+/// The asker for who answers: a policy, or the terminal.
+fn asker(answering: Answering, place: String, unicode: bool) -> Box<dyn Asker> {
+    match answering {
+        Answering::Allow => Box::new(PolicyAsker::Allow),
+        Answering::Deny => Box::new(PolicyAsker::Deny),
+        Answering::Terminal => Box::new(LineAsker::new(
+            Box::new(io::BufReader::new(io::stdin())),
+            Box::new(io::stderr()),
+            place,
+            unicode,
+        )),
+    }
+}
+
+/// Runs the one turn here, not in a server, on a runtime of its own.
+fn one_shot(agent: Agent, task: String, asker: Box<dyn Asker>, unicode: bool) -> Result<()> {
+    let runtime = crate::runtime::multi_thread()?;
+    let result = runtime.block_on(turn(agent, task, asker, unicode));
+    // A question may still wait for a line on standard input.
+    runtime.shutdown_timeout(Duration::from_millis(100));
+    result
 }
 
 /// Who answers, from the options and whether there is a terminal.

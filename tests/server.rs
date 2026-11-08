@@ -290,7 +290,16 @@ fn sessions_through_the_server() {
 
     // A question, answered in `clai chat --questions`.
     // An empty message is a usage error.
-    assert_eq!(code(&env.run(&["send", "s", "-"])), Some(2));
+    let out = env.run(&["send", "s", "-"]);
+    assert_eq!(code(&out), Some(2));
+    assert_eq!(text(&out.stderr), "clai: the message is empty\n");
+    let out = env.run(&["send", "s", " "]);
+    assert_eq!(code(&out), Some(2));
+    assert_eq!(text(&out.stderr), "clai: the message is empty\n");
+    // `--list` names the sessions it does not know, and fails.
+    let out = env.run(&["chat", "--list", "nope"]);
+    assert_eq!(code(&out), Some(1));
+    assert_eq!(text(&out.stderr), "clai: no session named nope\n");
     let out = env.run_with_input(&["send", "s", "-"], "write b.txt\n");
     assert_eq!(code(&out), Some(0), "{}", text(&out.stderr));
     env.wait_for("a question", |s| !s["question"].is_null());
