@@ -311,6 +311,8 @@ pub struct Permissions {
     /// The built-in rules, after `builtin_except`; checked with the others.
     pub builtin: Vec<Rule>,
     pub extra_dirs: Vec<ExtraDir>,
+    /// `ask_user = "deny"`: the model may not ask the user questions.
+    pub ask_user_denied: bool,
 }
 
 impl Permissions {
@@ -346,6 +348,7 @@ impl Permissions {
                 perms.set(tool, *value.get_ref());
             }
         }
+        perms.ask_user_denied = ask_user_key(ctx, &file, errors) == Some(Action::Deny);
         let loader = Loader { ctx, home };
         for (action, table) in action_tables(&file) {
             perms.rules.extend(loader.table(action, table, errors));
@@ -401,6 +404,15 @@ impl Permissions {
                 self.set(tool, self.action(tool).max(action));
             }
         }
+        match ask_user_key(ctx, &file, errors) {
+            Some(Action::Deny) => self.ask_user_denied = true,
+            Some(_) => errors.push(ctx.error(
+                file.ask_user.as_ref().map(Spanned::span),
+                Some("permissions.ask_user".into()),
+                "a project file may not set ask_user to allow",
+            )),
+            None => {}
+        }
         if let Some(allow) = &file.allow {
             errors.push(ctx.error(
                 Some(allow.span()),
@@ -440,6 +452,25 @@ impl Permissions {
             self.rules.extend(loader.detailed(rule, errors));
         }
     }
+}
+
+/// The `ask_user` key: `allow` or `deny`; `ask` is an error.
+fn ask_user_key(
+    ctx: FileCtx<'_>,
+    file: &PermissionsFile,
+    errors: &mut Vec<ConfigError>,
+) -> Option<Action> {
+    let value = file.ask_user.as_ref()?;
+    let action = *value.get_ref();
+    if action == Action::Ask {
+        errors.push(ctx.error(
+            Some(value.span()),
+            Some("permissions.ask_user".into()),
+            "ask_user is allow or deny; asking to ask is not possible",
+        ));
+        return None;
+    }
+    Some(action)
 }
 
 /// The message of the built-in rules, for the model.

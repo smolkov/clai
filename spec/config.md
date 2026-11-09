@@ -122,6 +122,12 @@ running commands asks. A tool key may be `allow`, `ask` or `deny`. A tool not
 named in `[permissions]` keeps its default. Unknown tool names are a load
 error. The tools themselves are described in [`tools.md`](tools.md).
 
+`ask_user` (questions from the model, see [`tools.md`](tools.md),
+"ask_user") is `allow` or `deny`, default `allow`; `ask` is a load error,
+and rules cannot name it. `deny` leaves the tool out of every request. A
+project file may set it to `deny`, not to `allow`. Like the other keys, a
+change applies to sessions started after it.
+
 ### Tool groups
 
 A rule may name a group instead of a tool; it then applies to every tool of
@@ -395,7 +401,9 @@ repository:
   `[permissions.ask]` and `[permissions.deny]` or detailed `ask` and `deny`
   rules, with `except` and `message`.
 - It may not set a tool key to `allow`, have a `[permissions.allow]` table,
-  add detailed `allow` rules, or set `extra_dirs` or `builtin_except`. Such a file is rejected with an error naming the file and key.
+  add detailed `allow` rules, set `ask_user` to `allow`, or set
+  `extra_dirs` or `builtin_except`. Such a file is rejected with an error
+  naming the file and key.
 - Its rules are added to the user file's rules; for a tool key, the stricter
   value wins (`deny` over `ask` over `allow`).
 

@@ -262,7 +262,8 @@ impl Interactive {
                     Ok(_) => self.show_next(),
                     Err(Error::Failed(message)) | Err(Error::Usage(message)) => {
                         self.out(&format!("  not accepted: {message}\n"));
-                        dialog.restart();
+                        let again = dialog.restart();
+                        self.out(&again);
                         self.out(dialog.prompt());
                         self.current = Some((session, dialog));
                     }

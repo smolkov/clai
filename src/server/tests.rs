@@ -1617,3 +1617,69 @@ async fn session_status_of_a_model_no_longer_configured() {
     assert!(status.limits.is_some());
     fx.stop().await;
 }
+
+#[tokio::test]
+async fn a_question_from_the_model_waits_for_any_client() {
+    let arguments = json!({"questions": [{"question": "Which database?", "header": "Database",
+        "options": [{"label": "SQLite"}, {"label": "Postgres"}]}]});
+    let ask = Step::Events(vec![
+        Ok(Event::ToolCallStart {
+            id: "c1".into(),
+            name: "ask_user".into(),
+        }),
+        Ok(Event::ToolCallEnd {
+            id: "c1".into(),
+            arguments,
+        }),
+        Ok(Event::Done {
+            stop_reason: StopReason::ToolUse,
+        }),
+    ]);
+    let script = Script::new(vec![ask, say("SQLite then")]);
+    let fx = Fixture::start(vec![script.clone()]).await;
+    let mut tui = fx.client("tui pts/3", true).await;
+    let mut chat = fx.client("clai chat", true).await;
+    new_session(&mut tui, &fx.ws, Some("s")).await;
+    attach(&mut tui, "s").await;
+    attach(&mut chat, "s").await;
+    send(&mut tui, "s", "build the cache").await;
+    let q = question(&mut tui).await;
+    assert_eq!(q.summary, "ask_user: Database");
+    assert!(matches!(q.kind, crate::agent::QuestionKind::AskUser(_)));
+    assert_eq!(question(&mut chat).await.id, q.id);
+    let info = chat.list().await.unwrap().remove(0);
+    assert_eq!(info.state, State::Waiting);
+
+    // A wrong reply keeps it open; the first valid one counts.
+    let reply = |selected: Vec<usize>| Answer::Reply {
+        answers: vec![crate::tools::UserAnswer {
+            selected,
+            text: None,
+        }],
+    };
+    let wrong = answer(&mut chat, "s", &q.id, reply(vec![5])).await;
+    assert!(
+        matches!(&wrong, Err(Error::Failed(m)) if m.contains("option 5 does not exist")),
+        "{wrong:?}"
+    );
+    answer(&mut chat, "s", &q.id, reply(vec![0])).await.unwrap();
+    let late = answer(&mut tui, "s", &q.id, Answer::Decline).await;
+    assert!(matches!(&late, Err(Error::Failed(m)) if m.contains("already answered")));
+    assert_eq!(turn_end(&mut tui).await, EndReason::Done);
+    let requests = script.requests.lock().unwrap().clone();
+    assert!(requests[0].tools.iter().any(|t| t.name == "ask_user"));
+    let result = requests[1]
+        .messages
+        .iter()
+        .flat_map(|m| &m.content)
+        .find_map(|b| match b {
+            crate::provider::Block::ToolResult { content, .. } => Some(content.clone()),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(
+        result,
+        "The user answered:\n\n1. Which database?\n   SQLite"
+    );
+    fx.stop().await;
+}

@@ -558,3 +558,87 @@ fn the_usage_line() {
         "tokens: in 45.1k, out 3.2k; context 12.3k"
     );
 }
+
+#[tokio::test]
+async fn ask_user_on_the_terminal() {
+    use crate::agent::{ASK_USER_CHOICES, AskCall, AskUser};
+    let arguments = serde_json::json!({
+        "questions": [
+            {"question": "Which database?", "header": "Database",
+             "options": [{"label": "SQLite (recommended)", "description": "One file."}, {"label": "Postgres"}]},
+            {"question": "Which features?", "header": "Features",
+             "options": [{"label": "Search"}, {"label": "Export"}], "multiple": true}
+        ],
+        "context": "Both work."
+    });
+    let asked = crate::tools::ask_user::check(&arguments).unwrap();
+    let mut q = permission(new_file(1), vec![]);
+    q.summary = crate::tools::ask_user::summary(&asked.questions);
+    q.choices = ASK_USER_CHOICES.to_vec();
+    q.kind = QuestionKind::AskUser(Box::new(AskUser {
+        call: AskCall {
+            tool: "ask_user".into(),
+            id: "c1".into(),
+            arguments,
+        },
+        questions: asked.questions,
+        context: asked.context,
+        text: Some("I need to know.".into()),
+    }));
+    let (reply, out) = answer(&q, "1\n1 2: and fast\ny\n").await;
+    assert_eq!(
+        reply,
+        answered(Answer::Reply {
+            answers: vec![
+                crate::tools::UserAnswer {
+                    selected: vec![0],
+                    text: None
+                },
+                crate::tools::UserAnswer {
+                    selected: vec![0, 1],
+                    text: Some("and fast".into())
+                },
+            ]
+        })
+    );
+    assert_eq!(
+        out,
+        "── clai · ~/ws · q1 ──\n\
+         \x20 model    \"I need to know.\"\n\
+         \x20 Both work.\n\
+         ? Question from the model (1/2): Which database?\n\
+         \x20 1) SQLite (recommended) — One file.\n\
+         \x20 2) Postgres\n\
+         Answer: a number, or text of your own; \"s\" skips, \"c\" cancels the turn\n\
+         > ? Question from the model (2/2): Which features?\n\
+         \x20 1) Search\n\
+         \x20 2) Export\n\
+         Answer: numbers like 1,3 (text after a `:` is added), or text of your own; \"s\" skips, \"c\" cancels the turn\n\
+         > Your answers:\n\
+         \x20 1. Database: SQLite (recommended)\n\
+         \x20 2. Features: Search, Export, \"and fast\"\n\
+         send [y/n]> "
+    );
+    assert_eq!(answer(&q, "s\n").await.0, answered(Answer::Decline));
+    assert_eq!(answer(&q, "c\n").await.0, answered(Answer::Cancel));
+    let (reply, out) = answer(&q, "7\nRedis\n").await;
+    assert!(out.contains("  no option 7; choose 1–2\n"), "{out}");
+    assert_eq!(reply, Reply::NoOne);
+}
+
+#[test]
+fn ask_user_tool_line_shows_the_answers() {
+    let text = "The user answered:\n\n1. Which?\n   SQLite\n\n2. More?\n   Search, Export\n   The user added: fast";
+    assert_eq!(
+        short_result("ask_user", CallState::Done, text),
+        "SQLite; Search, Export; The user added: fast"
+    );
+    assert_eq!(
+        short_result(
+            "ask_user",
+            CallState::Done,
+            crate::tools::ask_user::DECLINED
+        ),
+        crate::tools::ask_user::DECLINED
+    );
+}

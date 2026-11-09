@@ -13,6 +13,7 @@ JSON arguments; `clai` checks the permission (see [`config.md`](config.md),
 | [`edit_file`](#edit_file) | Replace exact text in a file. | `ask` |
 | [`write_file`](#write_file) | Create a file, or replace one. | `ask` |
 | [`run_command`](#run_command) | Run a shell command in the workspace. | `ask` |
+| [`ask_user`](#ask_user) | Ask the user questions with options. | `allow`; only offered when someone can answer |
 
 Statements marked **(assumption)** need a decision from the user.
 
@@ -427,6 +428,83 @@ Shown: the command; expanded: command, working directory and output.
 Permission: each part of the command line, and the targets of its
 redirections (see [Permissions](#permissions) and [`config.md`](config.md),
 "Commands with several parts").
+
+## ask_user
+
+Asks the user one to four questions together and waits for the answer.
+It is not a permission-checked tool: it opens a question of the kind
+`ask_user` (see [`sessions.md`](sessions.md), "Questions"), and the answer
+is the result.
+
+```json
+{
+  "questions": [
+    {
+      "question": "Which database should the cache use?",
+      "header": "Database",
+      "options": [
+        {"label": "SQLite (recommended)", "description": "One file next to the binary, no server."},
+        {"label": "Postgres", "description": "Shared with the API; needs the server running."}
+      ],
+      "multiple": false
+    }
+  ],
+  "context": "Both work with the current code; the choice decides the migration."
+}
+```
+
+| Argument | Required | Meaning |
+|----------|----------|---------|
+| `questions` | yes | 1 to 4 questions. |
+| `question` | yes | The full question, at most 500 characters. |
+| `header` | no | A short label, at most 16 characters. Default: the question's first line, cut to 16 characters with `…`. |
+| `options` | yes | 2 to 6 options. |
+| `label` | yes | The option, at most 60 characters. Labels of one question differ (ignoring case). |
+| `description` | no | What choosing it means, at most 300 characters. |
+| `multiple` | no | `true`: the user may choose several options. Default `false`. |
+| `context` | no | Markdown shown above the questions, at most 4 000 characters. |
+
+Texts are trimmed; an empty `header` or `description` counts as missing,
+an empty `question` or `label` is an error. A wrong call is an error
+result naming the problem (`question 1, option 2: label has 61
+characters; at most 60`), and no question opens. The user can always type
+an answer instead of, or together with, the options, so the model lists
+no "Other" option; the tool description tells it so, and to put the
+option it recommends first.
+
+**When it is offered.** The tool is in the request only when someone can
+answer: in a session on the server (clients may attach later), and in
+`clai run` when standard input is a terminal and neither `--yes` nor
+`--no-ask` is given. `ask_user = "deny"` in `[permissions]` leaves it out
+too (see [`config.md`](config.md), "Permissions"). A call where it is not
+offered (e.g. from history), or a question no one can answer, gives the
+error `ask_user is not available: no one can answer; decide yourself and
+say what you chose in your answer`, with the call shown as denied.
+
+It counts as a tool call against the turn's limits. Waiting for the
+answer is not working time in `/status`.
+
+**Results.** A `reply` is a result that is not an error, one block per
+question:
+
+```
+The user answered:
+
+1. Which database should the cache use?
+   SQLite (recommended)
+
+2. Which features should the first version have?
+   Search, Export
+   The user added: keep the old export format too.
+```
+
+A typed text without options reads `The user wrote: …`. `decline` gives
+`the user declined to answer; decide yourself, or ask in your final
+answer`, also not an error. `cancel` cancels the turn, as for other
+questions.
+
+Shown: `ask_user` with the headers; when done, the answers
+(`SQLite; Search, Export`).
 
 ## Open questions
 

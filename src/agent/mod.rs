@@ -22,7 +22,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::config::{Action, Limits, Model, Rule};
 use crate::provider::{Block, ErrorKind, Provider, ProviderError, Request, Role, StopReason};
-use crate::tools::{self, Env, Prepared, PreparedCall, ToolOutput};
+use crate::tools::{self, Env, Prepared, PreparedCall, ToolOutput, ask_user};
 
 pub use events::{
     CallResult, CallState, EndReason, EventSink, SessionEvent, State, ToolCallEvent, TurnEnd,
@@ -31,8 +31,9 @@ pub use events::{
 pub use history::{History, INTERRUPTED, Journal, Record};
 pub use prompt::{date_of, now_ms, now_secs, system_prompt, today};
 pub use question::{
-    Answer, Asker, CallInfo, Choice, Closed, LIMIT_CHOICES, Limit, PERMISSION_CHOICES, Permission,
-    PolicyAsker, Question, QuestionKind, Reply, SessionRef, TurnInfo,
+    ASK_USER_CHOICES, Answer, AskCall, AskUser, Asker, CallInfo, Choice, Closed, LIMIT_CHOICES,
+    Limit, PERMISSION_CHOICES, Permission, PolicyAsker, Question, QuestionKind, Reply, SessionRef,
+    TurnInfo,
 };
 
 use crate::sync::lock;
@@ -52,6 +53,9 @@ pub struct Setup {
     pub env: Env,
     /// The system prompt; see [`system_prompt`].
     pub system: String,
+    /// Someone can answer questions from the model (`ask_user`): a session
+    /// on the server, `clai run` on a terminal.
+    pub can_ask: bool,
 }
 
 /// The provider and model of a session. The session can change them while
@@ -99,6 +103,7 @@ pub struct Agent {
     limits: Limits,
     env: Env,
     system: String,
+    can_ask: bool,
     history: History,
     turns: u64,
     /// The last question number; shared by all sessions of a server.
@@ -166,6 +171,7 @@ impl Agent {
             limits: setup.limits,
             env: setup.env,
             system: setup.system,
+            can_ask: setup.can_ask,
             history: History::default(),
             turns: 0,
             questions: Arc::new(AtomicU64::new(0)),
@@ -330,7 +336,7 @@ impl Agent {
                 model: model.id.clone(),
                 system: self.system.clone(),
                 messages: self.history.messages().to_vec(),
-                tools: tools::specs(),
+                tools: self.tool_specs(),
                 max_output_tokens: model.max_output_tokens,
                 temperature: model.temperature,
             };
@@ -451,6 +457,95 @@ impl Agent {
         (results, stop)
     }
 
+    /// Whether the model gets `ask_user`: someone can answer and the user
+    /// did not turn it off.
+    fn offers_ask_user(&self) -> bool {
+        self.can_ask && !self.env.permissions.ask_user_denied
+    }
+
+    /// The tools sent with a request.
+    fn tool_specs(&self) -> Vec<crate::provider::ToolSpec> {
+        let mut specs = tools::specs();
+        if self.offers_ask_user() {
+            specs.push(ask_user::spec());
+        }
+        specs
+    }
+
+    /// Opens a question from the model and turns the answer into the
+    /// call's result.
+    async fn ask_user(
+        &mut self,
+        call: &CallIn,
+        budget: &Budget,
+        events: &EventSink,
+        asker: &dyn Asker,
+        cancel: &CancellationToken,
+    ) -> (ToolOutput, CallState, Option<Stop>) {
+        if !self.offers_ask_user() {
+            return (
+                ToolOutput::error(ask_user::NOT_AVAILABLE),
+                CallState::Denied,
+                None,
+            );
+        }
+        let asked = match ask_user::check(&call.arguments) {
+            Ok(asked) => asked,
+            Err(e) => return (ToolOutput::error(e), CallState::Error, None),
+        };
+        let headers: Vec<&str> = asked.questions.iter().map(|q| q.header.as_str()).collect();
+        self.emit_call(
+            events,
+            call,
+            CallState::Waiting,
+            Some(headers.join(", ")),
+            None,
+        );
+        let question = self.question(
+            budget,
+            ask_user::summary(&asked.questions),
+            &ASK_USER_CHOICES,
+            QuestionKind::AskUser(Box::new(AskUser {
+                call: AskCall {
+                    tool: ask_user::NAME.into(),
+                    id: call.id.clone(),
+                    arguments: call.arguments.clone(),
+                },
+                questions: asked.questions.clone(),
+                context: asked.context,
+                text: call.text.clone(),
+            })),
+        );
+        let validate = |answer: &Answer| match answer {
+            Answer::Reply { answers } => ask_user::check_answers(&asked.questions, answers),
+            _ => Ok(()),
+        };
+        let stopped = |agent: &Agent| {
+            let (text, state) = Stop::Cancelled.not_run(agent.cancel_reason.get().as_deref());
+            (ToolOutput::error(text), state, Some(Stop::Cancelled))
+        };
+        let Some((reply, ())) = wait(&question, events, asker, cancel, validate).await else {
+            return stopped(self);
+        };
+        match reply {
+            Reply::NoOne => (
+                ToolOutput::error(ask_user::NOT_AVAILABLE),
+                CallState::Denied,
+                None,
+            ),
+            Reply::Answer { answer, .. } => match answer {
+                Answer::Reply { answers } => (
+                    ToolOutput::ok(ask_user::result_text(&asked.questions, &answers)),
+                    CallState::Done,
+                    None,
+                ),
+                Answer::Decline => (ToolOutput::ok(ask_user::DECLINED), CallState::Done, None),
+                // `cancel`, and choices `wait` rejects.
+                _ => stopped(self),
+            },
+        }
+    }
+
     /// Prepares, asks about and runs one call.
     async fn one_call(
         &mut self,
@@ -460,6 +555,9 @@ impl Agent {
         asker: &dyn Asker,
         cancel: &CancellationToken,
     ) -> (ToolOutput, CallState, Option<Stop>) {
+        if call.name == ask_user::NAME {
+            return self.ask_user(call, budget, events, asker, cancel).await;
+        }
         let prepared = match tools::prepare(&self.env, &call.name, &call.arguments) {
             Prepared::Failed(output) => return (output, CallState::Error, None),
             Prepared::Denied(output) => return (output, CallState::Denied, None),
@@ -586,7 +684,9 @@ impl Agent {
             ),
             Answer::Cancel => Decided::Stop(Stop::Cancelled),
             // Not among the choices; `wait` rejects them.
-            Answer::Continue | Answer::Stop => Decided::Stop(Stop::Cancelled),
+            Answer::Continue | Answer::Stop | Answer::Reply { .. } | Answer::Decline => {
+                Decided::Stop(Stop::Cancelled)
+            }
         }
     }
 

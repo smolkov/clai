@@ -46,6 +46,7 @@ fn json_of(s: &SessionInfo) -> Value {
             "kind": match q.kind {
                 QuestionKind::Permission(_) => "permission",
                 QuestionKind::Limit(_) => "limit",
+                QuestionKind::AskUser(_) => "ask_user",
             },
             "summary": q.summary,
         })

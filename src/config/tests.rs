@@ -564,6 +564,40 @@ fn builtin_except() {
 }
 
 #[test]
+fn ask_user_key() {
+    assert!(!ok(BASE).permissions.ask_user_denied);
+    assert!(
+        !ok(&with("[permissions]\nask_user = \"allow\"\n"))
+            .permissions
+            .ask_user_denied
+    );
+    assert!(
+        ok(&with("[permissions]\nask_user = \"deny\"\n"))
+            .permissions
+            .ask_user_denied
+    );
+    let e = errs(&with("[permissions]\nask_user = \"ask\"\n"), None);
+    assert!(
+        e.iter()
+            .any(|e| e.contains("permissions.ask_user") && e.contains("allow or deny")),
+        "{e:?}"
+    );
+    let config = load_with(
+        &with(""),
+        Some("[permissions]\nask_user = \"deny\"\n"),
+        &Environment::default(),
+    )
+    .unwrap();
+    assert!(config.permissions.ask_user_denied);
+    let e = errs(&with(""), Some("[permissions]\nask_user = \"allow\"\n"));
+    assert!(
+        e.iter()
+            .any(|e| e.contains("a project file may not set ask_user to allow")),
+        "{e:?}"
+    );
+}
+
+#[test]
 fn project_permissions_only_stricter() {
     let config = load_with(
         &with("[permissions]\nedit_file = \"allow\"\n[permissions.ask]\nread_file = [\"a\"]\n"),

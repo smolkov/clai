@@ -138,7 +138,13 @@ done, `1` failed or stopped, `2` usage or configuration error, `130`
 Sessions run in a background server, one per user, which the first session
 command starts and which exits after 60 s without sessions and clients. A
 session keeps working while no one watches it, and waits only when it needs
-a decision: a permission or limit question.
+a decision: a permission or limit question, or a question from the model.
+
+When a choice is yours (which design, which database), the model can ask
+with the `ask_user` tool: one to four questions with options, answered in
+a box in the TUI or as numbered lines in `clai chat` and `clai run`; you
+can always type your own answer instead. The turn goes on with the answer.
+`ask_user = "deny"` in `[permissions]` turns it off.
 
 ```sh
 clai new -d --name api ~/ws/api       # start a session, print its name
@@ -164,7 +170,8 @@ commands (`/cancel`, `/model`, `/usage`, `/status [NAME]`, `/sessions`, `/attach
 `/new [NAME] [PROVIDER/MODEL]`, `/models`, `/detach`, `/kill`). It shows each question
 with the diff or command and reads the answer as a line: `y` allow, `a` always (then a rule), `n` deny, `e` deny
 with a message, `c` cancel the turn; for a limit question `y` continue,
-`n` stop.
+`n` stop; for a question from the model an option's number (`1,3: text`
+for several, with a text), your own text, `s` skip or `c` cancel.
 
 Sessions are saved as they go, in `~/.local/state/clai/sessions/`
 (`$XDG_STATE_HOME`), so they survive a server stop, a crash or a reboot.

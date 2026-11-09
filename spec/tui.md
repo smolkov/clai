@@ -280,6 +280,56 @@ Turn limit reached (50 requests, 120 tool calls). Continue?
 
 The prompt takes keys only for the prompt bar, as for permission prompts.
 
+## Questions from the model
+
+A question from the model (`ask_user`, see [`tools.md`](tools.md),
+"ask_user") opens as a box over the conversation instead of the prompt
+bar, because it is larger. The tool call line shows `? ask_user Database`;
+the session row counts the question in `●`, as for other questions.
+
+```
+┌ Question ─ 1/2 Database ─────────────────────────────────────────────────────┐
+│ Both work with the current code; the choice decides the migration.           │
+│                                                                              │
+│ Which database should the cache use?                                         │
+│                                                                              │
+│ ▶ 1 SQLite (recommended)                                                     │
+│       One file next to the binary, no server.                                │
+│   2 Postgres                                                                 │
+│       Shared with the API; needs the server running.                         │
+│   3 Type an answer                                                           │
+│                                                                              │
+│ Up Down choose ─ Enter next ─ Tab question ─ Esc skip ─ Ctrl-C cancel turn   │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+| Key | Action |
+|-----|--------|
+| `Up` / `Down` | Select an option or the "Type an answer" row. |
+| `1`–`9` | Select that row; as `Space` on it. |
+| `Space` | With `multiple`: tick or untick the option. Without: choose it. On the text row: type. |
+| `Enter` | On an option: choose it (with `multiple`, go on with the ticked ones, or this one if none is ticked) and go to the next question. On the text row: type; `Enter` again keeps the text and goes on, `Esc` goes back. |
+| `Tab` / `Shift-Tab` | Next or previous question, keeping what was chosen; after the last, the review page. |
+| `PgUp` / `PgDn` | Scroll the box when it is taller than the screen. |
+| `Esc` | Skip: answers `decline`; asks `[y] yes  [n] no` first when something was chosen. |
+| `Ctrl-C` | Cancel the turn (`cancel`). |
+
+- With `multiple`, options show `[x]` or `[ ]`; a chosen option is drawn
+  in the accent colour.
+- With one question and no `multiple`, `Enter` on an option sends at once.
+  Otherwise the review page after the last question lists each answer;
+  `Enter` sends, or goes to the first question without an answer.
+- A text on the row of a question that has a choice is sent with it ("The
+  user added").
+- `context` and the model's `text` are drawn as Markdown.
+- While the box is open the keys belong to it. `Ctrl-N` / `Ctrl-P`,
+  `Ctrl-S` and `Ctrl-D` (when no text is typed) work as during a permission
+  prompt; the question stays open. What was chosen is kept while the TUI
+  stays on the session; switching to another session drops it.
+- A rejected answer shows `not accepted: …` at the top of the box.
+- When another client answers, the box closes and the conversation shows
+  `answered by clai chat: reply`.
+
 ## Input editor
 
 - `Enter` sends the message; `Shift-Enter` or `Alt-Enter` inserts a newline.

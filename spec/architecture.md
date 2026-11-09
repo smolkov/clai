@@ -247,7 +247,7 @@ need the network. Build output goes to `target/`, the spec book to
 Clients and the server exchange JSON messages over the Unix socket, one
 message per line (at most 16 MiB). Every message is an object with a
 `type`. The first message in each direction is `hello` with the protocol
-version (now `5`); on a mismatch the server sends `error` and closes the
+version (now `6`); on a mismatch the server sends `error` and closes the
 connection, and the message tells the user to restart the server with
 `clai server stop` (see [`sessions.md`](sessions.md), "Server"). The code
 is in `src/protocol/`.

@@ -5,6 +5,7 @@
 //! The caller then asks the user if the decision is `ask`, and runs it with
 //! [`PreparedCall::run`]. Nothing here knows sessions or clients.
 
+pub mod ask_user;
 mod edit_file;
 mod list_files;
 mod output;
@@ -29,6 +30,7 @@ use crate::config::{Action, Permissions, Rule, Tool};
 use crate::permissions::{Checker, Decision, Proposal, SessionRules, Workspace};
 use crate::provider::ToolSpec;
 
+pub use ask_user::{AskOption, AskQuestion, UserAnswer};
 pub use output::{ToolOutput, cut_for_model, group};
 pub use question::{Details, PathDetails, Text};
 

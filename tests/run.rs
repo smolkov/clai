@@ -274,6 +274,35 @@ fn asking_without_a_terminal_denies() {
 }
 
 #[test]
+fn ask_user_is_not_offered_without_a_terminal() {
+    let ask =
+        json!({"questions": [{"question": "Which?", "options": [{"label": "A"}, {"label": "B"}]}]});
+    let server = Server::start(vec![call("c1", "ask_user", ask), say("I chose A.")]);
+    let env = Env::new("no-ask-user", &server, "");
+    let out = env.run(&["choose", "one"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert_eq!(stdout(&out), "I chose A.\n");
+    let requests = server.requests();
+    let tools = requests[0]["tools"].as_array().unwrap();
+    assert_eq!(tools.len(), 6);
+    assert!(tools.iter().all(|t| t["function"]["name"] != "ask_user"));
+    let tool = requests[1]["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["role"] == "tool")
+        .unwrap();
+    assert!(
+        tool["content"]
+            .as_str()
+            .unwrap()
+            .contains("ask_user is not available: no one can answer"),
+        "{tool}"
+    );
+    assert!(stderr(&out).contains("ask_user"), "{}", stderr(&out));
+}
+
+#[test]
 fn yes_allows() {
     let server = Server::start(vec![write_call(), say("Written.")]);
     let env = Env::new("yes", &server, "");

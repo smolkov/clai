@@ -156,6 +156,7 @@ impl Fixture {
                 workspace: Arc::new(workspace),
             },
             system,
+            can_ask: true,
         });
         Fixture {
             _tmp: tmp,
@@ -378,7 +379,8 @@ async fn plain_answer() {
     let request = &f.requests()[0];
     assert_eq!(request.model, "model-1");
     assert_eq!(request.max_output_tokens, Some(1000));
-    assert_eq!(request.tools.len(), 6);
+    assert_eq!(request.tools.len(), 7);
+    assert_eq!(request.tools[6].name, "ask_user");
     assert!(request.system.contains("Today: 2026-11-01"));
 }
 
@@ -1039,4 +1041,172 @@ async fn full_output_is_kept() {
     assert!(r[0].0.contains("characters cut"), "{}", r[0].0.len());
     let full = f.agent.history().full_output("c1").unwrap();
     assert!(full.len() > 40_000 && full.contains("end\nexit code 0"));
+}
+
+fn ask_args() -> Value {
+    json!({
+        "questions": [
+            {"question": "Which database?", "header": "Database",
+             "options": [{"label": "SQLite"}, {"label": "Postgres"}]},
+            {"question": "Which features?", "header": "Features",
+             "options": [{"label": "Search"}, {"label": "Export"}], "multiple": true}
+        ],
+        "context": "Both work."
+    })
+}
+
+fn reply(answers: &[(&[usize], Option<&str>)]) -> Answer {
+    Answer::Reply {
+        answers: answers
+            .iter()
+            .map(|(selected, text)| crate::tools::UserAnswer {
+                selected: selected.to_vec(),
+                text: text.map(str::to_owned),
+            })
+            .collect(),
+    }
+}
+
+fn ask_step() -> Step {
+    let mut events = vec![text("I need two decisions.")];
+    events.extend(call("c1", "ask_user", ask_args()));
+    events.extend(done(StopReason::ToolUse));
+    Step::Events(events)
+}
+
+#[tokio::test]
+async fn ask_user_opens_a_question_and_gives_the_answer() {
+    let mut f = Fixture::new(vec![ask_step(), say("SQLite it is.")]);
+    let asker = TestAsker::answers(vec![reply(&[(&[0], None), (&[0, 1], Some("and fast"))])]);
+    let (end, events) = f.turn("build the cache", &asker).await;
+    assert_eq!(end.reason, EndReason::Done);
+    assert_eq!(end.tool_calls, 1);
+    let asked = asker.asked();
+    assert_eq!(asked.len(), 1);
+    let q = &asked[0];
+    assert_eq!(q.summary, "ask_user: Database, Features");
+    assert_eq!(q.choices, ASK_USER_CHOICES);
+    let QuestionKind::AskUser(a) = &q.kind else {
+        panic!("not an ask_user question: {q:?}")
+    };
+    assert_eq!(a.call.tool, "ask_user");
+    assert_eq!(a.call.id, "c1");
+    assert_eq!(a.call.arguments, ask_args());
+    assert_eq!(a.questions.len(), 2);
+    assert_eq!(a.context.as_deref(), Some("Both work."));
+    assert_eq!(a.text.as_deref(), Some("I need two decisions."));
+    assert_eq!(
+        last_results(&f),
+        [(
+            "The user answered:\n\n1. Which database?\n   SQLite\n\n2. Which features?\n   \
+             Search, Export\n   The user added: and fast"
+                .into(),
+            false
+        )]
+    );
+    assert_eq!(final_states(&events), [("c1".into(), CallState::Done)]);
+    // The call waits with the headers as its summary.
+    assert!(events.iter().any(|e| matches!(
+        e,
+        SessionEvent::ToolCall(c) if c.state == CallState::Waiting
+            && c.summary.as_deref() == Some("Database, Features")
+    )));
+    assert!(events.iter().any(|e| matches!(
+        e,
+        SessionEvent::State {
+            state: State::Waiting
+        }
+    )));
+}
+
+#[tokio::test]
+async fn ask_user_rejects_wrong_replies() {
+    let mut f = Fixture::new(vec![ask_step(), say("ok")]);
+    let asker = TestAsker::answers(vec![
+        reply(&[(&[0], None)]),
+        reply(&[(&[2], None), (&[0], None)]),
+        reply(&[(&[0, 1], None), (&[0], None)]),
+        reply(&[(&[0], None), (&[1, 1], None)]),
+        reply(&[(&[], Some(" ")), (&[0], None)]),
+        Answer::Allow,
+        reply(&[(&[1], None), (&[], Some("none"))]),
+    ]);
+    f.turn("go", &asker).await;
+    assert_eq!(
+        asker.rejected(),
+        [
+            "1 answers for 2 questions",
+            "answer 1: option 2 does not exist; there are 2",
+            "answer 1: only one option may be chosen",
+            "answer 2: option 1 is chosen twice",
+            "answer 1: neither an option nor a text",
+            "`allow` is not an answer to this question",
+        ]
+    );
+    assert_eq!(asker.asked().len(), 7);
+    assert_eq!(
+        last_results(&f)[0].0,
+        "The user answered:\n\n1. Which database?\n   Postgres\n\n2. Which features?\n   \
+         The user wrote: none"
+    );
+}
+
+#[tokio::test]
+async fn ask_user_decline_cancel_and_no_one() {
+    let mut f = Fixture::new(vec![ask_step(), say("I will decide.")]);
+    let (end, _) = f
+        .turn("go", &TestAsker::answers(vec![Answer::Decline]))
+        .await;
+    assert_eq!(end.reason, EndReason::Done);
+    assert_eq!(
+        last_results(&f),
+        [(crate::tools::ask_user::DECLINED.into(), false)]
+    );
+
+    let mut f = Fixture::new(vec![ask_step()]);
+    let (end, events) = f
+        .turn("go", &TestAsker::answers(vec![Answer::Cancel]))
+        .await;
+    assert_eq!(end.reason, EndReason::Cancelled);
+    assert_eq!(last_results(&f), [("cancelled by the user".into(), true)]);
+    assert_eq!(final_states(&events), [("c1".into(), CallState::Cancelled)]);
+
+    let mut f = Fixture::new(vec![ask_step(), say("ok")]);
+    f.turn("go", &PolicyAsker::Deny).await;
+    assert_eq!(
+        last_results(&f),
+        [(crate::tools::ask_user::NOT_AVAILABLE.into(), true)]
+    );
+}
+
+#[tokio::test]
+async fn ask_user_wrong_arguments() {
+    let step = calls(&[("c1", "ask_user", json!({"questions": []}))]);
+    let mut f = Fixture::new(vec![step, say("ok")]);
+    f.turn("go", &no_questions()).await;
+    assert_eq!(
+        last_results(&f),
+        [("questions must have 1–4 entries, not 0".into(), true)]
+    );
+}
+
+#[tokio::test]
+async fn ask_user_is_left_out_when_no_one_can_answer() {
+    let mut f = Fixture::new(vec![ask_step(), say("ok")]);
+    f.agent.can_ask = false;
+    let (_, events) = f.turn("go", &no_questions()).await;
+    assert_eq!(f.requests()[0].tools.len(), 6);
+    assert!(f.requests()[0].tools.iter().all(|t| t.name != "ask_user"));
+    // Called anyway, e.g. from an earlier turn's history.
+    assert_eq!(
+        last_results(&f),
+        [(crate::tools::ask_user::NOT_AVAILABLE.into(), true)]
+    );
+    assert_eq!(final_states(&events), [("c1".into(), CallState::Denied)]);
+
+    let mut f = Fixture::new(vec![say("ok")]);
+    f.agent.env.permissions =
+        Arc::new(parse_for_test("[permissions]\nask_user = \"deny\"\n", None));
+    f.turn("go", &no_questions()).await;
+    assert_eq!(f.requests()[0].tools.len(), 6);
 }

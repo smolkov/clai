@@ -483,6 +483,8 @@ fn questions(stats: &Stats, options: &Options<'_>) -> Section {
                 (a.cancel, "cancel"),
                 (a.go_on, "continue"),
                 (a.stop, "stop"),
+                (a.reply, "answered"),
+                (a.decline, "declined"),
                 (a.no_one, "closed"),
                 (a.cancelled, "cancelled"),
             ],

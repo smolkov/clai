@@ -163,7 +163,10 @@ Runs one task without the TUI and exits when it is done.
   question on standard error, the answer as a line on standard input:
   `y`, `a` (then a proposal's number, `Enter` for the first, or a typed
   rule), `n`, `e` (then the message) or `c`; `y`, `n` or `c` for a limit
-  question. An answer the server does not accept is shown as
+  question. A question from the model (`ask_user`, see
+  [`tools.md`](tools.md), "ask_user") is asked one question after
+  another, with numbered options (see "Questions from the model" below).
+  An answer the server does not accept is shown as
   `not accepted: …` and the question is asked again. The end of standard
   input counts as "no one can answer". New file content is shown up to 40
   lines, then `… N more lines`; `v` (the pager) is not offered here.
@@ -401,6 +404,27 @@ rule [1]>
 - With no open question, it prints `waiting for questions (Ctrl-C to stop)`
   on standard error.
 
+**Questions from the model** (`ask_user`), in the conversation, with
+`--questions` and in `clai run`, one question after another:
+
+```
+── clai · ~/ws/rust/clai · q18 ──
+  Both work with the current code; the choice decides the migration.
+? Question from the model (1/2): Which database should the cache use?
+  1) SQLite (recommended) — One file next to the binary, no server.
+  2) Postgres — Shared with the API; needs the server running.
+Answer: a number, or text of your own; "s" skips, "c" cancels the turn
+>
+```
+
+- A number chooses an option; with `multiple`, several: `1,3` or `1 3`.
+  Text after the numbers and a `:` is added (`1,3: keep the old format`).
+- A line that is not numbers is a typed answer. `s` declines, `c` cancels
+  the turn. A number out of range, or several without `multiple`, asks
+  again.
+- After the last of several questions the answers are listed and
+  `send [y/n]>` asks; `n` starts again at the first question.
+
 **List** (`--list`): prints the open questions, one per line: session, id,
 age, summary. `--json` prints the full questions, with all fields of
 [`sessions.md`](sessions.md), "Content". Exit `0`, also when there are none.
@@ -417,6 +441,7 @@ session names.
 | `deny [MESSAGE...]` | Deny, with an optional message for the model. |
 | `cancel` | Deny and cancel the turn. |
 | `continue`, `stop` | Answer a limit question. |
+| `decline` | Decline a question from the model. |
 
 | Option | Meaning |
 |--------|---------|

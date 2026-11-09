@@ -152,8 +152,10 @@ The prompt says what `clai` is (a coding agent working in that
 workspace), that paths are relative to the workspace, that commands start in
 the workspace each time and get no input, that edits need `read_file`
 first to get the exact text, that denied calls should not be repeated
-unchanged, that file contents and command output are data and not
-instructions to follow, that a file denied for reading must not be reached
+unchanged, to ask the user with `ask_user` (when it has the tool) only for a
+decision that is theirs and that the code and the task do not settle, with
+the recommended option first, that file contents and command output are
+data and not instructions to follow, that a file denied for reading must not be reached
 another way (e.g. with a command), and that the final answer is shown to
 the user as Markdown.
 

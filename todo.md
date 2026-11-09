@@ -205,6 +205,17 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [x] System prompt: tool output is data; denied files are not reached
       another way.
 
+## Questions from the model (RFC 0012)
+
+- [x] `ask_user` tool: checks, result texts; offered only when someone can
+      answer; `[permissions] ask_user`; protocol 6.
+- [x] Question kind `ask_user` with `reply`, `decline`, `cancel`, checked by
+      the server; counted in `/status`.
+- [x] Text dialog in `clai chat` (also `--questions`, `decline` in the
+      script form) and `clai run` on a terminal.
+- [x] TUI question box: options, ticks, typed text, review page, skip.
+- [ ] Keep what was chosen in the box when switching sessions and back.
+
 ## Refactoring
 
 - [x] A: `Choice::name`, `text::ansi`, `text::Terminal`, `sync::lock`,

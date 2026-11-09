@@ -547,7 +547,8 @@ impl Talk {
                     Ok(_) => return Ok(Flow::Go),
                     Err(Error::Failed(message) | Error::Usage(message)) => {
                         self.out(&format!("  not accepted: {message}\n"));
-                        dialog.restart();
+                        let again = dialog.restart();
+                        self.out(&again);
                         self.dialog = Some(dialog.clone());
                     }
                     Err(e) => return Err(e),

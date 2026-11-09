@@ -86,6 +86,7 @@ impl Shared {
             model: model_config.clone(),
             limits: config.limits,
             system: system_prompt(&ws, &today()),
+            can_ask: true,
             env: Env {
                 permissions: Arc::new(config.permissions.clone()),
                 session: Arc::new(SessionRules::default()),

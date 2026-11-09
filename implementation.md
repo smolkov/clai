@@ -59,7 +59,7 @@ maps to the code.
 | `config` | Loading, merging user/project/env/CLI, validation with file:line, reloading, model references. | `config.md` |
 | `provider` | Shared types, `Provider` trait, retries, `fake` provider for tests. | `providers.md` |
 | `provider::anthropic`, `provider::openai` | Adapters: encode requests, decode SSE streams, map errors. | `providers.md` |
-| `tools` | `read_file`, `list_files`, `search_files`, `edit_file`, `write_file`, `run_command`; tool specs. | `tools.md` |
+| `tools` | `read_file`, `list_files`, `search_files`, `edit_file`, `write_file`, `run_command`, `ask_user` (checks and result texts); tool specs. | `tools.md` |
 | `permissions` | Tool defaults, rules, glob matching, path resolution, command splitting, session rules. | `config.md`, "Permissions" |
 | `agent` | Agent loop: requests, streaming, tool calls, limits, cancellation, questions. | `agent-loop.md`, `sessions.md` |
 | `context` | System prompt, history size, truncation. | `context.md` (planned) |
@@ -67,7 +67,7 @@ maps to the code.
 | `protocol` | Client–server messages, versioning, framing. | `sessions.md`, "Server" |
 | `server` | Socket, start on demand, idle exit, session registry. | `sessions.md` |
 | `client` | Connect, start the server if needed, request/response and event stream. | `sessions.md` |
-| `tui` | Layout, conversation, input editor, prompts, session list, model picker, commit dialog, themes. | `tui.md`, `config.md` "TUI" |
+| `tui` | Layout, conversation, input editor, prompts, the question box, session list, model picker, commit dialog, themes. | `tui.md`, `config.md` "TUI" |
 | `commit` | Collect git changes, generate message, run git. | `commit.md` |
 | `cli` | `Cli`, the `Command` enum (one struct per variant), parsing, `Cli::into_command`, and `Command::execute`, the one dispatch over all commands. | `command.md` |
 | `complete` | Value completers for Tab completion (`--model`, later session names). | `command.md`, "clai completion" |

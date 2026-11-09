@@ -7,7 +7,7 @@ use serde_json::Value;
 
 use crate::config::Tool;
 use crate::permissions::{Proposal, Reason};
-use crate::tools::Details;
+use crate::tools::{AskQuestion, Details, UserAnswer};
 
 /// The answers a question accepts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -20,6 +20,8 @@ pub enum Choice {
     Cancel,
     Continue,
     Stop,
+    Reply,
+    Decline,
 }
 
 impl Choice {
@@ -33,6 +35,8 @@ impl Choice {
             Choice::Cancel => "cancel",
             Choice::Continue => "continue",
             Choice::Stop => "stop",
+            Choice::Reply => "reply",
+            Choice::Decline => "decline",
         }
     }
 }
@@ -45,6 +49,7 @@ pub const PERMISSION_CHOICES: [Choice; 5] = [
     Choice::Cancel,
 ];
 pub const LIMIT_CHOICES: [Choice; 3] = [Choice::Continue, Choice::Stop, Choice::Cancel];
+pub const ASK_USER_CHOICES: [Choice; 3] = [Choice::Reply, Choice::Decline, Choice::Cancel];
 
 /// Requests and tool calls a turn has used so far.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -77,6 +82,7 @@ pub struct Question {
 pub enum QuestionKind {
     Permission(Box<Permission>),
     Limit(Limit),
+    AskUser(Box<AskUser>),
 }
 
 /// The session a question belongs to.
@@ -111,6 +117,29 @@ pub struct CallInfo {
     pub arguments: Value,
 }
 
+/// Questions the model asks with the `ask_user` tool.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AskUser {
+    pub call: AskCall,
+    /// The checked questions.
+    pub questions: Vec<AskQuestion>,
+    /// Why the model asks (Markdown).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<String>,
+    /// The model's text in the same answer before the call.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+}
+
+/// The `ask_user` call: like [`CallInfo`], for a tool without rules.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AskCall {
+    /// Always `ask_user`.
+    pub tool: String,
+    pub id: String,
+    pub arguments: Value,
+}
+
 /// A turn that used up its budget.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Limit {
@@ -138,6 +167,11 @@ pub enum Answer {
     Cancel,
     Continue,
     Stop,
+    /// For each question in order, the chosen options and a typed text.
+    Reply {
+        answers: Vec<UserAnswer>,
+    },
+    Decline,
 }
 
 impl Answer {
@@ -150,6 +184,8 @@ impl Answer {
             Answer::Cancel => Choice::Cancel,
             Answer::Continue => Choice::Continue,
             Answer::Stop => Choice::Stop,
+            Answer::Reply { .. } => Choice::Reply,
+            Answer::Decline => Choice::Decline,
         }
     }
 }
@@ -218,7 +254,11 @@ mod tests {
 
     #[test]
     fn choice_names_match_the_wire() {
-        for choice in PERMISSION_CHOICES.iter().chain(&LIMIT_CHOICES) {
+        for choice in PERMISSION_CHOICES
+            .iter()
+            .chain(&LIMIT_CHOICES)
+            .chain(&ASK_USER_CHOICES)
+        {
             assert_eq!(
                 serde_json::to_value(choice).unwrap(),
                 serde_json::Value::from(choice.name())

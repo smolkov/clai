@@ -25,7 +25,9 @@ use crate::runtime::current_thread;
 use crate::text::sessions::age;
 
 /// Words that make `clai chat NAME CHOICE` the script form.
-const CHOICES: [&str; 6] = ["allow", "always", "deny", "cancel", "continue", "stop"];
+const CHOICES: [&str; 7] = [
+    "allow", "always", "deny", "cancel", "continue", "stop", "decline",
+];
 
 #[derive(Debug, Args)]
 pub struct Chat {
@@ -60,7 +62,8 @@ pub struct Chat {
     pub id: Option<String>,
     /// The session to chat with (default: a new one), DIR with --new,
     /// sessions with --questions or --list, or NAME CHOICE to answer once:
-    /// allow, always RULE, deny [MESSAGE...], cancel, continue, stop.
+    /// allow, always RULE, deny [MESSAGE...], cancel, continue, stop,
+    /// decline.
     #[arg(
         value_name = "NAME",
         value_hint = ValueHint::Other,
@@ -194,6 +197,7 @@ fn parse_choice(choice: &str, rest: &[String]) -> Result<Answer> {
         "cancel" => no_more(Answer::Cancel),
         "continue" => no_more(Answer::Continue),
         "stop" => no_more(Answer::Stop),
+        "decline" => no_more(Answer::Decline),
         "deny" if text.is_empty() => Ok(Answer::Deny),
         "deny" => Ok(Answer::DenyMessage {
             text: text.to_owned(),
@@ -395,6 +399,13 @@ mod tests {
                 answer: Answer::DenyMessage {
                     text: "use b.txt".into()
                 }
+            }
+        );
+        assert_eq!(
+            chat(&["a", "decline"], None).mode().unwrap(),
+            Mode::Script {
+                name: "a",
+                answer: Answer::Decline
             }
         );
         let c = chat(&["a", "always", "run_command(cargo test)"], None);

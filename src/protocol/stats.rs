@@ -62,6 +62,12 @@ pub struct AnswerCounts {
     pub go_on: u64,
     /// A limit question: stop.
     pub stop: u64,
+    /// A question from the model: answered.
+    #[serde(default)]
+    pub reply: u64,
+    /// A question from the model: declined.
+    #[serde(default)]
+    pub decline: u64,
     /// Closed without an answer (no client could answer).
     pub no_one: u64,
     /// Closed because the turn was cancelled.
@@ -77,6 +83,8 @@ impl AnswerCounts {
             + self.cancel
             + self.go_on
             + self.stop
+            + self.reply
+            + self.decline
             + self.no_one
             + self.cancelled
     }
@@ -225,6 +233,8 @@ impl Stats {
                         }
                     }
                     Answer::Stop => answers.stop += 1,
+                    Answer::Reply { .. } => answers.reply += 1,
+                    Answer::Decline => answers.decline += 1,
                 }
                 *self.by.entry(by.clone()).or_default() += 1;
             }
@@ -455,6 +465,13 @@ mod tests {
         assert_eq!(stats.all_tools().total(), 2);
         assert_eq!(stats.answers.allow, 1);
         assert_eq!(stats.by["tui pts/3"], 1);
+        let more = [
+            answered(Answer::Reply { answers: vec![] }, "tui"),
+            answered(Answer::Decline, "tui"),
+        ];
+        let model = Stats::of_log(more.iter().map(|e| (None, e)));
+        assert_eq!((model.answers.reply, model.answers.decline), (1, 1));
+        assert_eq!(model.answers.total(), 2);
         // Working 1.0–2.3 s and 4.0–5.0 s; waiting does not count.
         assert_eq!(stats.working_time(9_000), (2_300, true));
         assert_eq!(stats.model_changes, 2);

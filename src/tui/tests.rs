@@ -4016,3 +4016,239 @@ fn a_retry_is_a_notice() {
     }));
     assert!(kinds(&app).contains(&Kind::Notice("retrying (2/3): rate limited".into())));
 }
+
+// Questions from the model.
+
+fn ask_question(two: bool) -> Question {
+    let mut questions = vec![json!({
+        "question": "Which database should the cache use?", "header": "Database",
+        "options": [
+            {"label": "SQLite (recommended)", "description": "One file next to the binary, no server."},
+            {"label": "Postgres", "description": "Shared with the API; needs the server running."}
+        ]
+    })];
+    if two {
+        questions.push(json!({
+            "question": "Which features should the first version have?", "header": "Features",
+            "options": [{"label": "Search"}, {"label": "Export"}, {"label": "Import"}],
+            "multiple": true
+        }));
+    }
+    let arguments = json!({
+        "questions": questions,
+        "context": "Both work with the current code; the choice decides the **migration**."
+    });
+    let asked = crate::tools::ask_user::check(&arguments).unwrap();
+    Question {
+        id: "q3".to_owned(),
+        session: SessionRef::default(),
+        opened: 0,
+        turn: TurnInfo {
+            number: 1,
+            requests: 1,
+            tool_calls: 1,
+        },
+        summary: crate::tools::ask_user::summary(&asked.questions),
+        choices: crate::agent::ASK_USER_CHOICES.to_vec(),
+        kind: QuestionKind::AskUser(Box::new(crate::agent::AskUser {
+            call: crate::agent::AskCall {
+                tool: "ask_user".into(),
+                id: "c9".into(),
+                arguments,
+            },
+            questions: asked.questions,
+            context: asked.context,
+            text: None,
+        })),
+    }
+}
+
+fn ask(mut app: App, two: bool) -> App {
+    let mut waiting = call("c9", "ask_user", CallState::Waiting);
+    waiting.summary = Some(
+        if two {
+            "Database, Features"
+        } else {
+            "Database"
+        }
+        .into(),
+    );
+    waiting.arguments = json!({});
+    app.update(live(SessionEvent::ToolCall(waiting)));
+    app.update(live(SessionEvent::Question(Box::new(ask_question(two)))));
+    app
+}
+
+fn user_answer(selected: &[usize], text: Option<&str>) -> crate::tools::UserAnswer {
+    crate::tools::UserAnswer {
+        selected: selected.to_vec(),
+        text: text.map(str::to_owned),
+    }
+}
+
+#[test]
+fn one_question_enter_sends_the_selected_option() {
+    let mut app = ask(super::tests::app(), false);
+    assert!(app.prompt.as_ref().is_some_and(|p| p.is_ask()));
+    assert!(requests(&app.update(key(KeyCode::Down))).is_empty());
+    assert_eq!(
+        answer_of(&app.update(key(KeyCode::Enter))),
+        Answer::Reply {
+            answers: vec![user_answer(&[1], None)]
+        }
+    );
+    // A digit selects; then Enter sends it.
+    let mut app = ask(super::tests::app(), false);
+    assert!(requests(&app.update(ch('1'))).is_empty());
+    assert_eq!(
+        answer_of(&app.update(key(KeyCode::Enter))),
+        Answer::Reply {
+            answers: vec![user_answer(&[0], None)]
+        }
+    );
+}
+
+#[test]
+fn a_typed_answer() {
+    let mut app = ask(super::tests::app(), false);
+    app.update(ch('3'));
+    typed(&mut app, "Redis");
+    assert_eq!(
+        answer_of(&app.update(key(KeyCode::Enter))),
+        Answer::Reply {
+            answers: vec![user_answer(&[], Some("Redis"))]
+        }
+    );
+    // Ctrl-D while typing does not detach.
+    let mut app = ask(super::tests::app(), false);
+    app.update(ch('3'));
+    typed(&mut app, "ab");
+    app.update(key(KeyCode::Left));
+    assert!(exit(&app.update(ctrl('d'))).is_none());
+    assert_eq!(
+        answer_of(&app.update(key(KeyCode::Enter))),
+        Answer::Reply {
+            answers: vec![user_answer(&[], Some("ab"))]
+        }
+    );
+}
+
+#[test]
+fn several_questions_tick_tab_and_review() {
+    let mut app = ask(super::tests::app(), true);
+    // First question: Postgres, then on to the second.
+    app.update(key(KeyCode::Down));
+    assert!(requests(&app.update(key(KeyCode::Enter))).is_empty());
+    // Tick Search and Import, add a text.
+    app.update(ch(' '));
+    app.update(ch('3'));
+    app.update(ch('4'));
+    typed(&mut app, "keep the old format");
+    app.update(key(KeyCode::Enter));
+    let text = screen(&mut app, 80, 24);
+    assert!(text.contains("Question ─ review"), "{text}");
+    assert!(text.contains("Postgres"), "{text}");
+    assert!(
+        text.contains("Search, Import; \"keep the old format\""),
+        "{text}"
+    );
+    // Back to the first question with Shift-Tab, which keeps the choice.
+    app.update(key(KeyCode::BackTab));
+    app.update(key(KeyCode::BackTab));
+    let text = screen(&mut app, 80, 24);
+    assert!(text.contains("1/2 Database"), "{text}");
+    app.update(key(KeyCode::Tab));
+    app.update(key(KeyCode::Tab));
+    assert_eq!(
+        answer_of(&app.update(key(KeyCode::Enter))),
+        Answer::Reply {
+            answers: vec![
+                user_answer(&[1], None),
+                user_answer(&[0, 2], Some("keep the old format"))
+            ]
+        }
+    );
+}
+
+#[test]
+fn the_review_sends_only_complete_answers() {
+    let mut app = ask(super::tests::app(), true);
+    app.update(key(KeyCode::Tab));
+    app.update(key(KeyCode::Tab));
+    // Nothing chosen: Enter goes to the first question without an answer.
+    assert!(requests(&app.update(key(KeyCode::Enter))).is_empty());
+    assert_eq!(app.prompt.as_ref().unwrap().ask.as_ref().unwrap().page, 0);
+}
+
+#[test]
+fn esc_declines_and_asks_first_when_something_is_chosen() {
+    let mut app = ask(super::tests::app(), true);
+    assert_eq!(answer_of(&app.update(key(KeyCode::Esc))), Answer::Decline);
+
+    let mut app = ask(super::tests::app(), true);
+    app.update(key(KeyCode::Enter));
+    assert!(requests(&app.update(key(KeyCode::Esc))).is_empty());
+    let text = screen(&mut app, 80, 24);
+    assert!(text.contains("Skip the questions"), "{text}");
+    assert!(requests(&app.update(ch('n'))).is_empty());
+    app.update(key(KeyCode::Esc));
+    assert_eq!(answer_of(&app.update(ch('y'))), Answer::Decline);
+
+    let mut app = ask(super::tests::app(), true);
+    app.update(key(KeyCode::Enter));
+    assert_eq!(answer_of(&app.update(ctrl('c'))), Answer::Cancel);
+}
+
+#[test]
+fn the_question_box_closes_when_another_client_answers() {
+    let mut app = ask(super::tests::app(), false);
+    app.update(live(SessionEvent::QuestionClosed {
+        id: "q3".into(),
+        closed: Closed::Answered {
+            answer: Answer::Decline,
+            by: "clai chat".into(),
+        },
+    }));
+    assert!(app.prompt.is_none());
+    assert_eq!(notices(&app), ["answered by clai chat: decline"]);
+    assert!(!screen(&mut app, 80, 24).contains("Question ─"));
+}
+
+#[test]
+fn a_rejected_reply_shows_in_the_box() {
+    let mut app = ask(super::tests::app(), false);
+    let effects = app.update(key(KeyCode::Enter));
+    let request = requests(&effects).remove(0);
+    app.update(Input::Response {
+        request,
+        result: Err("answer 1: option 0 does not exist".into()),
+    });
+    assert!(screen(&mut app, 80, 24).contains("not accepted: answer 1: option 0 does not exist"));
+    assert!(!requests(&app.update(key(KeyCode::Enter))).is_empty());
+}
+
+#[test]
+fn frame_question_from_the_model() {
+    let mut app = ask(idle_session(), false);
+    insta::assert_snapshot!(screen(&mut app, 80, 24));
+}
+
+#[test]
+fn frame_question_from_the_model_multiple() {
+    let mut app = ask(idle_session(), true);
+    app.update(key(KeyCode::Enter));
+    app.update(ch(' '));
+    app.update(ch('3'));
+    insta::assert_snapshot!(screen(&mut app, 80, 24));
+}
+
+#[test]
+fn frame_question_from_the_model_narrow_and_ascii() {
+    let mut app = ask(idle_session(), true);
+    insta::assert_snapshot!("question_from_the_model_narrow", screen(&mut app, 40, 12));
+    let app = App::new(settings(false, true), attachment(vec![]), Instant::now());
+    let mut app = ask(app, true);
+    let text = screen(&mut app, 80, 24);
+    assert!(text.is_ascii(), "{text}");
+    insta::assert_snapshot!("question_from_the_model_ascii", text);
+}

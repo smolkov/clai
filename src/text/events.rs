@@ -131,6 +131,13 @@ pub(crate) fn short_result(tool: &str, state: CallState, text: &str) -> String {
                 format!("{} lines", group(n))
             }
         }
+        // The answers, without the questions: `SQLite; Search, Export`.
+        ("ask_user", CallState::Done) if lines.len() > 1 => lines
+            .iter()
+            .filter(|l| l.starts_with("   "))
+            .map(|l| l.trim())
+            .collect::<Vec<_>>()
+            .join("; "),
         _ => lines.first().copied().unwrap_or_default().to_owned(),
     }
 }

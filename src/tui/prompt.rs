@@ -5,6 +5,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::agent::{Answer, Choice, Question, QuestionKind};
 
+use super::ask::Ask;
 use super::editor::{Edit, Editor};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,16 +26,34 @@ pub struct Prompt {
     pub error: Option<String>,
     /// An answer is on its way; no more until the response.
     pub sending: bool,
+    /// The box of a question from the model.
+    pub ask: Option<Ask>,
 }
 
 impl Prompt {
     pub fn new(question: Question) -> Prompt {
+        let ask = match &question.kind {
+            QuestionKind::AskUser(a) => Some(Ask::new(a)),
+            _ => None,
+        };
         Prompt {
             question,
             mode: Mode::Choices,
             error: None,
             sending: false,
+            ask,
         }
+    }
+
+    /// A question from the model: drawn as a box, not in the bar.
+    pub fn is_ask(&self) -> bool {
+        self.ask.is_some()
+    }
+
+    /// Text is typed: `Ctrl-D` edits, it does not detach.
+    pub fn is_typing(&self) -> bool {
+        matches!(self.mode, Mode::Explain(_))
+            || self.ask.as_ref().is_some_and(|a| a.editing.is_some())
     }
 
     pub fn id(&self) -> &str {
@@ -49,7 +68,7 @@ impl Prompt {
     pub fn proposals(&self) -> &[Vec<String>] {
         match &self.question.kind {
             QuestionKind::Permission(p) => &p.proposals,
-            QuestionKind::Limit(_) => &[],
+            QuestionKind::Limit(_) | QuestionKind::AskUser(_) => &[],
         }
     }
 
@@ -70,6 +89,9 @@ impl Prompt {
 
     /// Takes pasted text: only the message to the model, on one line.
     pub fn paste(&mut self, text: &str) {
+        if let Some(ask) = &mut self.ask {
+            ask.paste(text);
+        }
         if let Mode::Explain(editor) = &mut self.mode {
             editor.paste(&text.replace(['\r', '\n'], " "));
         }
@@ -80,10 +102,11 @@ impl Prompt {
         if self.sending {
             return None;
         }
-        let answer = match self.mode.clone() {
-            Mode::Choices => self.choices_key(key),
-            Mode::Always { proposal } => self.always_key(key, proposal),
-            Mode::Explain(_) => self.explain_key(key),
+        let answer = match (self.mode.clone(), &mut self.ask, &self.question.kind) {
+            (_, Some(ask), QuestionKind::AskUser(a)) => ask.key(a, key),
+            (Mode::Choices, ..) => self.choices_key(key),
+            (Mode::Always { proposal }, ..) => self.always_key(key, proposal),
+            (Mode::Explain(_), ..) => self.explain_key(key),
         };
         if answer.is_some() {
             self.sending = true;

@@ -165,7 +165,7 @@ Every question has:
 |-------|---------|
 | `id` | Unique on the server; an answer names it. |
 | `session` | Session name and workspace (as shown, `~/ws/rust/clai`). |
-| `kind` | `permission` or `limit`. |
+| `kind` | `permission`, `limit` or `ask_user`. |
 | `opened` | Time the question opened. |
 | `turn` | Number of the turn, and how many model requests and tool calls it has used. |
 | `summary` | One line for lists and notifications, e.g. `run_command: cargo test parse` or `edit_file: src/parse.rs (lines 12–14)`. |
@@ -184,6 +184,19 @@ A permission question also has:
 A limit question has the limit and the counts reached instead of `call`,
 `details` and `proposals`.
 
+A question from the model (`ask_user`, see [`tools.md`](tools.md),
+"ask_user") has instead:
+
+| Field | Meaning |
+|-------|---------|
+| `call` | `tool` (`ask_user`), the call's id and its arguments exactly as sent. |
+| `questions` | The checked questions: `question`, `header`, `options` (`label`, `description`), `multiple`. |
+| `context` | The model's `context`, if any. |
+| `text` | The model's text before the call, if any. |
+
+Its `summary` is `ask_user: ` and the headers joined, e.g.
+`ask_user: Database, Features`.
+
 Texts in a question are plain UTF-8; diffs are unified diffs; a client adds
 colour and layout itself. Large parts (file content, long diffs) are sent in
 full up to 1 MiB, with a mark when cut, so a client can show a short view
@@ -197,9 +210,21 @@ first and the whole on request. **(assumption)**
 | `allow_always` | permission | Run this call and add allow rules to the session. The answer names the rules: one of `proposals` (each is a set of rules), or rules the user typed for this tool (for `run_command` also `write_file`/`read_file` rules for its redirections). Together they must allow this call; otherwise the answer is rejected and the question stays open. |
 | `deny` | permission | Do not run the call; the model gets `denied by the user`. |
 | `deny_message` | permission | As `deny`, with a text for the model: `denied by the user: <text>`. |
-| `cancel` | both | Deny, and cancel the turn. |
+| `cancel` | all | Deny, and cancel the turn. |
 | `continue` | limit | Start a new budget of the same size. |
 | `stop` | limit | End the turn with "limit reached". |
+| `reply` | ask_user | `answers`: for each question in order, `selected` (option indexes from 0) and an optional `text`. |
+| `decline` | ask_user | No answer; the model is told so and the turn goes on. |
+
+A `reply` is rejected, with the question staying open, if the number of
+answers differs from the number of questions, an index is out of range or
+repeated, a question without `multiple` has more than one index, an answer
+has neither an index nor a non-empty text, or a text is longer than
+4 000 characters.
+
+```json
+{"choice": "reply", "answers": [{"selected": [0], "text": null}]}
+```
 
 An answer names the question `id` and the choice, plus the rule or text the
 choice needs. The server checks it against the open question; a wrong id,
@@ -213,8 +238,8 @@ call fails (see [`tools.md`](tools.md), "edit_file").
 
 | Client | Shows a question as | Answers with |
 |--------|---------------------|--------------|
-| TUI | Expanded tool call and prompt bar (see [`tui.md`](tui.md), "Permission prompts"). | Keys `y`, `a`, `n`, `e`, `Esc`. |
-| Terminal: `clai chat` | In the conversation with the session, or alone with `--questions`: the fields as text, the diff or command, and a numbered list of choices (see [`command.md`](command.md)). | A line on standard input, or options for scripts. |
+| TUI | Expanded tool call and prompt bar (see [`tui.md`](tui.md), "Permission prompts"); a question from the model as a box ("Questions from the model"). | Keys `y`, `a`, `n`, `e`, `Esc`; in the box, the option keys. |
+| Terminal: `clai chat` | In the conversation with the session, or alone with `--questions`: the fields as text, the diff or command, and a numbered list of choices (see [`command.md`](command.md)); a question from the model one question after another with numbered options. | A line on standard input, or options for scripts. |
 | Terminal: `clai run` | The same text on standard error, when standard input is a terminal. | A line on standard input. |
 | Web UI (later) | A page with the same fields. | The same answers. |
 

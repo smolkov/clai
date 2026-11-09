@@ -133,3 +133,4 @@ Sections that do not apply may be left out.
 | [0009](0009-command-layer-refactoring.md) | Refactoring the command layer | done |
 | [0010](0010-security-hardening.md) | Security hardening | done |
 | [0011](0011-session-list-delete-and-filter.md) | Session list: delete, marks and filter | draft |
+| [0012](0012-questions-from-the-model.md) | Questions from the model | done |

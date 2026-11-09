@@ -3,6 +3,7 @@
 //! and the input, and two footer rows hold the status and the session (see
 //! `spec/tui.md`, "Layout").
 
+mod ask;
 mod commands;
 mod conversation;
 mod info;
@@ -80,7 +81,8 @@ pub fn areas(app: &App, size: Rect) -> Option<Areas> {
     let input = Rect::new(x, footer.y - 1 - input_height, width, input_height);
     // The line above the input, and above the prompt bar if there is one.
     let mut end = input.y - 1;
-    let prompt = app.prompt.as_ref().map(|p| {
+    // A question from the model is a box over the screen, not a bar.
+    let prompt = app.prompt.as_ref().filter(|p| !p.is_ask()).map(|p| {
         let rows = prompt::lines(p, usize::from(width), &app.settings.look).len();
         let height = u16::try_from(rows).unwrap_or(most).clamp(1, most);
         end -= height + 1;
@@ -125,6 +127,7 @@ pub fn draw(app: &App, frame: &mut Frame<'_>) {
     match cursor(app, &areas) {
         Some((x, y))
             if app.dialog.is_none()
+                && !app.prompt.as_ref().is_some_and(|p| p.is_ask())
                 && app.picker.is_none()
                 && app.session_list.is_none()
                 && app.settings_box.is_none()
@@ -137,6 +140,8 @@ pub fn draw(app: &App, frame: &mut Frame<'_>) {
     }
     commands::draw(app, frame, areas.conversation, areas.input.y - 1);
     popup::draw(app, frame, size);
+    // Under the boxes `Ctrl-S` and the picker open over a question.
+    ask::draw(app, frame, size);
     sessions::draw(app, frame, size);
     picker::draw(app, frame, size);
     settings::draw(app, frame, size);

@@ -3,8 +3,9 @@ use tokio::io::BufReader;
 
 use super::*;
 use crate::agent::{
-    CallInfo, CallResult, CallState, Closed, EndReason, LIMIT_CHOICES, Limit, PERMISSION_CHOICES,
-    Permission, QuestionKind, SessionRef, ToolCallEvent, TurnEnd, TurnInfo,
+    ASK_USER_CHOICES, AskCall, AskUser, CallInfo, CallResult, CallState, Closed, EndReason,
+    LIMIT_CHOICES, Limit, PERMISSION_CHOICES, Permission, QuestionKind, SessionRef, ToolCallEvent,
+    TurnEnd, TurnInfo,
 };
 use crate::config::{Action, Tool};
 use crate::permissions::{Decision, PartDecision, Reason};
@@ -100,6 +101,61 @@ fn questions_round_trip() {
         ..edit
     };
     assert_eq!(round_trip(&limit), limit);
+
+    let arguments = json!({"questions": [{"question": "Which?", "header": "Pick",
+        "options": [{"label": "A", "description": "first"}, {"label": "B"}], "multiple": true}]});
+    let asked = crate::tools::ask_user::check(&arguments).unwrap();
+    let ask = Question {
+        summary: "ask_user: Pick".into(),
+        choices: ASK_USER_CHOICES.to_vec(),
+        kind: QuestionKind::AskUser(Box::new(AskUser {
+            call: AskCall {
+                tool: "ask_user".into(),
+                id: "call_2".into(),
+                arguments,
+            },
+            questions: asked.questions,
+            context: Some("Why.".into()),
+            text: None,
+        })),
+        ..limit
+    };
+    assert_eq!(round_trip(&ask), ask);
+    let value = serde_json::to_value(&ask).unwrap();
+    assert_eq!(value["kind"], "ask_user");
+    assert_eq!(value["choices"], json!(["reply", "decline", "cancel"]));
+    assert_eq!(
+        value["questions"],
+        json!([{"question": "Which?", "header": "Pick", "multiple": true,
+                "options": [{"label": "A", "description": "first"}, {"label": "B"}]}])
+    );
+    assert!(value.get("text").is_none());
+
+    let reply = Answer::Reply {
+        answers: vec![crate::tools::UserAnswer {
+            selected: vec![0, 1],
+            text: Some("both".into()),
+        }],
+    };
+    assert_eq!(
+        serde_json::to_value(&reply).unwrap(),
+        json!({"choice": "reply", "answers": [{"selected": [0, 1], "text": "both"}]})
+    );
+    assert_eq!(round_trip(&reply), reply);
+    assert_eq!(
+        serde_json::from_value::<Answer>(json!({"choice": "reply", "answers": [{"text": "x"}]}))
+            .unwrap(),
+        Answer::Reply {
+            answers: vec![crate::tools::UserAnswer {
+                selected: vec![],
+                text: Some("x".into()),
+            }]
+        }
+    );
+    assert_eq!(
+        serde_json::to_value(Answer::Decline).unwrap(),
+        json!({"choice": "decline"})
+    );
 }
 
 #[test]

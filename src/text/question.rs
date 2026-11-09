@@ -2,7 +2,7 @@
 
 use std::fmt::Write as _;
 
-use crate::agent::{Choice, Permission, Question, QuestionKind};
+use crate::agent::{AskUser, Choice, Permission, Question, QuestionKind};
 use crate::config::Action;
 use crate::permissions::Decision;
 use crate::tools::{Details, PathDetails, group};
@@ -61,9 +61,65 @@ pub fn render_question_styled(question: &Question, style: &Style) -> String {
         QuestionKind::Limit(_) => {
             let _ = writeln!(out, "{}", question.summary);
         }
+        QuestionKind::AskUser(a) => {
+            ask_intro(&mut out, a, unicode);
+            out.push_str(&ask_block(a, 0));
+            return out;
+        }
     }
     out.push_str(&choices(&question.choices));
     out.push('\n');
+    out
+}
+
+/// The context and the model's text of a question from the model.
+fn ask_intro(out: &mut String, a: &AskUser, unicode: bool) {
+    if let Some(text) = &a.text {
+        let first = text
+            .lines()
+            .find(|l| !l.trim().is_empty())
+            .unwrap_or_default();
+        label(out, "model", &format!("\"{}\"", cut(first, 200, unicode)));
+    }
+    if let Some(context) = &a.context {
+        for line in context.lines() {
+            let _ = writeln!(out, "  {line}");
+        }
+    }
+}
+
+/// One question from the model with its numbered options and how to
+/// answer (see `spec/command.md`, "clai chat").
+pub fn ask_block(a: &AskUser, index: usize) -> String {
+    let mut out = String::new();
+    let Some(q) = a.questions.get(index) else {
+        return out;
+    };
+    let of = if a.questions.len() > 1 {
+        format!(" ({}/{})", index + 1, a.questions.len())
+    } else {
+        String::new()
+    };
+    let _ = writeln!(out, "? Question from the model{of}: {}", q.question);
+    for (i, option) in q.options.iter().enumerate() {
+        match &option.description {
+            Some(d) => {
+                let _ = writeln!(out, "  {}) {} — {d}", i + 1, option.label);
+            }
+            None => {
+                let _ = writeln!(out, "  {}) {}", i + 1, option.label);
+            }
+        }
+    }
+    let what = if q.multiple {
+        "numbers like 1,3 (text after a `:` is added)"
+    } else {
+        "a number"
+    };
+    let _ = writeln!(
+        out,
+        "Answer: {what}, or text of your own; \"s\" skips, \"c\" cancels the turn"
+    );
     out
 }
 
@@ -91,7 +147,7 @@ pub fn full_content(question: &Question) -> Option<&str> {
             } => Some(&content.text),
             _ => None,
         },
-        QuestionKind::Limit(_) => None,
+        QuestionKind::Limit(_) | QuestionKind::AskUser(_) => None,
     }
 }
 
@@ -275,6 +331,8 @@ pub(super) fn choices(choices: &[Choice]) -> String {
             Choice::Cancel => "[c] cancel turn",
             Choice::Continue => "[y] continue",
             Choice::Stop => "[n] stop",
+            Choice::Reply => "[1-9] answer",
+            Choice::Decline => "[s] skip",
         })
         .collect::<Vec<_>>()
         .join("  ")

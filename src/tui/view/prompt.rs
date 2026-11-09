@@ -87,6 +87,10 @@ fn choices(out: &mut Vec<Line<'static>>, prompt: &Prompt, width: usize, look: &L
             ));
             keys.extend(["[y] yes", "[n] stop"]);
         }
+        // Drawn as a box (`view::ask`); the bar is not shown.
+        QuestionKind::AskUser(_) => {
+            head.push((question.summary.clone(), look.styles.text));
+        }
     }
     out.extend(wrap(&head, width, &none, &none));
     let keys = keys_piece(keys.join("  "), look);

@@ -1016,12 +1016,18 @@ impl App {
 
     /// Shows the call of a permission question; a limit question has none.
     fn open_question(&mut self, question: &crate::agent::Question) {
-        if let QuestionKind::Permission(p) = &question.kind {
-            self.conversation
-                .set_details(&p.call.id, p.call.tool.name(), &p.details);
-            if !question.choices.is_empty() {
-                self.reveal = self.conversation.entry_of_call(&p.call.id);
+        match &question.kind {
+            QuestionKind::Permission(p) => {
+                self.conversation
+                    .set_details(&p.call.id, p.call.tool.name(), &p.details);
+                if !question.choices.is_empty() {
+                    self.reveal = self.conversation.entry_of_call(&p.call.id);
+                }
             }
+            QuestionKind::AskUser(a) if !question.choices.is_empty() => {
+                self.reveal = self.conversation.entry_of_call(&a.call.id);
+            }
+            _ => {}
         }
     }
 
@@ -1431,7 +1437,8 @@ impl App {
     /// `Ctrl-S` / `Ctrl-N` / `Ctrl-P` to go to another session and `Ctrl-D`
     /// to leave; the question stays open for later or another client.
     fn prompt_key(&mut self, key: KeyEvent) -> Vec<Effect> {
-        if let Some(action) = keys::scrolling(key) {
+        let ask = self.prompt.as_ref().is_some_and(Prompt::is_ask);
+        if let Some(action) = keys::scrolling(key).filter(|_| !ask) {
             let mut effects = self.act(action);
             effects.push(Effect::Redraw);
             return effects;
@@ -1446,7 +1453,7 @@ impl App {
         let choosing = self
             .prompt
             .as_ref()
-            .is_some_and(|p| p.mode == super::prompt::Mode::Choices);
+            .is_some_and(|p| p.mode == super::prompt::Mode::Choices && !p.is_typing());
         if choosing && keys::is_detach(key) {
             return vec![self.detach()];
         }

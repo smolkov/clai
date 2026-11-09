@@ -1,0 +1,16 @@
+---
+source: src/tui/tests.rs
+expression: "screen(&mut app, 40, 12)"
+---
+┌ Question ─ 1/2 Database ─────────────┐
+│ Both work with the current code; the │
+│ choice decides the migration.        │
+│                                      │
+│ Which database should the cache use? │
+│                                      │
+│ ▶ 1 SQLite (recommended)             │
+│       One file next to the binary,   │
+│       no server.                     │
+│   2 Postgres                         │
+│       Shared with the API; needs the │
+└──────────────────────────────────────┘

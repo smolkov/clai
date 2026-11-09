@@ -74,7 +74,7 @@ impl Execute for Run {
             self.no_ask,
             !task.from_stdin && io::stdin().is_terminal(),
         );
-        let prepared = self.setup(ctx)?;
+        let prepared = self.setup(ctx, answering == Answering::Terminal)?;
         let asker = asker(answering, prepared.place, prepared.unicode);
         one_shot(
             Agent::new(prepared.setup),
@@ -95,7 +95,8 @@ struct Prepared {
 
 impl Run {
     /// The workspace, the configuration, the model and its provider.
-    fn setup(&self, ctx: &Context) -> Result<Prepared> {
+    /// `can_ask`: someone answers on the terminal.
+    fn setup(&self, ctx: &Context, can_ask: bool) -> Result<Prepared> {
         let workspace = workspace(self.dir.as_deref())?;
         let options = ctx.load_options(workspace.clone());
         let config = config::load(&options)?;
@@ -120,6 +121,7 @@ impl Run {
                 model: model.clone(),
                 limits: config.limits,
                 system: system_prompt(&workspace, &today()),
+                can_ask,
                 env: Env {
                     permissions: Arc::new(config.permissions.clone()),
                     session: Arc::new(SessionRules::default()),
