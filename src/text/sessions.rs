@@ -1,5 +1,5 @@
 //! Sessions as text: the table of `clai ls`, also `/sessions` in `clai chat`,
-//! state names and ages, also in the TUI's session list.
+//! state names, ages and the delete question, also in the TUI's session list.
 
 use crate::agent::State;
 use crate::output::{Align, columns};
@@ -41,6 +41,64 @@ pub fn table(sessions: &[SessionInfo], now: u64) -> String {
     out
 }
 
+/// When the session was last used: `updated`, or `created` from an older
+/// server that does not send it.
+pub fn last_used(session: &SessionInfo) -> u64 {
+    if session.updated > 0 {
+        session.updated
+    } else {
+        session.created
+    }
+}
+
+/// The question before deleting `sessions`, without the keys: what is lost.
+pub fn confirm_delete(sessions: &[&SessionInfo]) -> String {
+    match sessions {
+        [] => String::new(),
+        [one] => {
+            let mut text = format!("Delete {}?", one.name);
+            match one.state {
+                State::Working => text.push_str(" It is working: the turn is cancelled."),
+                State::Waiting => text.push_str(" Its question is closed unanswered."),
+                State::Idle | State::Saved => {}
+            }
+            if one.turns == 0 {
+                text.push_str(" No turns yet.");
+            } else {
+                let tokens = one.usage.input_tokens + one.usage.output_tokens;
+                text.push_str(&format!(
+                    " {}, {} tokens.",
+                    count(one.turns, "turn", "turns"),
+                    crate::text::tokens(tokens)
+                ));
+            }
+            text
+        }
+        many => {
+            let mut text = format!("Delete {} sessions?", many.len());
+            let working = many.iter().filter(|s| s.state == State::Working).count();
+            let waiting = many.iter().filter(|s| s.state == State::Waiting).count();
+            let mut busy = Vec::new();
+            if working > 0 {
+                let verb = if working == 1 { "is" } else { "are" };
+                busy.push(format!("{working} {verb} working"));
+            }
+            if waiting > 0 {
+                let verb = if waiting == 1 { "waits" } else { "wait" };
+                busy.push(format!("{waiting} {verb} for an answer"));
+            }
+            if !busy.is_empty() {
+                text.push_str(&format!(" {}.", busy.join(", ")));
+            }
+            text
+        }
+    }
+}
+
+fn count(n: u64, one: &str, many: &str) -> String {
+    format!("{n} {}", if n == 1 { one } else { many })
+}
+
 /// `45s`, `12m`, `3h`, `2d`.
 pub fn age(secs: u64) -> String {
     match secs {
@@ -65,10 +123,54 @@ mod tests {
             model: "anthropic/sonnet".into(),
             state,
             created,
+            updated: 0,
+            turns: 0,
             queued: 0,
             question: None,
             usage: Default::default(),
         }
+    }
+
+    #[test]
+    fn delete_questions() {
+        let mut old = info("old", State::Saved, 0);
+        old.turns = 14;
+        old.usage.input_tokens = 200_000;
+        old.usage.output_tokens = 10_000;
+        assert_eq!(
+            confirm_delete(&[&old]),
+            "Delete old? 14 turns, 210k tokens."
+        );
+        let mut project = info("project", State::Working, 0);
+        project.turns = 1;
+        project.usage.input_tokens = 41_000;
+        assert_eq!(
+            confirm_delete(&[&project]),
+            "Delete project? It is working: the turn is cancelled. 1 turn, 41k tokens."
+        );
+        let docs = info("docs", State::Waiting, 0);
+        assert_eq!(
+            confirm_delete(&[&docs]),
+            "Delete docs? Its question is closed unanswered. No turns yet."
+        );
+        let idle = info("idle", State::Idle, 0);
+        assert_eq!(
+            confirm_delete(&[&old, &project, &docs, &idle, &idle]),
+            "Delete 5 sessions? 1 is working, 1 waits for an answer."
+        );
+        assert_eq!(
+            confirm_delete(&[&project, &project, &docs, &docs]),
+            "Delete 4 sessions? 2 are working, 2 wait for an answer."
+        );
+        assert_eq!(confirm_delete(&[&old, &idle]), "Delete 2 sessions?");
+    }
+
+    #[test]
+    fn last_use_falls_back_to_creation() {
+        let mut s = info("s", State::Idle, 100);
+        assert_eq!(last_used(&s), 100);
+        s.updated = 300;
+        assert_eq!(last_used(&s), 300);
     }
 
     #[test]

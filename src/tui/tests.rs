@@ -82,6 +82,8 @@ fn info() -> SessionInfo {
         model: "anthropic/sonnet".to_owned(),
         state: State::Idle,
         created: 0,
+        updated: 0,
+        turns: 0,
         queued: 0,
         question: None,
         usage: Default::default(),
@@ -1453,7 +1455,7 @@ fn kill_asks_first() {
     let mut app = app();
     assert!(requests(&command(&mut app, "/kill")).is_empty());
     assert_eq!(app.dialog, Some(Dialog::ConfirmKill));
-    assert!(screen(&mut app, 80, 24).contains("End session project"));
+    assert!(screen(&mut app, 80, 24).contains("Delete project?"));
     // Other keys do nothing, `n` closes.
     assert!(requests(&app.update(ch('x'))).is_empty());
     assert_eq!(app.dialog, Some(Dialog::ConfirmKill));
@@ -2788,8 +2790,8 @@ fn rename_and_kill_from_the_list() {
         Some("the name docs2 is taken")
     );
     assert!(screen(&mut app, 80, 24).contains("the name docs2 is taken"));
-    app.update(ch('k'));
-    assert!(screen(&mut app, 80, 24).contains("Kill docs and delete its files?"));
+    app.update(ch('d'));
+    assert!(screen(&mut app, 80, 24).contains("Delete docs? No turns yet."));
     assert_eq!(
         requests(&app.update(ch('y'))),
         [Request::Kill {
@@ -2962,16 +2964,22 @@ fn various() -> Vec<SessionInfo> {
     vec![
         SessionInfo {
             created: now - 12 * 60,
+            updated: 0,
+            turns: 0,
             state: State::Working,
             ..session(1, "project")
         },
         SessionInfo {
             created: now - 2 * 3600,
+            updated: 0,
+            turns: 0,
             model: "local/qwen".into(),
             ..session(2, "project-2")
         },
         SessionInfo {
             created: now - 3 * 60,
+            updated: 0,
+            turns: 0,
             state: State::Waiting,
             workspace: "~/ws/docs".into(),
             model: "anthropic/opus".into(),
@@ -2979,7 +2987,13 @@ fn various() -> Vec<SessionInfo> {
             ..session(3, "docs")
         },
         SessionInfo {
-            created: now - 3 * 86_400,
+            created: now - 30 * 86_400,
+            updated: now - 12 * 86_400,
+            turns: 14,
+            usage: TokenTotals {
+                input_tokens: 200_000,
+                output_tokens: 10_000,
+            },
             state: State::Saved,
             workspace: "~/ws/old".into(),
             ..session(4, "old")
@@ -3014,8 +3028,98 @@ fn frame_session_list_ascii() {
 #[test]
 fn frame_session_list_narrow() {
     let text = screen(&mut listing_various(true), 44, 12);
-    assert!(!text.contains("AGE"), "{text}");
+    assert!(!text.contains("USED"), "{text}");
     insta::assert_snapshot!(text);
+}
+
+#[test]
+fn frame_session_list_marked_and_filtered() {
+    let mut app = listing_various(true);
+    app.update(ch(' '));
+    app.update(ch('/'));
+    typed(&mut app, "project");
+    app.update(key(KeyCode::Enter));
+    let text = screen(&mut app, 80, 24);
+    assert!(
+        text.contains("filter: project ─ 2 of 4 ─ 1 marked"),
+        "{text}"
+    );
+    insta::assert_snapshot!(text);
+}
+
+#[test]
+fn frame_session_list_filter_without_match() {
+    let mut app = listing_various(true);
+    app.update(ch('/'));
+    typed(&mut app, "saved >30d");
+    let text = screen(&mut app, 80, 24);
+    assert!(text.contains("no session matches"), "{text}");
+    assert!(text.contains("Filter: saved >30d"), "{text}");
+}
+
+#[test]
+fn frame_session_list_delete_one() {
+    let mut app = listing_various(true);
+    app.update(key(KeyCode::Down));
+    app.update(key(KeyCode::Down));
+    app.update(ch('d'));
+    let text = screen(&mut app, 80, 24);
+    assert!(
+        text.contains("Delete old? 14 turns, 210k tokens. [y] yes  [n] no"),
+        "{text}"
+    );
+    insta::assert_snapshot!(text);
+}
+
+#[test]
+fn frame_session_list_delete_several() {
+    let mut app = listing_various(true);
+    app.update(ch('a'));
+    app.update(ch('d'));
+    let text = screen(&mut app, 80, 24);
+    assert!(
+        text.contains("Delete 4 sessions? 1 is working, 1 waits for an answer."),
+        "{text}"
+    );
+    insta::assert_snapshot!(text);
+}
+
+#[test]
+fn deleting_marked_sessions_sends_one_kill_each() {
+    let mut app = listing_various(true);
+    app.update(ch('a'));
+    app.update(ch('d'));
+    let kills = requests(&app.update(ch('y')));
+    let names: Vec<&str> = kills
+        .iter()
+        .map(|r| match r {
+            Request::Kill { session } => session.as_str(),
+            other => panic!("{other:?}"),
+        })
+        .collect();
+    assert_eq!(names, ["project", "project-2", "docs", "old"]);
+    // The result line waits for all answers; then the list is asked again.
+    let answer = |name: &str, result: Result<Payload, String>| Input::Response {
+        request: Request::Kill {
+            session: name.into(),
+        },
+        result,
+    };
+    for name in ["project-2", "docs", "old"] {
+        let effects = app.update(answer(name, Ok(Payload::Done)));
+        assert!(requests(&effects).is_empty());
+    }
+    assert!(!screen(&mut app, 80, 24).contains("deleted"));
+    let effects = app.update(answer("project", Err("no session named project".into())));
+    assert_eq!(requests(&effects), [Request::List]);
+    let text = screen(&mut app, 80, 24);
+    assert!(
+        text.contains("deleted 3 sessions; project: no session named project"),
+        "{text}"
+    );
+    insta::assert_snapshot!(text);
+    // The attached session among them: the list stays open.
+    assert!(app.session_list.is_some());
 }
 
 #[test]
@@ -3801,6 +3905,8 @@ fn status_of(state: State) -> crate::protocol::SessionStatus {
         session: SessionInfo {
             state,
             created: CREATED,
+            updated: 0,
+            turns: 0,
             queued: 1,
             ..info()
         },

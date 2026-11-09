@@ -263,7 +263,7 @@ Message kinds:
 | client → server | `hello` | Protocol version; client kind (`tui`, `chat`, `cli`, `bridge`) and name (e.g. `tui pts/3`, `clai chat`), which is shown as who answered; whether it answers questions. |
 | client → server | `request` | An id and a command: `new`, `list`, `kill`, `rename`, `attach`, `detach`, `send` (message), `set_model`, `cancel`, `answer`, `export`, `import`, `status`, `session_status`, `models`, `stop`. Each gets exactly one `response`. Sessions are named by their current name; `attach`, `send` and `set_model` resume a saved session. |
 | server → client | `hello` | Protocol version and the server's PID. |
-| server → client | `response` | The request's id and its `result`: `ok` with a payload (`done`, a session, the session list, the status, a session's status, the models) or `error` with a message, marked `usage` when the request itself was wrong (the command then exits `2`). |
+| server → client | `response` | The request's id and its `result`: `ok` with a payload (`done`, a session, the session list, the status, a session's status, the models; a session is its id, name, workspace, model, state, created and last updated time, turns, queued messages, open question and token totals) or `error` with a message, marked `usage` when the request itself was wrong (the command then exits `2`). |
 | server → client | `event` | Something that happened in an attached session, with the session's id, and `replay` when it is part of the log sent on attach (see below). |
 | server → client | `notice` | Server-wide: `config_reloaded`, `config_rejected` (with the errors), `session_created`, `stopping`. |
 | server → client | `error` | The connection cannot go on: wrong version, a message that is not valid. |

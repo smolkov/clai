@@ -675,6 +675,8 @@ mod tests {
             model: "test/m".into(),
             state: State::Idle,
             created: 0,
+            updated: 0,
+            turns: 0,
             queued: 0,
             question: None,
             usage: TokenTotals::default(),

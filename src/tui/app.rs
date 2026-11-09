@@ -1131,6 +1131,21 @@ impl App {
                 }
                 self.conversation.error(message);
             }
+            // A delete of the session list: counted there, and the list is
+            // asked again once all are answered.
+            (Request::Kill { session }, result)
+                if self
+                    .session_list
+                    .as_ref()
+                    .is_some_and(|l| l.is_deleting(&session)) =>
+            {
+                let result = result.map(|_| ());
+                if let Some(list) = &mut self.session_list
+                    && list.deleted(&session, result)
+                {
+                    return vec![Effect::Redraw, Effect::Request(Request::List)];
+                }
+            }
             // A refused name or a failed kill is shown where it was asked.
             (_, Err(message)) if !lost && self.session_list.is_some() => {
                 if let Some(list) = &mut self.session_list {
@@ -1313,8 +1328,12 @@ impl App {
             ListAction::Rename { session, name } => {
                 effects.push(Effect::Request(Request::Rename { session, name }));
             }
-            ListAction::Kill(session) => {
-                effects.push(Effect::Request(Request::Kill { session }));
+            ListAction::Delete(names) => {
+                effects.extend(
+                    names
+                        .into_iter()
+                        .map(|session| Effect::Request(Request::Kill { session })),
+                );
             }
             ListAction::New { workspace, name } => {
                 self.session_list = None;
@@ -1894,7 +1913,7 @@ impl App {
                 session,
                 name: name.to_owned(),
             })],
-            ("kill", _) => {
+            ("kill" | "delete", _) => {
                 self.dialog = Some(Dialog::ConfirmKill);
                 Vec::new()
             }

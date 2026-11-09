@@ -51,10 +51,10 @@ pub fn draw(app: &App, frame: &mut Frame<'_>, size: Rect) {
     let (title, text) = match dialog {
         Dialog::Help => (" Help ".to_owned(), help()),
         Dialog::ConfirmKill => (
-            " Kill session ".to_owned(),
+            " Delete session ".to_owned(),
             format!(
-                "End session {} and delete its files?\n\n[y] yes  [n] no",
-                app.session.name
+                "{}\n\n[y] yes  [n] no",
+                crate::text::sessions::confirm_delete(&[&app.session])
             ),
         ),
     };

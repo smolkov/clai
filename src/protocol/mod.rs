@@ -277,6 +277,12 @@ pub struct SessionInfo {
     pub state: State,
     /// Seconds since 1970.
     pub created: u64,
+    /// Seconds since 1970 at the last change; `0` from an older server.
+    #[serde(default)]
+    pub updated: u64,
+    /// Turns started so far.
+    #[serde(default)]
+    pub turns: u64,
     /// Messages waiting for the running turn to end.
     pub queued: usize,
     /// The open question, if the session waits.

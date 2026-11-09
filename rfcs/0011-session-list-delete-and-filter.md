@@ -1,7 +1,7 @@
 # Session list: delete, marks and filter
 
 - RFC: 0011
-- Status: draft
+- Status: done
 - Milestone: none; it improves the session list of RFC 0005
 - Spec: [`spec/tui.md`](../spec/tui.md), "Sessions", "Command list";
   [`spec/architecture.md`](../spec/architecture.md), "Protocol"
@@ -244,7 +244,7 @@ for `USED` and for time words.
 Each step leaves a working, tested state.
 
 1. **`updated` and `turns` in `SessionInfo`**
-   - Status: todo
+   - Status: done
    - Files: `src/protocol/mod.rs`, `src/session/store.rs`,
      `src/protocol/tests.rs`, `src/server/tests.rs`, fixtures that build
      `SessionInfo`
@@ -252,7 +252,7 @@ Each step leaves a working, tested state.
    - Tests: the protocol and server tests.
 
 2. **Delete wording and keys**
-   - Status: todo
+   - Status: done
    - Files: `src/text/sessions.rs`, `src/tui/sessions.rs`,
      `src/tui/app.rs`, `src/tui/view/sessions.rs`, `src/tui/commands.rs`,
      `src/tui/tests.rs`, snapshots
@@ -261,7 +261,7 @@ Each step leaves a working, tested state.
    - Tests: the text tests, key tests, snapshots.
 
 3. **Marks**
-   - Status: todo
+   - Status: done
    - Files: `src/tui/sessions.rs`, `src/tui/app.rs`,
      `src/tui/view/sessions.rs`, `src/tui/style.rs` (`marked`),
      `src/tui/tests.rs`, snapshots
@@ -270,14 +270,14 @@ Each step leaves a working, tested state.
    - Tests: the mark and app tests, snapshots.
 
 4. **Filter**
-   - Status: todo
+   - Status: done
    - Files: `src/tui/sessions/filter.rs` (new), `src/tui/sessions.rs`,
      `src/tui/view/sessions.rs`, `src/tui/tests.rs`, snapshots
    - Result: `/` filters by text and time; `a` marks what is shown.
    - Tests: the filter unit tests, list tests, a snapshot.
 
 5. **Spec**
-   - Status: todo
+   - Status: done
    - Files: `spec/tui.md`, `spec/architecture.md`, `todo.md`
    - Result: the spec says what the list does.
    - Tests: `cargo fmt`, `clippy` and `test` clean.
@@ -300,8 +300,27 @@ Each step leaves a working, tested state.
 
 ## Open questions
 
-1. Keep `k` as a hidden alias of `d`, or drop it?
-2. The mark symbol: `■` / `#`, or another?
-3. Should `clai ls` also switch its `AGE` column to the time since last
-   use (and be called `USED`), so both lists agree?
-4. Should `clai kill` gain a `delete` alias, to match `/delete`?
+Answered with the proposals when the RFC was built:
+
+1. `k` was first kept as an alias of `d`; it was then given to moving up,
+   with `j` for down, as in vim. Delete is `d` and `Del`.
+2. The mark symbol is `■`, ASCII `#`.
+3. `clai ls` keeps `AGE` from creation; open for later.
+4. `clai kill` gets no `delete` alias.
+
+## Notes from building
+
+- Deleting with marks deletes every marked session, also those the
+  current filter hides; the question says how many.
+- Time words also take `s` (seconds) and `w` (weeks).
+- A session without turns says `No turns yet.` in the question instead of
+  `0 turns, 0 tokens`.
+- `USED` keeps the short form of `AGE` (`45s`, `12m`, `3d`); it does not
+  show `now`.
+- The key line is too long for the box at 76 columns; it leaves out
+  `a all`, then the label of `Esc`, then `r rename`, then `n new`, as the
+  width needs. At 80 columns it shows all but `a all`.
+- After all deletes are answered, the list is asked for again at once,
+  not at the next 2 s refresh.
+- The `/kill` dialog uses the same question text, titled "Delete session".
+- Tests: 20 new (725 in all).

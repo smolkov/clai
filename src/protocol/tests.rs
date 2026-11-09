@@ -369,3 +369,22 @@ fn totals_sum_only_usage_events() {
     let huge = [usage(u64::MAX, u64::MAX), usage(5, 5)];
     assert_eq!(TokenTotals::of_log(&huge).input_tokens, u64::MAX);
 }
+
+#[test]
+fn session_info_of_an_older_server() {
+    let old = json!({
+        "id": 1, "name": "s", "workspace": "~/ws", "path": "/home/u/ws",
+        "model": "a/b", "state": "saved", "created": 100, "queued": 0,
+        "question": null,
+        "usage": {"input_tokens": 0, "output_tokens": 0}
+    });
+    let info: SessionInfo = serde_json::from_value(old).unwrap();
+    assert_eq!((info.updated, info.turns), (0, 0));
+    let info = SessionInfo {
+        updated: 200,
+        turns: 3,
+        ..info
+    };
+    let back = round_trip(&info);
+    assert_eq!((back.updated, back.turns), (200, 3));
+}

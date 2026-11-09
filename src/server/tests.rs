@@ -1160,7 +1160,12 @@ async fn token_totals_are_counted_and_survive_a_restart() {
     turn_end(&mut c).await;
     send(&mut c, "s", "two").await;
     turn_end(&mut c).await;
-    assert_eq!(c.list().await.unwrap()[0].usage, totals(300, 30));
+    let listed = c.list().await.unwrap();
+    assert_eq!(listed[0].usage, totals(300, 30));
+    // The list carries the turns and the time of the last change.
+    assert_eq!(created.turns, 0);
+    assert_eq!(listed[0].turns, 2);
+    assert!(listed[0].updated >= created.created && listed[0].updated > 0);
     drop(c);
 
     // Written as it goes, not only at the stop.
@@ -1174,6 +1179,7 @@ async fn token_totals_are_counted_and_survive_a_restart() {
     let listed = c.list().await.unwrap();
     assert_eq!(listed[0].state, State::Saved);
     assert_eq!(listed[0].usage, totals(300, 30));
+    assert_eq!(listed[0].turns, 2);
     // Resuming sums the log once, not on top of the saved totals.
     assert_eq!(attach(&mut c, "s").await.usage, totals(300, 30));
     fx.stop().await;

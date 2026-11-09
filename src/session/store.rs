@@ -83,6 +83,8 @@ impl Meta {
             model: self.model.clone(),
             state,
             created: self.created,
+            updated: self.updated,
+            turns: self.turns,
             queued,
             question,
             usage: self.usage,

@@ -136,6 +136,8 @@ mod tests {
             model: "a/b".into(),
             state: crate::agent::State::Idle,
             created: 0,
+            updated: 0,
+            turns: 0,
             queued: 0,
             question: None,
             usage: Default::default(),

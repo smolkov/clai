@@ -281,6 +281,8 @@ pub struct Symbols {
     pub dot: &'static str,
     /// The selected row of a list.
     pub pointer: &'static str,
+    /// A marked row of a list.
+    pub marked: &'static str,
     /// A mark that needs attention.
     pub warning: &'static str,
     /// Plain lines across the screen and in Markdown.
@@ -320,6 +322,7 @@ impl Symbols {
                 new_output: "↓",
                 dot: "●",
                 pointer: "▶",
+                marked: "■",
                 warning: "⚠",
                 rule: "─",
                 separator: "·",
@@ -341,6 +344,7 @@ impl Symbols {
                 new_output: "v",
                 dot: "*",
                 pointer: ">",
+                marked: "#",
                 warning: "!",
                 rule: "-",
                 separator: "-",

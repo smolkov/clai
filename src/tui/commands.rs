@@ -84,7 +84,10 @@ pub const COMMANDS: &[Command] = &[
         command("theme", "Choose the colour theme, saved as the default"),
         "[NAME]",
     ),
-    command("kill", "End the session, after a question"),
+    Command {
+        alias: Some("delete"),
+        ..command("kill", "Delete the session, after a question")
+    },
     later(optional(
         command("commit", "Commit the changes, after a question"),
         "[HINT]",
@@ -211,6 +214,7 @@ mod tests {
                 "rename",
                 "settings",
                 "theme",
+                "kill",
                 "detach"
             ]
         );

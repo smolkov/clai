@@ -216,6 +216,16 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [x] TUI question box: options, ticks, typed text, review page, skip.
 - [ ] Keep what was chosen in the box when switching sessions and back.
 
+## Session list: delete, marks and filter (RFC 0011)
+
+- [x] `SessionInfo` carries `updated` and `turns`; old messages still read.
+- [x] `d`, `Del` delete after a question that says what is lost; `j` / `k` move;
+      `/delete` as alias of `/kill`; `USED` column.
+- [x] Marks: `Space`, `a`; one question for all marked; a result line once
+      all `kill`s are answered.
+- [x] Filter: `/` with text and time words (`>7d`, `<1h`).
+- [ ] `clai ls`: `USED` instead of `AGE` too (RFC 0011, open question 3).
+
 ## Commit messages (RFC 0013)
 
 - [x] `clai commit`: staged changes only, from the repository of `DIR`;

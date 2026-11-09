@@ -1,8 +1,11 @@
 //! The state of the session list (see `spec/tui.md`, "Sessions"): the sessions
-//! from the server's last `list`, the selected row and what the box asks for.
-//! `App` routes keys here and carries out what comes back; `view::sessions`
-//! draws it.
+//! from the server's last `list`, the selected row, the marks, the filter and
+//! what the box asks for. `App` routes keys here and carries out what comes
+//! back; `view::sessions` draws it.
 
+mod filter;
+
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use crossterm::event::{KeyCode, KeyEvent};
@@ -12,14 +15,18 @@ use crate::protocol::SessionInfo;
 use super::editor::{Edit, Editor};
 use super::keys;
 
+pub use filter::Filter;
+
 /// What the box is doing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Mode {
     Browse,
     /// `r`: the new name of the selected session.
     Rename(Editor),
-    /// `k`: `y` / `n`.
-    ConfirmKill,
+    /// `d`: `y` / `n` for these sessions, in list order.
+    ConfirmDelete(Vec<String>),
+    /// `/`: the filter text, applied as it is typed.
+    Filter(Editor),
     /// `n`, first step: the workspace.
     Workspace(Editor),
     /// `n`, second step: the name; empty for the server's default.
@@ -40,7 +47,8 @@ pub enum ListAction {
         session: String,
         name: String,
     },
-    Kill(String),
+    /// One `kill` per name.
+    Delete(Vec<String>),
     /// Go on to the model picker for a new session.
     New {
         workspace: PathBuf,
@@ -48,24 +56,41 @@ pub enum ListAction {
     },
 }
 
+/// Deletes sent and not all answered yet.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Deleting {
+    open: Vec<String>,
+    done: usize,
+    /// `docs: no session named docs`.
+    failed: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct SessionList {
     pub sessions: Vec<SessionInfo>,
     selected: usize,
     pub mode: Mode,
-    /// The id of the attached session, marked in the list.
+    /// The id of the attached session, with a `✓` in the list.
     pub current: u64,
     /// The attached session's workspace, the default for a new one: as shown
     /// (`~/ws/project`) and absolute.
     shown: String,
     base: PathBuf,
-    /// A message for the box's last line, e.g. a refused name.
+    /// An error for the box's last line, e.g. a refused name.
     pub message: Option<String>,
+    /// A result for the box's last line, e.g. `deleted 5 sessions`.
+    pub done: Option<String>,
     /// `Esc` leaves the TUI instead of closing the list: at start without a
     /// session chosen, and after the attached session ended.
     pub exit_on_esc: bool,
-    /// Seconds since 1970 at the last `list`, for the age column.
+    /// Seconds since 1970 at the last `list`, for the age column and the
+    /// filter.
     pub now: u64,
+    /// Marked sessions, by id.
+    pub marked: BTreeSet<u64>,
+    /// The filter text; empty shows every session.
+    pub filter: String,
+    deleting: Option<Deleting>,
 }
 
 impl SessionList {
@@ -83,42 +108,102 @@ impl SessionList {
             shown: attached.workspace.clone(),
             base: attached.path.clone(),
             message: None,
+            done: None,
             exit_on_esc: false,
             now,
+            marked: BTreeSet::new(),
+            filter: String::new(),
+            deleting: None,
         }
     }
 
-    /// A newer list: the same session stays selected if it is still there.
+    /// A newer list: the same session stays selected if it is still shown;
+    /// marks of sessions gone are dropped.
     pub fn set_sessions(&mut self, sessions: Vec<SessionInfo>, now: u64) {
         let chosen = self.chosen().map(|s| s.id);
         self.sessions = sessions;
         self.now = now;
+        let ids: BTreeSet<u64> = self.sessions.iter().map(|s| s.id).collect();
+        self.marked.retain(|id| ids.contains(id));
         let at = chosen.and_then(|id| self.sessions.iter().position(|s| s.id == id));
-        self.selected = at.unwrap_or(0).min(self.sessions.len().saturating_sub(1));
+        self.selected = at.unwrap_or(0);
+        self.keep_selection_shown();
+    }
+
+    /// The indexes of the sessions the filter shows, in list order.
+    pub fn visible(&self) -> Vec<usize> {
+        let filter = Filter::new(&self.filter);
+        self.sessions
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| filter.matches(s, self.now))
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    /// After the list or the filter changed: a hidden selection moves to the
+    /// first session shown.
+    fn keep_selection_shown(&mut self) {
+        let visible = self.visible();
+        if !visible.contains(&self.selected) {
+            self.selected = visible.first().copied().unwrap_or(0);
+        }
     }
 
     pub fn selected(&self) -> usize {
         self.selected
     }
 
+    /// The selected session, if it is shown.
     pub fn chosen(&self) -> Option<&SessionInfo> {
-        self.sessions.get(self.selected)
+        self.visible()
+            .contains(&self.selected)
+            .then(|| self.sessions.get(self.selected))
+            .flatten()
+    }
+
+    /// The sessions of a delete question, by name, in list order.
+    pub fn named(&self, names: &[String]) -> Vec<&SessionInfo> {
+        self.sessions
+            .iter()
+            .filter(|s| names.contains(&s.name))
+            .collect()
     }
 
     /// Takes a key; what `App` must do, if anything.
     pub fn key(&mut self, key: KeyEvent) -> Option<ListAction> {
         self.message = None;
+        self.done = None;
         let mode = std::mem::replace(&mut self.mode, Mode::Browse);
         let (mode, action) = match mode {
             // `browse` sets the next mode itself.
             Mode::Browse => return self.browse(key),
-            Mode::ConfirmKill => match key.code {
+            Mode::ConfirmDelete(names) => match key.code {
                 KeyCode::Char('y' | 'Y') => {
-                    let name = self.chosen().map(|s| s.name.clone());
-                    (Mode::Browse, name.map(ListAction::Kill))
+                    self.marked.clear();
+                    self.deleting = Some(Deleting {
+                        open: names.clone(),
+                        done: 0,
+                        failed: Vec::new(),
+                    });
+                    (Mode::Browse, Some(ListAction::Delete(names)))
                 }
                 KeyCode::Char('n' | 'N') | KeyCode::Esc => (Mode::Browse, None),
-                _ => (Mode::ConfirmKill, None),
+                _ => (Mode::ConfirmDelete(names), None),
+            },
+            Mode::Filter(mut editor) => match key.code {
+                KeyCode::Enter | KeyCode::Down => (Mode::Browse, None),
+                KeyCode::Esc => {
+                    self.filter.clear();
+                    self.keep_selection_shown();
+                    (Mode::Browse, None)
+                }
+                _ => {
+                    line_edit(&mut editor, key);
+                    self.filter = editor.text();
+                    self.keep_selection_shown();
+                    (Mode::Filter(editor), None)
+                }
             },
             Mode::Rename(mut editor) => match key.code {
                 KeyCode::Esc => (Mode::Browse, None),
@@ -173,20 +258,73 @@ impl SessionList {
         action
     }
 
+    /// Moves the selection among the sessions shown.
+    fn step(&mut self, forward: bool) {
+        let visible = self.visible();
+        let at = visible.iter().position(|&i| i == self.selected);
+        let next = match (at, forward) {
+            (None, _) => visible.first(),
+            (Some(at), true) => visible.get(at + 1).or(visible.last()),
+            (Some(at), false) => visible.get(at.saturating_sub(1)),
+        };
+        if let Some(&next) = next {
+            self.selected = next;
+        }
+    }
+
     fn browse(&mut self, key: KeyEvent) -> Option<ListAction> {
         match key.code {
-            KeyCode::Esc if self.exit_on_esc => Some(ListAction::Exit),
-            KeyCode::Esc => Some(ListAction::Close),
-            KeyCode::Up => {
-                self.selected = self.selected.saturating_sub(1);
+            KeyCode::Esc if !self.marked.is_empty() => {
+                self.marked.clear();
                 None
             }
-            KeyCode::Down => {
-                let last = self.sessions.len().saturating_sub(1);
-                self.selected = (self.selected + 1).min(last);
+            KeyCode::Esc if !self.filter.is_empty() => {
+                self.filter.clear();
+                self.keep_selection_shown();
+                None
+            }
+            KeyCode::Esc if self.exit_on_esc => Some(ListAction::Exit),
+            KeyCode::Esc => Some(ListAction::Close),
+            KeyCode::Up | KeyCode::Char('k') => {
+                self.step(false);
+                None
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                self.step(true);
                 None
             }
             KeyCode::Enter => self.chosen().map(|s| ListAction::Attach(s.name.clone())),
+            KeyCode::Char(' ') => {
+                if let Some(id) = self.chosen().map(|s| s.id) {
+                    if !self.marked.remove(&id) {
+                        self.marked.insert(id);
+                    }
+                    self.step(true);
+                }
+                None
+            }
+            KeyCode::Char('a') => {
+                let shown: Vec<u64> = self
+                    .visible()
+                    .into_iter()
+                    .filter_map(|i| self.sessions.get(i))
+                    .map(|s| s.id)
+                    .collect();
+                if shown.iter().all(|id| self.marked.contains(id)) {
+                    for id in &shown {
+                        self.marked.remove(id);
+                    }
+                } else {
+                    self.marked.extend(shown);
+                }
+                None
+            }
+            KeyCode::Char('/') => {
+                let mut editor = Editor::default();
+                editor.set_text(&self.filter);
+                self.mode = Mode::Filter(editor);
+                None
+            }
             KeyCode::Char('n') => {
                 let mut editor = Editor::default();
                 editor.set_text(&self.shown);
@@ -201,14 +339,60 @@ impl SessionList {
                 }
                 None
             }
-            KeyCode::Char('k') => {
-                if self.chosen().is_some() {
-                    self.mode = Mode::ConfirmKill;
+            KeyCode::Char('d') | KeyCode::Delete => {
+                let names: Vec<String> = if self.marked.is_empty() {
+                    self.chosen().map(|s| s.name.clone()).into_iter().collect()
+                } else {
+                    self.sessions
+                        .iter()
+                        .filter(|s| self.marked.contains(&s.id))
+                        .map(|s| s.name.clone())
+                        .collect()
+                };
+                if !names.is_empty() {
+                    self.mode = Mode::ConfirmDelete(names);
                 }
                 None
             }
             _ => None,
         }
+    }
+
+    /// A `kill` of `name` sent by the list waits for its answer.
+    pub fn is_deleting(&self, name: &str) -> bool {
+        self.deleting
+            .as_ref()
+            .is_some_and(|b| b.open.iter().any(|n| n == name))
+    }
+
+    /// The answer to the list's `kill` of `name`; `true` once all are
+    /// answered, and the last line then says how it went.
+    pub fn deleted(&mut self, name: &str, result: Result<(), String>) -> bool {
+        let Some(batch) = &mut self.deleting else {
+            return false;
+        };
+        let Some(at) = batch.open.iter().position(|n| n == name) else {
+            return false;
+        };
+        batch.open.remove(at);
+        match result {
+            Ok(()) => batch.done += 1,
+            Err(message) => batch.failed.push(format!("{name}: {message}")),
+        }
+        if batch.open.is_empty() {
+            let done = match batch.done {
+                1 => "deleted 1 session".to_owned(),
+                n => format!("deleted {n} sessions"),
+            };
+            if batch.failed.is_empty() {
+                self.done = Some(done);
+            } else {
+                self.message = Some(format!("{done}; {}", batch.failed.join("; ")));
+            }
+            self.deleting = None;
+            return true;
+        }
+        false
     }
 
     /// Pasted text goes to the line being edited, as one line.
@@ -218,7 +402,12 @@ impl SessionList {
             Mode::Rename(editor) | Mode::Workspace(editor) | Mode::Name { name: editor, .. } => {
                 editor.paste(&text);
             }
-            Mode::Browse | Mode::ConfirmKill => {}
+            Mode::Filter(editor) => {
+                editor.paste(&text);
+                self.filter = editor.text();
+                self.keep_selection_shown();
+            }
+            Mode::Browse | Mode::ConfirmDelete(_) => {}
         }
     }
 }
@@ -276,6 +465,8 @@ mod tests {
             model: "anthropic/sonnet".to_owned(),
             state: State::Idle,
             created: 0,
+            updated: 0,
+            turns: 0,
             queued: 0,
             question: None,
             usage: Default::default(),
@@ -315,6 +506,24 @@ mod tests {
     }
 
     #[test]
+    fn j_and_k_move_like_down_and_up() {
+        let mut list = list();
+        list.key(key(KeyCode::Char('j')));
+        assert_eq!(list.chosen().unwrap().name, "c");
+        list.key(key(KeyCode::Char('j')));
+        assert_eq!(list.chosen().unwrap().name, "c");
+        list.key(key(KeyCode::Char('k')));
+        list.key(key(KeyCode::Char('k')));
+        list.key(key(KeyCode::Char('k')));
+        assert_eq!(list.chosen().unwrap().name, "a");
+        assert_eq!(list.mode, Mode::Browse);
+        // While a name or the filter is typed, they are letters.
+        list.key(key(KeyCode::Char('/')));
+        typed(&mut list, "jk");
+        assert_eq!(list.filter, "jk");
+    }
+
+    #[test]
     fn a_refresh_keeps_the_selected_session_by_id() {
         let mut list = list();
         list.key(key(KeyCode::Down));
@@ -327,7 +536,7 @@ mod tests {
         list.set_sessions(Vec::new(), 9);
         assert!(list.chosen().is_none());
         assert_eq!(list.key(key(KeyCode::Enter)), None);
-        assert_eq!(list.key(key(KeyCode::Char('k'))), None);
+        assert_eq!(list.key(key(KeyCode::Char('d'))), None);
         assert_eq!(list.mode, Mode::Browse);
     }
 
@@ -362,19 +571,156 @@ mod tests {
     }
 
     #[test]
-    fn kill_asks_first() {
+    fn delete_asks_first() {
+        for code in [KeyCode::Char('d'), KeyCode::Delete] {
+            let mut list = list();
+            list.key(key(code));
+            assert_eq!(list.mode, Mode::ConfirmDelete(vec!["b".into()]));
+            assert_eq!(list.key(key(KeyCode::Char('x'))), None);
+            assert!(matches!(list.mode, Mode::ConfirmDelete(_)));
+            assert_eq!(list.key(key(KeyCode::Char('n'))), None);
+            assert_eq!(list.mode, Mode::Browse);
+            list.key(key(code));
+            assert_eq!(
+                list.key(key(KeyCode::Char('y'))),
+                Some(ListAction::Delete(vec!["b".into()]))
+            );
+            assert!(list.is_deleting("b"));
+        }
+    }
+
+    #[test]
+    fn space_marks_and_moves_on() {
         let mut list = list();
-        list.key(key(KeyCode::Char('k')));
-        assert_eq!(list.mode, Mode::ConfirmKill);
-        assert_eq!(list.key(key(KeyCode::Char('x'))), None);
-        assert_eq!(list.mode, Mode::ConfirmKill);
-        assert_eq!(list.key(key(KeyCode::Char('n'))), None);
-        assert_eq!(list.mode, Mode::Browse);
-        list.key(key(KeyCode::Char('k')));
+        list.key(key(KeyCode::Up));
+        list.key(key(KeyCode::Char(' ')));
+        assert_eq!(list.chosen().unwrap().name, "b");
+        list.key(key(KeyCode::Char(' ')));
+        assert_eq!(list.marked, BTreeSet::from([1, 2]));
+        // Again on a marked one: unmarked.
+        list.key(key(KeyCode::Up));
+        list.key(key(KeyCode::Char(' ')));
+        assert_eq!(list.marked, BTreeSet::from([1]));
+    }
+
+    #[test]
+    fn a_marks_all_shown_then_unmarks() {
+        let mut list = list();
+        list.key(key(KeyCode::Char('a')));
+        assert_eq!(list.marked, BTreeSet::from([1, 2, 3]));
+        list.key(key(KeyCode::Char('a')));
+        assert!(list.marked.is_empty());
+        list.sessions[2].workspace = "~/ws/docs".into();
+        list.filter = "docs".into();
+        list.key(key(KeyCode::Char('a')));
+        assert_eq!(list.marked, BTreeSet::from([3]));
+    }
+
+    #[test]
+    fn marks_survive_a_refresh_and_drop_for_sessions_gone() {
+        let mut list = list();
+        list.key(key(KeyCode::Char('a')));
+        list.set_sessions(vec![info(3, "c"), info(1, "a")], 5);
+        assert_eq!(list.marked, BTreeSet::from([1, 3]));
+    }
+
+    #[test]
+    fn delete_takes_the_marked_sessions_in_list_order() {
+        let mut list = list();
+        list.key(key(KeyCode::Down));
+        list.key(key(KeyCode::Char(' ')));
+        list.key(key(KeyCode::Up));
+        list.key(key(KeyCode::Up));
+        list.key(key(KeyCode::Char(' ')));
+        list.key(key(KeyCode::Char('d')));
+        assert_eq!(list.mode, Mode::ConfirmDelete(vec!["a".into(), "c".into()]));
+        // `n` keeps the marks; `y` clears them.
+        list.key(key(KeyCode::Char('n')));
+        assert_eq!(list.marked.len(), 2);
+        list.key(key(KeyCode::Char('d')));
         assert_eq!(
             list.key(key(KeyCode::Char('y'))),
-            Some(ListAction::Kill("b".into()))
+            Some(ListAction::Delete(vec!["a".into(), "c".into()]))
         );
+        assert!(list.marked.is_empty());
+    }
+
+    #[test]
+    fn the_result_line_waits_for_all_answers() {
+        let mut list = list();
+        list.key(key(KeyCode::Char('a')));
+        list.key(key(KeyCode::Char('d')));
+        list.key(key(KeyCode::Char('y')));
+        assert!(!list.deleted("other", Ok(())));
+        assert!(!list.deleted("a", Ok(())));
+        assert_eq!(list.done, None);
+        assert!(!list.deleted("b", Err("no session named b".into())));
+        assert!(list.deleted("c", Ok(())));
+        assert_eq!(
+            list.message.as_deref(),
+            Some("deleted 2 sessions; b: no session named b")
+        );
+        assert!(!list.is_deleting("a"));
+        // All well: the result, not an error.
+        list.key(key(KeyCode::Char('d')));
+        list.key(key(KeyCode::Char('y')));
+        assert!(list.deleted("b", Ok(())));
+        assert_eq!(list.done.as_deref(), Some("deleted 1 session"));
+        assert_eq!(list.message, None);
+    }
+
+    #[test]
+    fn the_filter_hides_rows_as_it_is_typed() {
+        let mut list = list();
+        list.sessions[2].workspace = "~/ws/docs".into();
+        list.key(key(KeyCode::Char('/')));
+        typed(&mut list, "docs");
+        assert_eq!(list.filter, "docs");
+        assert_eq!(list.visible(), [2]);
+        // The selection moves to the first shown.
+        assert_eq!(list.chosen().unwrap().name, "c");
+        assert_eq!(list.key(key(KeyCode::Enter)), None);
+        assert_eq!(list.mode, Mode::Browse);
+        assert_eq!(list.filter, "docs");
+        // Up and Down stay among the shown rows.
+        list.key(key(KeyCode::Up));
+        assert_eq!(list.chosen().unwrap().name, "c");
+        // `/` again starts with the text; Esc there empties it.
+        list.key(key(KeyCode::Char('/')));
+        assert!(matches!(&list.mode, Mode::Filter(e) if e.text() == "docs"));
+        list.key(key(KeyCode::Esc));
+        assert_eq!(list.filter, "");
+        assert_eq!(list.visible().len(), 3);
+    }
+
+    #[test]
+    fn nothing_shown_nothing_to_act_on() {
+        let mut list = list();
+        list.filter = "nothing".into();
+        assert!(list.chosen().is_none());
+        for code in [
+            KeyCode::Enter,
+            KeyCode::Char('d'),
+            KeyCode::Char('r'),
+            KeyCode::Char(' '),
+        ] {
+            assert_eq!(list.key(key(code)), None);
+            assert_eq!(list.mode, Mode::Browse);
+        }
+        assert!(list.marked.is_empty());
+    }
+
+    #[test]
+    fn esc_clears_marks_then_the_filter_then_closes() {
+        let mut list = list();
+        list.key(key(KeyCode::Char(' ')));
+        list.filter = "b".into();
+        assert_eq!(list.key(key(KeyCode::Esc)), None);
+        assert!(list.marked.is_empty());
+        assert_eq!(list.filter, "b");
+        assert_eq!(list.key(key(KeyCode::Esc)), None);
+        assert_eq!(list.filter, "");
+        assert_eq!(list.key(key(KeyCode::Esc)), Some(ListAction::Close));
     }
 
     #[test]

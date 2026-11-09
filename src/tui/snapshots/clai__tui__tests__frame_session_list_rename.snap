@@ -1,5 +1,6 @@
 ---
 source: src/tui/tests.rs
+assertion_line: 3126
 expression: "screen(&mut app, 80, 24)"
 ---
                                                                                 
@@ -10,11 +11,11 @@ expression: "screen(&mut app, 80, 24)"
                                                                                 
                                                                                 
 ┌ Sessions ────────────────────────────────────────────────────────────────────┐
-│     NAME       WORKSPACE     MODEL             STATE      AGE                │
-│   ✓ project    ~/ws/project  anthropic/sonnet  working    12m                │
-│ ▶   project-2  ~/ws/project  local/qwen        idle       2h                 │
-│     docs       ~/ws/docs     anthropic/opus    ● waiting  3m                 │
-│     old        ~/ws/old      anthropic/sonnet  saved      3d                 │
+│       NAME       WORKSPACE     MODEL             STATE      USED             │
+│     ✓ project    ~/ws/project  anthropic/sonnet  working    12m              │
+│ ▶     project-2  ~/ws/project  local/qwen        idle       2h               │
+│       docs       ~/ws/docs     anthropic/opus    ● waiting  3m               │
+│       old        ~/ws/old      anthropic/sonnet  saved      12d              │
 │                                                                              │
 │ New name: project-2                                                          │
 │ Enter rename ─ Esc back                                                      │

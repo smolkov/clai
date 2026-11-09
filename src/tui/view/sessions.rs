@@ -8,7 +8,7 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::agent::State;
 use crate::protocol::SessionInfo;
-use crate::text::sessions::age;
+use crate::text::sessions::{age, confirm_delete, last_used};
 use crate::tui::app::App;
 use crate::tui::editor::Editor;
 use crate::tui::sessions::{Mode, SessionList};
@@ -22,9 +22,9 @@ const WIDTH: u16 = 76;
 /// The rows of the box that are not sessions: the heading, a blank line, the
 /// line of the step or a message, and the keys.
 const CHROME: usize = 4;
-/// Before the name: the pointer, the mark of the attached session (`✓`), a
-/// space each.
-const LEAD: usize = 4;
+/// Before the name: the pointer, the mark (`■`), the attached session's
+/// `✓`, a space each.
+const LEAD: usize = 6;
 
 fn state(session: &SessionInfo, symbols: &Symbols) -> String {
     match session.state {
@@ -35,23 +35,29 @@ fn state(session: &SessionInfo, symbols: &Symbols) -> String {
     }
 }
 
-/// The columns of each session, with the heading first. The age, then the
-/// workspace, are left out when the box is too narrow for them.
-fn table(list: &SessionList, symbols: &Symbols, width: usize) -> Vec<Vec<String>> {
+/// The columns of each session shown, with the heading first. The time
+/// since the last use, then the workspace, are left out when the box is too
+/// narrow for them.
+fn table(
+    list: &SessionList,
+    visible: &[usize],
+    symbols: &Symbols,
+    width: usize,
+) -> Vec<Vec<String>> {
     let mut rows = vec![vec![
         "NAME".to_owned(),
         "WORKSPACE".to_owned(),
         "MODEL".to_owned(),
         "STATE".to_owned(),
-        "AGE".to_owned(),
+        "USED".to_owned(),
     ]];
-    for session in &list.sessions {
+    for session in visible.iter().filter_map(|&i| list.sessions.get(i)) {
         rows.push(vec![
             session.name.clone(),
             session.workspace.clone(),
             session.model.clone(),
             state(session, symbols),
-            age(list.now.saturating_sub(session.created)),
+            age(list.now.saturating_sub(last_used(session))),
         ]);
     }
     let widths = |rows: &[Vec<String>]| -> usize {
@@ -68,7 +74,7 @@ fn table(list: &SessionList, symbols: &Symbols, width: usize) -> Vec<Vec<String>
             + 2 * columns.saturating_sub(1)
             + LEAD
     };
-    // Age (the last column), then the workspace (the second).
+    // The time (the last column), then the workspace (the second).
     for drop in [4, 1] {
         if widths(&rows) <= width {
             break;
@@ -106,33 +112,92 @@ fn aligned(rows: &[Vec<String>]) -> Vec<String> {
         .collect()
 }
 
-fn keys(list: &SessionList, look: &Look) -> Line<'static> {
+fn keys(list: &SessionList, look: &Look, width: usize) -> Line<'static> {
     let rule = look.symbols.rule;
     let text = match &list.mode {
         Mode::Browse => {
-            let esc = if list.exit_on_esc { "exit" } else { "back" };
+            let esc = if !list.marked.is_empty() || !list.filter.is_empty() {
+                "clear"
+            } else if list.exit_on_esc {
+                "exit"
+            } else {
+                "back"
+            };
             if list.sessions.is_empty() {
                 format!("n new {rule} Esc {esc}")
             } else {
-                format!("Enter attach {rule} n new {rule} r rename {rule} k kill {rule} Esc {esc}")
+                let esc = format!("Esc {esc}");
+                // The less needed keys go first when the line is too long.
+                let shapes: [&[&str]; 4] = [
+                    &[
+                        "Enter attach",
+                        "Space mark",
+                        "a all",
+                        "d delete",
+                        "/ filter",
+                        "n new",
+                        "r rename",
+                        &esc,
+                    ],
+                    &[
+                        "Enter attach",
+                        "Space mark",
+                        "d delete",
+                        "/ filter",
+                        "n new",
+                        "r rename",
+                        "Esc",
+                    ],
+                    &[
+                        "Enter attach",
+                        "Space mark",
+                        "d delete",
+                        "/ filter",
+                        "n new",
+                        "Esc",
+                    ],
+                    &["Enter attach", "Space mark", "d delete", "/ filter", "Esc"],
+                ];
+                let join = |parts: &[&str]| parts.join(&format!(" {rule} "));
+                shapes
+                    .iter()
+                    .map(|parts| join(parts))
+                    .find(|text| text.width() <= width)
+                    .unwrap_or_else(|| shapes.last().map(|p| join(p)).unwrap_or_default())
             }
         }
-        Mode::ConfirmKill => format!("y kill {rule} n back"),
+        Mode::ConfirmDelete(_) => format!("y delete {rule} n back"),
+        Mode::Filter(_) => format!("Enter keep {rule} Esc clear"),
         Mode::Rename(_) => format!("Enter rename {rule} Esc back"),
         Mode::Workspace(_) => format!("Enter next {rule} Esc back"),
         Mode::Name { .. } => format!("Enter choose the model {rule} Esc back"),
     };
-    Line::styled(text, look.styles.dim)
+    Line::styled(fit(&text, width, look.symbols.more), look.styles.dim)
 }
 
 /// The label and the editor of a step that asks for text.
 fn asking(list: &SessionList) -> Option<(&'static str, &Editor)> {
     match &list.mode {
         Mode::Rename(editor) => Some(("New name: ", editor)),
+        Mode::Filter(editor) => Some(("Filter: ", editor)),
         Mode::Workspace(editor) => Some(("Workspace: ", editor)),
         Mode::Name { name, .. } => Some(("Name (empty: from the workspace): ", name)),
-        Mode::Browse | Mode::ConfirmKill => None,
+        Mode::Browse | Mode::ConfirmDelete(_) => None,
     }
+}
+
+/// The step line when nothing is asked: the filter, how many are shown, how
+/// many are marked, each when it applies.
+fn counts(list: &SessionList, shown: usize, rule: &str) -> String {
+    let mut parts = Vec::new();
+    if !list.filter.trim().is_empty() {
+        parts.push(format!("filter: {}", list.filter.trim()));
+        parts.push(format!("{shown} of {}", list.sessions.len()));
+    }
+    if !list.marked.is_empty() {
+        parts.push(format!("{} marked", list.marked.len()));
+    }
+    parts.join(&format!(" {rule} "))
 }
 
 pub fn draw(app: &App, frame: &mut Frame<'_>, size: Rect) {
@@ -143,12 +208,17 @@ pub fn draw(app: &App, frame: &mut Frame<'_>, size: Rect) {
     let symbols = &look.symbols;
     let cells = WIDTH.min(size.width.saturating_sub(4));
     let width = usize::from(cells);
-    let rows = aligned(&table(list, symbols, width));
-    let count = list.sessions.len().max(1);
+    let visible = list.visible();
+    let rows = aligned(&table(list, &visible, symbols, width));
+    let count = visible.len().max(1);
     let wanted = u16::try_from(count + CHROME).unwrap_or(u16::MAX);
     let area = popup::open(frame, size, " Sessions ", cells, wanted, look);
     let room = usize::from(area.height).saturating_sub(CHROME).max(1);
-    let first = (list.selected() + 1).saturating_sub(room);
+    let at = visible
+        .iter()
+        .position(|&i| i == list.selected())
+        .unwrap_or(0);
+    let first = (at + 1).saturating_sub(room);
 
     let mut rows = rows.into_iter();
     let heading = rows.next().unwrap_or_default();
@@ -162,16 +232,30 @@ pub fn draw(app: &App, frame: &mut Frame<'_>, size: Rect) {
     )];
     if list.sessions.is_empty() {
         lines.push(Line::styled("no sessions", look.styles.dim));
+    } else if visible.is_empty() {
+        lines.push(Line::styled("no session matches", look.styles.dim));
     }
-    for (i, (row, session)) in rows.zip(&list.sessions).enumerate().skip(first).take(room) {
+    let sessions = visible
+        .iter()
+        .filter_map(|&i| list.sessions.get(i).map(|s| (i, s)));
+    for (row, (i, session)) in rows.zip(sessions).skip(first).take(room) {
         let selected = i == list.selected();
         let pointer = if selected { symbols.pointer } else { " " };
-        let mark = if session.id == list.current {
+        let mark = if list.marked.contains(&session.id) {
+            symbols.marked
+        } else {
+            " "
+        };
+        let current = if session.id == list.current {
             symbols.done
         } else {
             " "
         };
-        let text = fit(&format!("{pointer} {mark} {row}"), width, symbols.more);
+        let text = fit(
+            &format!("{pointer} {mark} {current} {row}"),
+            width,
+            symbols.more,
+        );
         let style = if selected {
             look.styles.selection
         } else if session.state == State::Waiting {
@@ -190,19 +274,28 @@ pub fn draw(app: &App, frame: &mut Frame<'_>, size: Rect) {
         let text = shown.get(row).cloned().unwrap_or_default();
         cursor = Some(label.width() + col);
         Line::styled(format!("{label}{text}"), look.styles.text)
-    } else if list.mode == Mode::ConfirmKill {
-        let name = list.chosen().map_or("", |s| s.name.as_str());
+    } else if let Mode::ConfirmDelete(names) = &list.mode {
+        let question = confirm_delete(&list.named(names));
         Line::styled(
-            format!("Kill {name} and delete its files? [y] yes  [n] no"),
+            fit(&format!("{question} [y] yes  [n] no"), width, symbols.more),
             look.styles.warning,
         )
     } else if let Some(message) = &list.message {
         Line::styled(fit(message, width, symbols.more), look.styles.error)
+    } else if let Some(done) = &list.done {
+        Line::styled(fit(done, width, symbols.more), look.styles.accent)
     } else {
-        Line::raw("")
+        Line::styled(
+            fit(
+                &counts(list, visible.len(), symbols.rule),
+                width,
+                symbols.more,
+            ),
+            look.styles.dim,
+        )
     };
     lines.push(step);
-    lines.push(keys(list, look));
+    lines.push(keys(list, look, width));
     frame.render_widget(Paragraph::new(lines), area);
     if let Some(cell) = cursor.and_then(|c| u16::try_from(c).ok()) {
         let y = area.y + area.height.saturating_sub(2);

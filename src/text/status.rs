@@ -583,6 +583,8 @@ pub(crate) mod tests {
                 model: "fake/gone".into(),
                 state: State::Saved,
                 created: 1_793_491_200,
+                updated: 0,
+                turns: 0,
                 queued: 0,
                 question: None,
                 usage: TokenTotals::default(),
