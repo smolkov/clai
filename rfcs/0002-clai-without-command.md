@@ -1,7 +1,7 @@
 # `clai` without a command opens the TUI
 
 - RFC: 0002
-- Status: accepted
+- Status: done
 - Milestone: TUI core (see [`implementation.md`](../implementation.md)),
   the entry point part of [RFC 0001](0001-tui-core.md)
 - Spec: [`spec/command.md`](../spec/command.md), "clai" and "clai new";

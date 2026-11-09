@@ -134,8 +134,8 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [x] Cancel, double `Ctrl-C`, `Ctrl-D`, session ended, reconnect for 10 s.
 - [x] `/help`, `/detach`, `/quit`, `/model ARG`, `/rename`, `/kill`.
 - [x] `clai`, `clai new`, `clai attach`; exit codes and the detach line.
-- [ ] Manual run in kitty or foot (`Shift-Enter`, mouse); then RFC 0001 and 0002
-      to `done`.
+- [ ] Manual run in kitty or foot (`Shift-Enter`, mouse); RFC 0001 and 0002
+      are marked `done` already.
 - [ ] A pseudo-terminal end-to-end test in the test suite (start, `Ctrl-D`,
       detach line, session still in `clai ls`).
 - [ ] Measure the full replay on a long session; paged loading if too slow.

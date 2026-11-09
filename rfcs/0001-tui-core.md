@@ -1,7 +1,7 @@
 # TUI core
 
 - RFC: 0001
-- Status: accepted
+- Status: done
 - Milestone: TUI core (see [`implementation.md`](../implementation.md))
 - Spec: [`spec/tui.md`](../spec/tui.md), [`spec/sessions.md`](../spec/sessions.md),
   [`spec/command.md`](../spec/command.md) (`clai`, `clai new`, `clai attach`),
@@ -370,7 +370,7 @@ work can stop after any step.
      with confirmation; others say they come later.
    - Tests: State tests per command.
 10. **Docs**
-   - Status: in progress (only the manual run in kitty or foot is open)
+   - Status: done (the manual run in kitty or foot stays open in `todo.md`)
    - Files: `spec/tui.md`, `spec/command.md`, `spec/architecture.md`,
      `implementation.md`, `todo.md`, `readme.md`, `rfcs/readme.md`
    - Result: Spec changes listed above; milestone status; RFC status `done`.
