@@ -44,12 +44,12 @@ pub struct Run {
 }
 
 /// Exit code after `Ctrl-C`.
-const INTERRUPTED: u8 = 130;
+pub(super) const INTERRUPTED: u8 = 130;
 
 /// The signal that stopped the run: none yet, `SIGINT`, other.
-const NO_SIGNAL: u8 = 0;
-const SIGINT: u8 = 1;
-const OTHER_SIGNAL: u8 = 2;
+pub(super) const NO_SIGNAL: u8 = 0;
+pub(super) const SIGINT: u8 = 1;
+pub(super) const OTHER_SIGNAL: u8 = 2;
 
 /// Who answers questions in this run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -209,9 +209,10 @@ async fn turn(mut agent: Agent, task: String, asker: Box<dyn Asker>, unicode: bo
     }
 }
 
-/// `SIGINT`, `SIGTERM` and `SIGHUP` cancel the turn. Later signals are
+/// `SIGINT`, `SIGTERM` and `SIGHUP` cancel the turn (or the request of
+/// `clai commit`). Later signals are
 /// ignored while it stops, so no command is left running.
-fn watch_signals(cancel: CancellationToken, stopped: Arc<AtomicU8>) -> Result<()> {
+pub(super) fn watch_signals(cancel: CancellationToken, stopped: Arc<AtomicU8>) -> Result<()> {
     let listen = |kind: SignalKind| signal(kind).map_err(Error::io("signal handler"));
     let mut int = listen(SignalKind::interrupt())?;
     let mut term = listen(SignalKind::terminate())?;

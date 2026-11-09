@@ -134,4 +134,4 @@ Sections that do not apply may be left out.
 | [0010](0010-security-hardening.md) | Security hardening | done |
 | [0011](0011-session-list-delete-and-filter.md) | Session list: delete, marks and filter | draft |
 | [0012](0012-questions-from-the-model.md) | Questions from the model | done |
-| [0013](0013-commit-message.md) | Commit messages from staged changes | draft |
+| [0013](0013-commit-message.md) | Commit messages from staged changes | done |

@@ -55,7 +55,7 @@ Statements marked **(assumption)** need a decision from the user.
 | Client | Connecting, starting the server, request/response, event stream. | Protocol | [`sessions.md`](sessions.md) |
 | TUI | View state: layout, scroll, expanded entries, input editor, prompts. | Client | [`tui.md`](tui.md) |
 | Commands | Parsing the command line and running one command. | Client, config, commit | [`command.md`](command.md) |
-| Commit | Collecting git changes and asking a model for a message. | Provider, config | `commit.md` (planned) |
+| Commit | Collecting staged git changes and asking a model for a message. | Provider, config, permissions | [`commit.md`](commit.md) |
 
 ### Layers
 
@@ -102,9 +102,9 @@ clai/
 │   ├── book.toml, SUMMARY.md   mdBook configuration and table of contents
 │   ├── readme.md               introduction, terms, index, open questions
 │   ├── architecture.md         this file
-│   ├── command.md, tui.md, sessions.md
+│   ├── command.md, tui.md, sessions.md, commit.md
 │   ├── config.md, providers.md, tools.md, agent-loop.md
-│   └── context.md, commit.md   planned
+│   └── context.md              planned
 │
 ├── src/
 │   ├── main.rs                 entry point: parse, run, exit code
@@ -117,7 +117,11 @@ clai/
 │   │       models.rs, commit.rs, server.rs, completion.rs
 │   │   └── chat/               clai chat: mod.rs (options, --list, script form),
 │   │                           talk.rs (conversation), questions.rs (--questions)
-│   │       commit.rs            git changes, commit message   planned
+│   ├── commit/                 commit messages (commit.md)
+│   │   ├── mod.rs              prepare, request, clean, describe
+│   │   ├── git.rs              running git: root, state, staged files, subjects
+│   │   ├── changes.rs          size budget and protected files
+│   │   └── prompt.rs, prompt.md   agent file, system prompt, user message
 │   ├── config/                 Config (config.md)
 │   │   ├── mod.rs              files, precedence, validation
 │   │   ├── file.rs             TOML files as written

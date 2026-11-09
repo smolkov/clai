@@ -19,7 +19,7 @@ Statements marked **(assumption)** need a decision from the user.
 | [`clai send`](#clai-send) | Send a message to a session without attaching. | [`sessions.md`](sessions.md) |
 | [`clai chat`](#clai-chat) | Chat with a session in the terminal, without the TUI, or answer the questions of sessions. | [`sessions.md`](sessions.md), "Questions" |
 | [`clai models`](#clai-models) | List configured providers and models. | [`config.md`](config.md) |
-| [`clai commit`](#clai-commit) | Print a commit message for the changes in a directory. | [`commit.md`](commit.md) |
+| [`clai commit`](#clai-commit) | Print a commit message for the staged changes of a repository, or with `-a` all changes of tracked files. | [`commit.md`](commit.md) |
 | [`clai export`](#clai-export), [`clai import`](#clai-import) | Write a session to a file, add one from a file. | [`sessions.md`](sessions.md), "Persistence" |
 | [`clai server`](#clai-server) | Run, stop or check the background server. | [`sessions.md`](sessions.md) |
 | [`clai completion`](#clai-completion) | Print the shell code for Tab completion. | this file |
@@ -487,26 +487,33 @@ local/qwen        qwen3-coder:30b     32k
 ## clai commit
 
 ```sh
-clai commit [--staged] [--model PROVIDER/MODEL] [--hint TEXT] [DIR]
+clai commit [-a] [--model PROVIDER/MODEL] [--hint TEXT] [DIR]
 ```
 
-Prints a generated commit message for the changes below `DIR` (default: the
-current directory) on standard output. Commits nothing. How changes are
-collected and the message is generated: [`commit.md`](commit.md).
+Prints a generated commit message for the changes staged in the git
+repository that holds `DIR` (default: the current directory) on standard
+output. Commits nothing. Only staged changes are described, all of them,
+also those outside `DIR`; with `-a`, also the unstaged changes of tracked
+files, as `git commit -a` commits them. The project's commit rules come from its agent file
+(`AGENTS.md`, `AGENT.md` or `agent.md` at the repository root). How changes
+are collected and the message is generated: [`commit.md`](commit.md).
 
 | Option | Meaning |
 |--------|---------|
-| `--staged` | Describe only the staged changes. |
+| `-a`, `--all` | Describe all changes of tracked files, staged or not, as `git commit -a` commits them. Untracked files are left out. |
 | `--model` | Model to use. Default: `commit.model`, then `default_model`. |
 | `--hint TEXT` | Extra instruction for the model, e.g. `--hint "fixes #12"`. |
 
-Standard output gets only the message, ending with one newline. Exit `1` if
-there is nothing to commit, `DIR` is not in a git repository, a merge or
-rebase is in progress, or the model request failed.
+Standard output gets only the message, ending with one newline. Standard
+error shows a progress line when it is a terminal. Exit `1` if nothing is
+staged (with `-a`: nothing changed), `DIR` is not in a git repository, a merge, rebase, cherry-pick or
+revert is in progress, or the model request failed; `130` after `Ctrl-C`.
+All errors: [`commit.md`](commit.md), "Errors".
 
 ```sh
 git add -A && clai commit | git commit -F -
-clai commit --staged | git commit -F -
+git add src && clai commit --hint "fixes #12" | git commit -F -
+clai commit -a | git commit -a -F -
 ```
 
 ## clai server

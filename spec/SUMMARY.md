@@ -9,7 +9,7 @@
 - [Commands](command.md)
 - [TUI](tui.md)
 - [Sessions](sessions.md)
-- [Commit messages]()
+- [Commit messages](commit.md)
 
 # Setup
 

@@ -16,11 +16,20 @@ fn clai(name: &str, args: &[&str]) -> (Output, PathBuf) {
         .env("XDG_CONFIG_HOME", state.join("config"))
         .env("XDG_STATE_HOME", &state)
         .env("XDG_RUNTIME_DIR", state.join("run"))
+        .env("GIT_CEILING_DIRECTORIES", env!("CARGO_TARGET_TMPDIR"))
         .env_remove("CLAI_LOG")
         .env_remove("CLAI_MODEL")
         .output()
         .unwrap();
     (output, state)
+}
+
+/// A directory outside any git repository, for a command that fails:
+/// `clai commit` in it.
+fn no_repository() -> String {
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("no-repository");
+    std::fs::create_dir_all(&dir).unwrap();
+    dir.display().to_string()
 }
 
 fn stderr(output: &Output) -> String {
@@ -49,13 +58,14 @@ fn unknown_option_exits_2() {
 }
 
 #[test]
-fn unbuilt_command_exits_1() {
-    let (out, state) = clai("commit", &["commit"]);
+fn failed_command_exits_1() {
+    let dir = no_repository();
+    let (out, state) = clai("commit", &["commit", &dir]);
     assert_eq!(out.status.code(), Some(1));
     assert!(out.stdout.is_empty());
-    assert_eq!(stderr(&out), "clai: 'commit' is not implemented yet\n");
+    assert_eq!(stderr(&out), format!("clai: not a git repository: {dir}\n"));
     let log = std::fs::read_to_string(state.join("clai/clai.log")).unwrap();
-    assert!(log.contains("not implemented"));
+    assert!(log.contains("not a git repository"));
 }
 
 #[test]
@@ -75,7 +85,8 @@ fn unwritable_log_only_warns() {
     let file = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("state-is-a-file");
     std::fs::write(&file, "").unwrap();
     let out = Command::new(env!("CARGO_BIN_EXE_clai"))
-        .arg("commit")
+        .args(["commit", &no_repository()])
+        .env("GIT_CEILING_DIRECTORIES", env!("CARGO_TARGET_TMPDIR"))
         .env("XDG_STATE_HOME", &file)
         .output()
         .unwrap();
@@ -85,17 +96,15 @@ fn unwritable_log_only_warns() {
         err.starts_with("clai: warning: cannot open log file"),
         "{err}"
     );
-    assert!(
-        err.ends_with("clai: 'commit' is not implemented yet\n"),
-        "{err}"
-    );
+    assert!(err.contains("clai: not a git repository: "), "{err}");
 }
 
 #[test]
 fn config_before_command() {
-    let (out, _) = clai("config-before", &["--config", "c.toml", "commit"]);
+    let dir = no_repository();
+    let (out, _) = clai("config-before", &["--config", "c.toml", "commit", &dir]);
     assert_eq!(out.status.code(), Some(1));
-    assert_eq!(stderr(&out), "clai: 'commit' is not implemented yet\n");
+    assert_eq!(stderr(&out), format!("clai: not a git repository: {dir}\n"));
 }
 
 #[test]

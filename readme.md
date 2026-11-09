@@ -8,9 +8,8 @@ permission rules, and shows every change and command.
 > Status: in development. The TUI (`clai`, `clai new`, `clai attach`), `clai run`
 > (one task, without the TUI), sessions in the background server, saved and
 > resumed (`ls`, `send`, `chat`, `kill`, `export`, `import`, `server`),
-> `clai models` and `clai completion` work; `clai commit` exits with "not
-> implemented yet". The session list, model picker and themes of the TUI come
-> next. See [`todo.md`](todo.md).
+> `clai models`, `clai commit` and `clai completion` work. The TUI `/commit`
+> dialog and context management come next. See [`todo.md`](todo.md).
 
 ## Build
 
@@ -42,7 +41,7 @@ Tab then completes commands, options, and the configured models for
 | `clai new`, `clai attach`, `clai ls`, `clai kill`, `clai send` | Manage sessions in the background server. |
 | `clai chat` | Chat with a session in the terminal, or answer its questions. |
 | `clai models` | List configured providers and models. |
-| `clai commit` | Print a commit message for the changes in a directory. |
+| `clai commit` | Print a commit message for the staged changes (`-a`: all changes of tracked files): `clai commit -a \| git commit -a -F -`. |
 | `clai export`, `clai import` | Write a session to a file, add one from a file. |
 | `clai server` | Run, stop or check the background server. |
 | `clai completion [SHELL]` | Print the shell code for Tab completion. |

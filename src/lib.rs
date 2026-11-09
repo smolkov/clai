@@ -4,6 +4,7 @@ pub mod agent;
 pub mod cli;
 pub mod client;
 pub mod command;
+pub mod commit;
 pub mod complete;
 pub mod config;
 pub mod error;

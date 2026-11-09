@@ -444,7 +444,7 @@ Allowed in the user and the project file.
 
 ```toml
 [commit]
-model   = "local/qwen"   # model for commit messages; default: session model or default_model
+model   = "local/qwen"   # model for commit messages; default: default_model (clai commit), the session model (/commit)
 trailer = "Co-Authored-By: clai <clai@localhost>"   # added after the body; default: none
 ```
 

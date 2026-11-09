@@ -216,6 +216,19 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [x] TUI question box: options, ticks, typed text, review page, skip.
 - [ ] Keep what was chosen in the box when switching sessions and back.
 
+## Commit messages (RFC 0013)
+
+- [x] `clai commit`: staged changes only, from the repository of `DIR`;
+      `--staged` removed.
+- [x] Git without programs from the repository's config; size budget;
+      protected files named only.
+- [x] Agent file (`AGENTS.md`, `AGENT.md`, `agent.md`) at the root; recent
+      subjects; `--hint`; `[commit] model` and `trailer`.
+- [x] One request without tools; cleaned message on standard output.
+- [x] `-a` / `--all`: also unstaged changes of tracked files, as
+      `git commit -a`.
+- [ ] TUI `/commit` dialog (`spec/tui.md`, "Commit").
+
 ## Refactoring
 
 - [x] A: `Choice::name`, `text::ansi`, `text::Terminal`, `sync::lock`,
@@ -236,7 +249,7 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [ ] TUI sessions and settings: the rest (syntax highlighting; a server notice
       for session state changes, a new protocol version, in place of polling
       `list`)
-- [ ] Commit (needs `spec/commit.md`)
+- [ ] Commit: the TUI `/commit` dialog (`clai commit` is built, RFC 0013)
 - [ ] Context management (history trimming of old tool results: RFC 0008,
       draft; the rest needs `spec/context.md`)
 - [ ] Release

@@ -54,26 +54,3 @@ impl Context {
         config::load(&self.load_options(workspace))
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::Context;
-    use crate::cli::Cli;
-    use crate::error::Error;
-
-    /// Commands not built yet report their own name.
-    #[test]
-    fn unbuilt_commands_are_unsupported() {
-        let cases: &[(&[&str], &str)] = &[(&["commit"], "commit")];
-        for (args, name) in cases {
-            let cli = Cli::parse_args(std::iter::once("clai").chain(args.iter().copied())).unwrap();
-            let command = cli.into_command();
-            let command = command.execute();
-            assert_eq!(command.name(), *name);
-            match command.run(&Context::default()) {
-                Err(Error::Unsupported { what }) => assert_eq!(what, *name, "{args:?}"),
-                other => panic!("{args:?}: {other:?}"),
-            }
-        }
-    }
-}

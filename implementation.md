@@ -68,7 +68,7 @@ maps to the code.
 | `server` | Socket, start on demand, idle exit, session registry. | `sessions.md` |
 | `client` | Connect, start the server if needed, request/response and event stream. | `sessions.md` |
 | `tui` | Layout, conversation, input editor, prompts, the question box, session list, model picker, commit dialog, themes. | `tui.md`, `config.md` "TUI" |
-| `commit` | Collect git changes, generate message, run git. | `commit.md` |
+| `commit` | Collect staged git changes and the agent file's rules, generate the message. | `commit.md` |
 | `cli` | `Cli`, the `Command` enum (one struct per variant), parsing, `Cli::into_command`, and `Command::execute`, the one dispatch over all commands. | `command.md` |
 | `complete` | Value completers for Tab completion (`--model`, later session names). | `command.md`, "clai completion" |
 | `command` | One file per command (`command/models.rs`, …) with its argument struct and `impl Execute` (`name`, `run`); `Execute` and `Context` (the `--config` path, load options) in `command/mod.rs`; `command/common.rs` for what several commands and the TUI share (new-session request and creation, workspace check, text or `-`). Commands not built yet return "not implemented". | `command.md` |
@@ -359,9 +359,9 @@ Tests: snapshots of list, picker, command list and each built-in theme.
 
 ### Commit
 
-- `clai commit` and the TUI `/commit` dialog.
-
-Needs: `spec/commit.md`, which is linked from the spec but not written.
+- `clai commit`: a message for the staged changes, with the rules of the
+  agent file (built, see [RFC 0013](rfcs/0013-commit-message.md)).
+- The TUI `/commit` dialog: stage, describe with the same code, commit.
 
 ### Context management
 
@@ -385,7 +385,7 @@ Needs: `spec/context.md`.
 | Tools and permissions | Open question 5 in `spec/readme.md` (sandbox); open questions in `spec/tools.md`. |
 | Agent loop | Assumptions and open questions in `spec/agent-loop.md`. |
 | One-shot mode | Open question 2 (one-shot first, as proposed here). |
-| Commit | `spec/commit.md`. |
+| Commit | `/commit`: `spec/tui.md`, "Commit" (`spec/commit.md` is written). |
 | Context management | `spec/context.md`. |
 | Release | Open question 4 (platforms). |
 

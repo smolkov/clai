@@ -1,7 +1,7 @@
 # Commit messages from staged changes
 
 - RFC: 0013
-- Status: draft
+- Status: done
 - Milestone: Commit in `implementation.md`
 - Spec: `command.md` "clai commit", `config.md` "Commit", `commit.md` (new),
   `architecture.md` "Commit"
@@ -187,7 +187,7 @@ standard output.
 | Case | Exit | Message on standard error |
 |------|------|---------------------------|
 | `DIR` is not in a repository | `1` | `not a git repository: DIR` |
-| Merge, rebase, cherry-pick or revert in progress | `1` | `a merge is in progress; git writes its message` |
+| Merge, rebase, cherry-pick or revert in progress | `1` | `a merge is in progress; git writes its commit message` |
 | Nothing staged | `1` | `nothing staged; stage changes with git add first` |
 | `git` missing or failing | `1` | `git: ...` with git's message |
 | Model request failed | `1` | the provider's error, as in `clai run` |
@@ -241,29 +241,29 @@ standard output.
 ## Implementation plan
 
 1. **Git changes**
-   - Status: todo
+   - Status: done
    - Files: `src/commit/mod.rs`, `src/commit/git.rs`, `src/lib.rs`
    - Result: the root, the state checks, the stat, the staged diff per
      file and recent subjects can be read.
    - Tests: the git cases above.
 2. **Budget and protected files**
-   - Status: todo
+   - Status: done
    - Files: `src/commit/changes.rs`
    - Result: the changes text sent to the model, within the budget.
    - Tests: the budget cases above.
 3. **Prompt and agent file**
-   - Status: todo
+   - Status: done
    - Files: `src/commit/prompt.rs`, `src/commit/prompt.md`
    - Result: the request for a set of changes.
    - Tests: the prompt cases above.
 4. **Request and output**
-   - Status: todo
+   - Status: done
    - Files: `src/commit/mod.rs`
    - Result: `describe` sends the request and returns the cleaned message
      with the trailer.
    - Tests: cleanup cases; `describe` against the fake provider.
 5. **Command and docs**
-   - Status: todo
+   - Status: done
    - Files: `src/command/commit.rs`, `tests/commit.rs`, the spec files,
      `readme.md`, `implementation.md`, `todo.md`
    - Result: `clai commit` works as described.
@@ -290,13 +290,35 @@ standard output.
 
 ## Open questions
 
-1. Only staged changes, always, with `--staged` removed? Proposal: yes.
-2. Agent file names: `AGENTS.md`, `AGENT.md`, `agent.md` at the root only?
-   Should `CLAUDE.md` count too? Proposal: the three names, root only.
-3. Send the whole agent file (up to 32,000 characters), or only the
-   sections that mention commits? Proposal: the whole file.
-4. Budget: 48,000 characters of changes, 8,000 per file? Proposal: yes.
-5. Diffs of protected files (secret or denied to `read_file`): leave them
-   out? Proposal: yes, name and stat only.
-6. Should `[commit]` get a `rules` key for projects without an agent file,
-   or is `--hint` enough? Proposal: `--hint` only for now.
+All were answered with the proposals when the RFC was built:
+
+1. Only staged changes, always; `--staged` is removed.
+2. Agent file names: `AGENTS.md`, `AGENT.md`, `agent.md`, at the root only;
+   `CLAUDE.md` does not count.
+3. The whole agent file is sent, up to 32,000 characters.
+4. Budget: 48,000 characters of changes, 8,000 per file.
+5. Diffs of protected files are left out; name and line counts only.
+6. No `rules` key; `--hint` is enough for now.
+
+## Notes from building
+
+- The "stat" is clai's own file list, from `--name-status -z` and
+  `--numstat -z`: one line per file with the status letter and the line
+  counts (`M src/a.rs (+3 -1)`), instead of `git diff --stat`, whose paths
+  git shortens.
+- Every git call also has `-c core.fsmonitor=false` (a file system monitor
+  in the repository's config is a program too), `--literal-pathspecs`, and
+  `GIT_OPTIONAL_LOCKS=0`; standard input is closed.
+- The agent file may be a link, but only to a file inside the repository,
+  and a protected file is not read.
+- Output tokens are 1,024, or the model's `max_output_tokens` if lower.
+- The progress line is written as is, without the `clai: ` prefix of notes.
+- `clai commit` was the example of an unbuilt command in three tests of
+  `tests/cli.rs`; they now run it outside a repository. The fake model
+  server of `tests/run.rs` moved to `tests/support/`, shared with
+  `tests/commit.rs`.
+- After building: `-a` / `--all` describes all changes of tracked files,
+  as `git commit -a` commits them (`git diff HEAD`, or against the empty
+  tree before the first commit); untracked files stay out. The default
+  stays staged only, like `git commit`. 3 more tests.
+- Tests: 32 new, one removed (the unbuilt-command test of `src/command/mod.rs`); 702 in all.

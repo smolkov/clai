@@ -65,7 +65,7 @@ clai "fix the failing test"   # one-shot: run one task, print the result, exit
 clai attach [NAME]            # attach to a running session
 clai ls                       # list sessions
 clai models                   # list configured providers and models
-clai commit                   # print a commit message for the changes here
+clai commit                   # print a commit message for the staged changes
 ```
 
 All commands, options and exit codes: [`command.md`](command.md).
@@ -137,7 +137,7 @@ When a spec file is added, renamed or removed, update this table and
 | [`command.md`](command.md) | draft | All command-line commands: syntax, options, output, exit codes. |
 | [`tui.md`](tui.md) | draft | Full-screen interface: layout, session list, model picker, keys, permission prompts, input editor. |
 | [`sessions.md`](sessions.md) | draft | Server, several sessions, attach/detach, session commands. |
-| [`commit.md`](commit.md) | draft | Commit messages: `clai commit` (prints to stdout) and the TUI `/commit`. |
+| [`commit.md`](commit.md) | draft | Commit messages: `clai commit` (staged changes, the agent file's rules, prints to stdout) and the TUI `/commit`. |
 | [`config.md`](config.md) | draft | Config files, precedence, providers and models, tool permissions, TUI settings and themes, validation, reloading. |
 | [`agent-loop.md`](agent-loop.md) | draft | One turn: requests, system prompt, streaming, tool calls in order, limits, cancellation, errors, events. |
 | [`tools.md`](tools.md) | draft | Each tool: arguments, results, errors, limits; paths, text files, result size, denied calls. |

@@ -366,13 +366,18 @@ mod tests {
 
     #[test]
     fn commit_command() {
-        let cli = parse(&["commit", "--staged", "--hint", "fixes #12", "src"]);
+        let cli = parse(&["commit", "--hint", "fixes #12", "src"]);
         let Some(Command::Commit(args)) = cli.command else {
             panic!("not commit");
         };
-        assert!(args.staged);
         assert_eq!(args.hint.as_deref(), Some("fixes #12"));
         assert_eq!(args.dir, Some(PathBuf::from("src")));
+        assert!(!args.all);
+        let cli = parse(&["commit", "-a"]);
+        let Some(Command::Commit(args)) = cli.command else {
+            panic!("not commit");
+        };
+        assert!(args.all);
     }
 
     fn name(args: &[&str]) -> &'static str {
