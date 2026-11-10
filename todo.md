@@ -185,7 +185,7 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [x] Saving `[tui]` into the user file with `toml_edit`: comments kept,
       checked, atomic, refused when the file changed.
 - [x] `/theme [NAME]` with the theme list; `/settings` with the settings box.
-- [ ] Syntax highlighting (`syntax_highlight`, a theme's `code` key).
+- [ ] Syntax highlighting (`syntax_highlight`, a theme's `code` key): RFC 0017.
 - [ ] Look at the `dark` and `light` palettes in a real terminal (RFC 0006,
       open question 10).
 
