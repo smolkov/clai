@@ -197,6 +197,22 @@ fn parse_hex(s: &str) -> Option<Colour> {
     Some(Colour::Rgb(byte(0..2)?, byte(2..4)?, byte(4..6)?))
 }
 
+/// The names the `code` key of a theme takes: `clai`'s own (`ansi`, and those
+/// of the bundled themes) and the themes `syntect` bundles.
+pub const CODE_THEMES: [&str; 11] = [
+    "ansi",
+    "atom-one-dark",
+    "nord",
+    "gruvbox-dark",
+    "base16-ocean.dark",
+    "base16-eighties.dark",
+    "base16-mocha.dark",
+    "base16-ocean.light",
+    "InspiredGitHub",
+    "Solarized (dark)",
+    "Solarized (light)",
+];
+
 /// Where a custom theme comes from (see `spec/config.md`, "Themes").
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ThemeSource {
@@ -280,6 +296,18 @@ pub(crate) fn build_theme(
                 message,
             )),
         }
+    }
+    if let Some(code) = &file.code
+        && !CODE_THEMES.contains(&code.as_str())
+    {
+        errors.push(ctx.error(
+            None,
+            Some(format!("{prefix}code")),
+            format!(
+                "unknown syntax theme `{code}`; one of: {}",
+                CODE_THEMES.join(", ")
+            ),
+        ));
     }
     Some(Theme {
         base,

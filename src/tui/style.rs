@@ -6,7 +6,9 @@ use indexmap::IndexMap;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::symbols::border;
 
-use crate::config::{BuiltinTheme, Colour, Theme};
+use crate::config::{BuiltinTheme, CODE_THEMES, Colour, Theme};
+
+use super::highlight::{CodeTheme, Syntax};
 
 /// What colours the terminal shows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,6 +49,8 @@ pub struct Styles {
     pub heading: Style,
     /// Painted over the whole screen when the theme sets `background`.
     pub background: Option<Color>,
+    /// How code is highlighted: the theme's `code` key.
+    pub syntax: Syntax,
 }
 
 impl Styles {
@@ -75,6 +79,14 @@ impl Styles {
             code: fg(Color::Yellow),
             heading: fg(Color::Blue).add_modifier(Modifier::BOLD),
             background: None,
+            syntax: if colour {
+                Syntax {
+                    theme: CodeTheme::Ansi,
+                    colouring: Colouring::Ansi256,
+                }
+            } else {
+                Syntax::OFF
+            },
         }
     }
 
@@ -84,20 +96,28 @@ impl Styles {
         if colouring == Colouring::None {
             return Styles::new(false);
         }
-        let (base, colours): (BuiltinTheme, &[(&str, Colour)]) =
+        let (base, colours, code): (BuiltinTheme, &[(&str, Colour)], Option<&str>) =
             match (BuiltinTheme::from_name(name), themes.get(name)) {
-                (Some(builtin), _) => (builtin, &[]),
-                (None, Some(theme)) => (theme.base, &theme.colours),
-                (None, None) => (BuiltinTheme::Terminal, &[]),
+                (Some(builtin), _) => (builtin, &[], None),
+                (None, Some(theme)) => (theme.base, &theme.colours, theme.code.as_deref()),
+                (None, None) => (BuiltinTheme::Terminal, &[], None),
             };
         let mut styles = match base {
             BuiltinTheme::Terminal => Styles::new(true),
-            BuiltinTheme::Dark => Styles::palette(&DARK),
-            BuiltinTheme::Light => Styles::palette(&LIGHT),
+            BuiltinTheme::Dark => Styles::palette(&DARK, "base16-ocean.dark"),
+            BuiltinTheme::Light => Styles::palette(&LIGHT, "InspiredGitHub"),
         };
         for (key, colour) in colours {
             styles.set(key, colour_of(*colour, colouring));
         }
+        // An unknown name is an error of the configuration; here it keeps
+        // the base's.
+        match code.and_then(|name| CODE_THEMES.iter().find(|n| **n == name)) {
+            Some(&"ansi") => styles.syntax.theme = CodeTheme::Ansi,
+            Some(name) => styles.syntax.theme = CodeTheme::Named(name),
+            None => {}
+        }
+        styles.syntax.colouring = colouring;
         // A selection by background keeps the theme's text colour.
         if styles.selection.bg.is_some() {
             styles.selection.fg = styles.text.fg;
@@ -105,7 +125,15 @@ impl Styles {
         styles
     }
 
-    fn palette(p: &Palette) -> Styles {
+    /// `syntax_highlight = false`: code as plain text.
+    pub fn highlighting(mut self, on: bool) -> Styles {
+        if !on {
+            self.syntax = Syntax::OFF;
+        }
+        self
+    }
+
+    fn palette(p: &Palette, code: &'static str) -> Styles {
         let fg = |n: u8| Style::new().fg(Color::Indexed(n));
         let bold = Modifier::BOLD;
         Styles {
@@ -123,6 +151,10 @@ impl Styles {
             code: fg(p.code),
             heading: fg(p.accent).add_modifier(bold),
             background: None,
+            syntax: Syntax {
+                theme: CodeTheme::Named(code),
+                colouring: Colouring::Ansi256,
+            },
         }
     }
 
@@ -366,13 +398,23 @@ pub struct Look {
 }
 
 impl Look {
-    /// The `terminal` theme.
+    /// The `terminal` theme, without highlighting: whether the grammars are
+    /// loaded depends on which tests ran before. Tests of highlighting turn it
+    /// on with [`Look::highlighted`].
     #[cfg(test)]
     pub fn new(unicode: bool, colour: bool) -> Look {
         Look {
-            styles: Styles::new(colour),
+            styles: Styles::new(colour).highlighting(false),
             symbols: Symbols::new(unicode),
         }
+    }
+
+    /// With highlighting on, its grammars loaded.
+    #[cfg(test)]
+    pub fn highlighted(mut self, theme: CodeTheme, colouring: Colouring) -> Look {
+        super::highlight::load();
+        self.styles.syntax = Syntax { theme, colouring };
+        self
     }
 
     pub fn themed(unicode: bool, styles: Styles) -> Look {
@@ -398,6 +440,51 @@ mod tests {
                 source: ThemeSource::Table,
             },
         )])
+    }
+
+    #[test]
+    fn syntax_themes_by_theme() {
+        let none = IndexMap::new();
+        let theme = |name: &str, themes: &IndexMap<String, Theme>, colouring| {
+            Styles::themed(name, themes, colouring).syntax
+        };
+        assert_eq!(
+            theme("terminal", &none, Colouring::Ansi256).theme,
+            CodeTheme::Ansi
+        );
+        assert_eq!(
+            theme("dark", &none, Colouring::TrueColour),
+            Syntax {
+                theme: CodeTheme::Named("base16-ocean.dark"),
+                colouring: Colouring::TrueColour
+            }
+        );
+        assert_eq!(
+            theme("light", &none, Colouring::Ansi256).theme,
+            CodeTheme::Named("InspiredGitHub")
+        );
+        assert_eq!(theme("dark", &none, Colouring::None), Syntax::OFF);
+        let mut mine = custom(BuiltinTheme::Light, Vec::new());
+        assert_eq!(
+            theme("mine", &mine, Colouring::Ansi256).theme,
+            CodeTheme::Named("InspiredGitHub")
+        );
+        if let Some(t) = mine.get_mut("mine") {
+            t.code = Some("Solarized (light)".into());
+        }
+        assert_eq!(
+            theme("mine", &mine, Colouring::Ansi256).theme,
+            CodeTheme::Named("Solarized (light)")
+        );
+        if let Some(t) = mine.get_mut("mine") {
+            t.code = Some("ansi".into());
+        }
+        assert_eq!(
+            theme("mine", &mine, Colouring::Ansi256).theme,
+            CodeTheme::Ansi
+        );
+        let off = Styles::themed("dark", &none, Colouring::Ansi256).highlighting(false);
+        assert_eq!(off.syntax, Syntax::OFF);
     }
 
     #[test]

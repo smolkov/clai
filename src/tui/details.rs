@@ -11,8 +11,8 @@ use super::wrap::{Piece, Source, copy_text, fit, wrap_rows};
 pub struct Details {
     /// `edit_file src/parse.rs ─ ✓ +1 −1`.
     pub title: String,
-    /// The text, one piece per line.
-    pub lines: Vec<Piece>,
+    /// The text: the pieces of each line.
+    pub lines: Vec<Vec<Piece>>,
     /// Said under the text: `the output was cut at 1 MiB`.
     pub note: Option<String>,
     /// The first row shown.
@@ -40,7 +40,7 @@ pub struct Details {
 }
 
 impl Details {
-    pub fn new(title: String, lines: Vec<Piece>, note: Option<String>) -> Details {
+    pub fn new(title: String, lines: Vec<Vec<Piece>>, note: Option<String>) -> Details {
         Details {
             title,
             lines,
@@ -70,17 +70,15 @@ impl Details {
             self.rows.clear();
             self.row_lines.clear();
             let none = (String::new(), ratatui::style::Style::new());
-            for (i, (text, style)) in self.lines.iter().enumerate() {
+            for (i, pieces) in self.lines.iter().enumerate() {
                 if self.wrap {
-                    for row in wrap_rows(&[(text.clone(), *style)], width, &none, &none) {
+                    for row in wrap_rows(pieces, width, &none, &none) {
                         self.rows.push(row);
                         self.row_lines.push(i);
                     }
                 } else {
-                    let shifted: String = text.chars().skip(self.left).collect();
-                    let shown = fit(&shifted, width, "");
-                    let source = Source::text(0);
-                    self.rows.push((Line::styled(shown, *style), source));
+                    self.rows
+                        .push((shifted(pieces, self.left, width), Source::text(0)));
                     self.row_lines.push(i);
                 }
             }
@@ -119,7 +117,7 @@ impl Details {
 
     /// All the text, for `y`.
     pub fn text(&self) -> String {
-        let mut out: Vec<&str> = self.lines.iter().map(|(t, _)| t.as_str()).collect();
+        let mut out: Vec<String> = self.lines.iter().map(|l| plain(l)).collect();
         while out.last().is_some_and(|l| l.is_empty()) {
             out.pop();
         }
@@ -151,8 +149,8 @@ impl Details {
             } else {
                 (start + step) % count.max(1)
             };
-            let (text, _) = self.lines.get(i)?;
-            text.to_lowercase().contains(&query).then_some(i)
+            let line = self.lines.get(i)?;
+            plain(line).to_lowercase().contains(&query).then_some(i)
         });
         self.missed = found.is_none();
         if let Some(line) = found {
@@ -164,6 +162,28 @@ impl Details {
     }
 }
 
+/// The text of a line's pieces.
+fn plain(pieces: &[Piece]) -> String {
+    pieces.iter().map(|(t, _)| t.as_str()).collect()
+}
+
+/// A line of pieces from cell `left` on, `width` cells of it.
+fn shifted(pieces: &[Piece], left: usize, width: usize) -> Line<'static> {
+    let mut skip = left;
+    let mut room = width;
+    let mut spans = Vec::new();
+    for (text, style) in pieces {
+        let rest: String = text.chars().skip(skip).collect();
+        skip = skip.saturating_sub(text.chars().count());
+        let shown = fit(&rest, room, "");
+        room = room.saturating_sub(unicode_width::UnicodeWidthStr::width(shown.as_str()));
+        if !shown.is_empty() {
+            spans.push(ratatui::text::Span::styled(shown, *style));
+        }
+    }
+    Line::from(spans)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -172,7 +192,7 @@ mod tests {
     fn details(lines: &[&str]) -> Details {
         let lines = lines
             .iter()
-            .map(|l| ((*l).to_owned(), Style::new()))
+            .map(|l| vec![((*l).to_owned(), Style::new())])
             .collect();
         Details::new("t".into(), lines, None)
     }

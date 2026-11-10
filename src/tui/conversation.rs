@@ -15,6 +15,7 @@ use crate::config::ToolPreview;
 use crate::text::{main_argument, short_result};
 use crate::tools::{Details, group};
 
+use super::highlight;
 use super::markdown;
 use super::style::Look;
 use super::wrap::{Piece, Source, copy_text, fit, wrap_rows};
@@ -521,17 +522,20 @@ impl Conversation {
             return None;
         }
         let render = self.render();
-        let mut lines: Vec<Piece> = Vec::new();
+        let mut lines: Vec<Vec<Piece>> = Vec::new();
         let mut notes = Vec::new();
         for call in &calls {
             if !lines.is_empty() {
-                lines.push((String::new(), self.look.styles.text));
+                lines.push(Vec::new());
             }
             let summary = call
                 .summary
                 .clone()
                 .unwrap_or_else(|| main_argument(&call.arguments));
-            lines.push((format!("{} {summary}", call.name), self.look.styles.heading));
+            lines.push(vec![(
+                format!("{} {summary}", call.name),
+                self.look.styles.heading,
+            )]);
             lines.extend(render.body(call));
             notes.extend(cut_note(call));
         }
@@ -796,8 +800,8 @@ impl Render<'_> {
             }
         };
         let total = body.len();
-        for (i, piece) in body.into_iter().enumerate().take(shown) {
-            let rows = wrap_rows(&[piece], width, &indent, &indent);
+        for (i, pieces) in body.into_iter().enumerate().take(shown) {
+            let rows = wrap_rows(&pieces, width, &indent, &indent);
             if hidden == Some(i) {
                 lines.extend(rows.into_iter().map(|(line, _)| (line, Source::skipped())));
             } else {
@@ -819,7 +823,7 @@ impl Render<'_> {
 
     /// The preview of a call: its pieces, where a `… N lines` row goes (as a
     /// piece of its own) and how many pieces to show.
-    fn preview_body(&self, call: &ToolCall) -> (Vec<Piece>, Option<usize>, usize) {
+    fn preview_body(&self, call: &ToolCall) -> (Vec<Vec<Piece>>, Option<usize>, usize) {
         let styles = &self.look.styles;
         let limit = if self.limit == 0 {
             usize::MAX
@@ -840,7 +844,7 @@ impl Render<'_> {
         if call.name == "run_command" {
             let mut out = Vec::new();
             if let Some(command) = command_of(call) {
-                lines_into(&mut out, &format!("$ {command}"), styles.text);
+                self.command(&mut out, &command);
             }
             let output = match &call.result {
                 Some(result) => result.text.as_str(),
@@ -849,14 +853,14 @@ impl Render<'_> {
             let all: Vec<&str> = output.lines().collect();
             let hidden = all.len().saturating_sub(COMMAND_TAIL);
             if hidden > 0 {
-                out.push((
+                out.push(vec![(
                     format!("{} {} lines", self.look.symbols.more, group(hidden)),
                     styles.dim,
-                ));
+                )]);
             }
             let marker = (hidden > 0).then(|| out.len() - 1);
             for line in all.iter().skip(hidden) {
-                out.push(((*line).to_owned(), styles.text));
+                out.push(vec![((*line).to_owned(), styles.text)]);
             }
             let shown = out.len();
             return (out, marker, shown);
@@ -942,19 +946,31 @@ impl Render<'_> {
         }
     }
 
-    /// The details of an expanded call, one piece per line.
-    fn body(&self, call: &ToolCall) -> Vec<Piece> {
+    /// The details of an expanded call, the pieces of each line.
+    fn body(&self, call: &ToolCall) -> Vec<Vec<Piece>> {
         let styles = &self.look.styles;
-        let mut out: Vec<Piece> = Vec::new();
+        let mut out: Vec<Vec<Piece>> = Vec::new();
         let string = |key: &str| call.arguments.get(key).and_then(Value::as_str);
         match &call.details {
-            Some(Details::EditFile { diff, .. }) => self.diff(&mut out, &diff.text),
-            Some(Details::WriteFile { diff, content, .. }) => {
+            Some(Details::EditFile { diff, path, .. }) => {
+                self.diff(&mut out, &diff.text, Some(&path.resolved));
+            }
+            Some(Details::WriteFile {
+                diff,
+                content,
+                path,
+                ..
+            }) => {
                 if let Some(diff) = diff {
-                    self.diff(&mut out, &diff.text);
+                    self.diff(&mut out, &diff.text, Some(&path.resolved));
                 }
                 if let Some(content) = content {
-                    lines_into(&mut out, &content.text, styles.diff_add);
+                    self.file(
+                        &mut out,
+                        &content.text,
+                        Some(&path.resolved),
+                        styles.diff_add,
+                    );
                 }
             }
             Some(Details::RunCommand {
@@ -964,17 +980,17 @@ impl Render<'_> {
                 redirects,
                 ..
             }) => {
-                lines_into(&mut out, &format!("$ {command}"), styles.text);
-                out.push((format!("in {cwd}"), styles.dim));
+                self.command(&mut out, command);
+                out.push(vec![(format!("in {cwd}"), styles.dim)]);
                 if call.state == CallState::Waiting {
                     for part in parts {
                         let line = format!("{}  {}", part.text, part.decision.reason);
-                        out.push((line, styles.dim));
+                        out.push(vec![(line, styles.dim)]);
                     }
                     for r in redirects {
                         let arrow = if r.write { ">" } else { "<" };
                         let line = format!("{arrow} {}  {}", r.target, r.decision.reason);
-                        out.push((line, styles.dim));
+                        out.push(vec![(line, styles.dim)]);
                     }
                 }
             }
@@ -985,35 +1001,40 @@ impl Render<'_> {
                 ..
             }) => {
                 let line = format!("{}, lines {first_line}–{last_line}", path.resolved);
-                out.push((line, styles.dim));
+                out.push(vec![(line, styles.dim)]);
             }
             Some(Details::ListFiles { path, pattern }) => {
-                out.push((format!("{}, pattern {pattern}", path.resolved), styles.dim));
+                out.push(vec![(
+                    format!("{}, pattern {pattern}", path.resolved),
+                    styles.dim,
+                )]);
             }
             Some(Details::SearchFiles { path, pattern, .. }) => {
-                out.push((format!("{pattern} in {}", path.resolved), styles.dim));
+                out.push(vec![(
+                    format!("{pattern} in {}", path.resolved),
+                    styles.dim,
+                )]);
             }
             None => match call.name.as_str() {
                 "edit_file" => {
-                    if let Some(old) = string("old_text") {
-                        for line in old.lines() {
-                            out.push((format!("-{line}"), styles.diff_remove));
-                        }
+                    // The old and new text as one hunk.
+                    let mut diff = String::new();
+                    for line in string("old_text").unwrap_or_default().lines() {
+                        diff.push_str(&format!("-{line}\n"));
                     }
-                    if let Some(new) = string("new_text") {
-                        for line in new.lines() {
-                            out.push((format!("+{line}"), styles.diff_add));
-                        }
+                    for line in string("new_text").unwrap_or_default().lines() {
+                        diff.push_str(&format!("+{line}\n"));
                     }
+                    self.diff(&mut out, &diff, string("path"));
                 }
                 "write_file" => {
                     if let Some(content) = string("content") {
-                        lines_into(&mut out, content, styles.diff_add);
+                        self.file(&mut out, content, string("path"), styles.diff_add);
                     }
                 }
                 "run_command" => {
                     if let Some(command) = string("command") {
-                        lines_into(&mut out, &format!("$ {command}"), styles.text);
+                        self.command(&mut out, command);
                     }
                 }
                 _ => {}
@@ -1037,33 +1058,172 @@ impl Render<'_> {
     }
 
     /// A unified diff without its `---` and `+++` header: the summary names
-    /// the file.
-    fn diff(&self, out: &mut Vec<Piece>, text: &str) {
-        let styles = &self.look.styles;
+    /// the file. With a known language, the code of each line is
+    /// highlighted, the old and the new side of each hunk apart; the `+` and
+    /// `-` keep the diff colours.
+    fn diff(&self, out: &mut Vec<Vec<Piece>>, text: &str, path: Option<&str>) {
         let header = |i: usize, line: &str| {
             (i == 0 && line.starts_with("--- ")) || (i == 1 && line.starts_with("+++ "))
         };
-        for (i, line) in text.lines().enumerate() {
-            if header(i, line) {
-                continue;
+        let lines: Vec<&str> = text
+            .lines()
+            .enumerate()
+            .filter(|(i, line)| !header(*i, line))
+            .map(|(_, line)| line)
+            .collect();
+        let grammar = path.and_then(|p| highlight::by_path(p, None));
+        let mut at = 0;
+        while at < lines.len() {
+            // A hunk: its `@@` line, then the lines up to the next one.
+            let start = at;
+            at += 1;
+            while lines.get(at).is_some_and(|l| !l.starts_with("@@")) {
+                at += 1;
             }
-            let style = if line.starts_with("@@") {
-                styles.accent
-            } else if line.starts_with('+') {
-                styles.diff_add
-            } else if line.starts_with('-') {
-                styles.diff_remove
-            } else {
-                styles.text
+            let hunk = lines.get(start..at).unwrap_or_default();
+            self.hunk(out, hunk, path, grammar);
+        }
+    }
+
+    fn hunk(
+        &self,
+        out: &mut Vec<Vec<Piece>>,
+        hunk: &[&str],
+        path: Option<&str>,
+        grammar: Option<&'static syntect::parsing::SyntaxReference>,
+    ) {
+        let styles = &self.look.styles;
+        let side = |keep: char| -> String {
+            hunk.iter()
+                .filter(|l| l.starts_with(keep) || l.starts_with(' ') || l.is_empty())
+                .map(|l| format!("{}\n", l.get(1..).unwrap_or_default()))
+                .collect()
+        };
+        let key = format!("file:{}", path.unwrap_or_default());
+        let highlighted =
+            |text: String| highlight::highlight(styles.syntax, &key, grammar, &text, styles.text);
+        let (old, new) = match grammar {
+            Some(_) => (highlighted(side('-')), highlighted(side('+'))),
+            None => (None, None),
+        };
+        let tint = |colour: Style| self.tint(colour);
+        let (mut old_at, mut new_at) = (0, 0);
+        for line in hunk {
+            let (marker, code, style) = match line.chars().next() {
+                Some('@') => {
+                    out.push(vec![((*line).to_owned(), styles.accent)]);
+                    continue;
+                }
+                Some('+') => {
+                    new_at += 1;
+                    (
+                        "+",
+                        new.as_ref().and_then(|n| n.get(new_at - 1)),
+                        styles.diff_add,
+                    )
+                }
+                Some('-') => {
+                    old_at += 1;
+                    (
+                        "-",
+                        old.as_ref().and_then(|o| o.get(old_at - 1)),
+                        styles.diff_remove,
+                    )
+                }
+                Some(' ') | None => {
+                    old_at += 1;
+                    new_at += 1;
+                    (
+                        " ",
+                        new.as_ref().and_then(|n| n.get(new_at - 1)),
+                        styles.text,
+                    )
+                }
+                // `\ No newline at end of file`.
+                Some(_) => {
+                    out.push(vec![((*line).to_owned(), styles.dim)]);
+                    continue;
+                }
             };
-            out.push((line.to_owned(), style));
+            match code {
+                Some(pieces) => {
+                    let background = tint(style);
+                    let mut row = vec![(marker.to_owned(), style)];
+                    row.extend(pieces.iter().cloned());
+                    if let Some(bg) = background.filter(|_| marker != " ") {
+                        for (_, s) in &mut row {
+                            *s = s.bg(bg);
+                        }
+                    }
+                    out.push(row);
+                }
+                None => out.push(vec![((*line).to_owned(), style)]),
+            }
+        }
+    }
+
+    /// The background of a changed line: its diff colour mixed into the
+    /// theme's background, with true colour and a theme that sets one.
+    fn tint(&self, diff: Style) -> Option<ratatui::style::Color> {
+        use ratatui::style::Color;
+        let styles = &self.look.styles;
+        if styles.syntax.colouring != super::style::Colouring::TrueColour {
+            return None;
+        }
+        match (styles.background, diff.fg) {
+            (Some(Color::Rgb(r, g, b)), Some(Color::Rgb(dr, dg, db))) => {
+                let mix = |a: u8, b: u8| {
+                    u8::try_from((u16::from(a) * 82 + u16::from(b) * 18) / 100).unwrap_or(a)
+                };
+                Some(Color::Rgb(mix(r, dr), mix(g, dg), mix(b, db)))
+            }
+            _ => None,
+        }
+    }
+
+    /// The text of a file, highlighted by its name, else in `style`.
+    fn file(&self, out: &mut Vec<Vec<Piece>>, text: &str, path: Option<&str>, style: Style) {
+        let styles = &self.look.styles;
+        let grammar = path.and_then(|p| highlight::by_path(p, text.lines().next()));
+        let mut complete = text.to_owned();
+        if !complete.ends_with('\n') {
+            complete.push('\n');
+        }
+        let key = format!("file:{}", path.unwrap_or_default());
+        match highlight::highlight(styles.syntax, &key, grammar, &complete, styles.text) {
+            Some(lines) => out.extend(lines),
+            None => lines_into(out, text, style),
+        }
+    }
+
+    /// `$ command`, the command highlighted as shell.
+    fn command(&self, out: &mut Vec<Vec<Piece>>, command: &str) {
+        let styles = &self.look.styles;
+        let mut text = command.to_owned();
+        text.push('\n');
+        match highlight::highlight(
+            styles.syntax,
+            "shell",
+            highlight::shell(),
+            &text,
+            styles.text,
+        ) {
+            Some(lines) => {
+                for (i, pieces) in lines.into_iter().enumerate() {
+                    let prompt = if i == 0 { "$ " } else { "  " };
+                    let mut row = vec![(prompt.to_owned(), styles.dim)];
+                    row.extend(pieces);
+                    out.push(row);
+                }
+            }
+            None => lines_into(out, &format!("$ {command}"), styles.text),
         }
     }
 }
 
-fn lines_into(out: &mut Vec<Piece>, text: &str, style: Style) {
+fn lines_into(out: &mut Vec<Vec<Piece>>, text: &str, style: Style) {
     for line in text.lines() {
-        out.push((line.to_owned(), style));
+        out.push(vec![(line.to_owned(), style)]);
     }
 }
 

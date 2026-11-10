@@ -135,7 +135,8 @@ impl Settings {
 
     /// The look of `tui` with the themes known now.
     pub fn look_of(&self, tui: &Tui) -> Look {
-        let styles = Styles::themed(&tui.theme, &self.theming.themes, self.theming.colouring);
+        let styles = Styles::themed(&tui.theme, &self.theming.themes, self.theming.colouring)
+            .highlighting(tui.syntax_highlight);
         Look::themed(self.unicode(tui.symbols), styles)
     }
 }
@@ -178,6 +179,8 @@ pub enum Input {
     SwitchFailed(String),
     /// Copied text did not reach the clipboard: why.
     CopyFailed(String),
+    /// The grammars for syntax highlighting are loaded: lay code out again.
+    Highlighting,
 }
 
 /// What the shell has to do.
@@ -761,6 +764,15 @@ impl App {
             },
             Input::Saved(result) => {
                 self.saved(result);
+                vec![Effect::Redraw]
+            }
+            Input::Highlighting => {
+                let look = self.settings.look;
+                self.conversation.reconfigure(
+                    look,
+                    self.settings.tool_output_lines,
+                    self.settings.tui.tool_preview,
+                );
                 vec![Effect::Redraw]
             }
             Input::CopyFailed(message) => {

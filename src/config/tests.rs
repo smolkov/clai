@@ -698,6 +698,26 @@ code = "Solarized (dark)"
 }
 
 #[test]
+fn the_code_key_names_a_syntax_theme() {
+    let config = ok(&with(
+        "[themes.a]\ncode = \"ansi\"\n\n[themes.b]\ncode = \"InspiredGitHub\"\n",
+    ));
+    assert_eq!(config.themes["a"].code.as_deref(), Some("ansi"));
+    let e = errs(&with("[themes.c]\ncode = \"Monokai\"\n"), None);
+    assert!(
+        e[0].contains(
+            "themes.c.code: unknown syntax theme `Monokai`; one of: ansi, atom-one-dark, nord"
+        ),
+        "{e:?}"
+    );
+    // The bundled themes name one.
+    for (name, theme) in &crate::config::themes::file_themes(&[]).0 {
+        let code = theme.code.as_deref().unwrap_or_default();
+        assert!(CODE_THEMES.contains(&code), "{name}: {code}");
+    }
+}
+
+#[test]
 fn tool_preview_clipboard_and_the_old_key() {
     let tui = |text: &str| ok(&with(&format!("[tui]\n{text}"))).tui;
     assert_eq!(tui("").tool_preview, ToolPreview::Changes);

@@ -185,7 +185,7 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [x] Saving `[tui]` into the user file with `toml_edit`: comments kept,
       checked, atomic, refused when the file changed.
 - [x] `/theme [NAME]` with the theme list; `/settings` with the settings box.
-- [ ] Syntax highlighting (`syntax_highlight`, a theme's `code` key): RFC 0017.
+- [x] Syntax highlighting (`syntax_highlight`, a theme's `code` key): RFC 0017.
 - [ ] Look at the `dark` and `light` palettes in a real terminal (RFC 0006,
       open question 10).
 
@@ -196,6 +196,18 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [x] `retry` event and notice.
 - [x] `session_status` request, protocol 4.
 - [x] `/status [NAME]` in the TUI (live, scrollable) and in `clai chat`.
+
+## Syntax highlighting (RFC 0017)
+
+- [x] `syntect` with `fancy-regex`; grammars loaded in the background;
+      cache; incremental while streaming; limits.
+- [x] Syntax themes: `code` checked, defaults per theme, `ansi` on 16
+      colours, bundled themes name one.
+- [x] Code blocks, diffs (old and new side apart), new files, commands.
+- [ ] TOML, TypeScript and other grammars (`two-face`; RFC 0017, open
+      question 2).
+- [ ] `clai chat` and `clai run`: highlighted diffs and code blocks.
+- [ ] Look at the colours in a real terminal, each bundled theme.
 
 ## Copy text and see tool details (RFC 0016)
 

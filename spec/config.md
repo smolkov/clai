@@ -461,7 +461,7 @@ mouse             = true        # capture the mouse: wheel, drag to copy, click;
 tool_output_lines = 20          # lines of tool output shown before "… N more lines"; 0 = no limit
 tool_preview      = "changes"   # changes | all | none: what finished tool calls show
 clipboard         = "auto"      # auto | osc52 | command | off: how copied text reaches the clipboard
-syntax_highlight  = true        # highlight code blocks and diffs
+syntax_highlight  = true        # colour code blocks, diffs, new files and commands by their language
 timestamps        = false       # show the time of each user message and answer
 scroll_lines      = 3           # lines per mouse-wheel step
 max_fps           = 30          # redraw limit, 1–120
@@ -477,7 +477,7 @@ activity          = "playful"   # playful | plain | off: the line while the sess
 | `tool_preview` | What finished tool calls show below their summary ([`tui.md`](tui.md), "Conversation entries"): `changes` the diff of edits and writes, the last lines of commands and the error of failed calls; `all` every call expanded; `none` one line each. Calls waiting for permission are always expanded. |
 | `expand_tool_calls` | Deprecated: `true` reads as `tool_preview = "all"`; `tool_preview` wins when both are set. |
 | `clipboard` | How copied text reaches the clipboard ([`tui.md`](tui.md), "Copy"): `auto` the terminal's OSC 52 sequence and, when the session is local, `wl-copy`, `xclip`, `xsel` or `pbcopy`; `osc52` only the sequence; `command` only the command; `off` nothing. |
-| `syntax_highlight` | Turn highlighting off for slow terminals or plain output. |
+| `syntax_highlight` | Colour code by its language ([`tui.md`](tui.md), "Syntax highlighting"); `false` for slow terminals or plain output. |
 | `timestamps` | Prefix entries with `HH:MM`. |
 | `scroll_lines` | Mouse-wheel scroll step. |
 | `max_fps` | Upper limit for redraws per second. |
@@ -539,7 +539,7 @@ code        = "Solarized (dark)"   # syntax highlighting theme
 | `warning` | `?` waiting for permission, `●` waiting sessions, `⚠` marks. |
 | `diff_add` | Added lines in diffs. |
 | `diff_remove` | Removed lines in diffs. |
-| `code` | Name of the syntax highlighting theme for code blocks. |
+| `code` | The syntax theme for code: `ansi` (on the terminal's 16 colours), `atom-one-dark`, `nord`, `gruvbox-dark` (the syntax colours of the bundled themes of that name), `base16-ocean.dark`, `base16-eighties.dark`, `base16-mocha.dark`, `base16-ocean.light`, `InspiredGitHub`, `Solarized (dark)` or `Solarized (light)`. Without it: `ansi` over `terminal`, `base16-ocean.dark` over `dark`, `InspiredGitHub` over `light`. Another name is an error. |
 
 Colour values: one of the 16 ANSI colour names (`black`, `red`, `green`,
 `yellow`, `blue`, `magenta`, `cyan`, `white`, and `bright_` + each of them),

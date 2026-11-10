@@ -125,8 +125,12 @@ text selection works), `tool_output_lines`, `tool_preview` (`changes`: diffs and
 the end of command output under finished calls; `all`; `none`), `clipboard`
 (`auto`: OSC 52, plus `wl-copy` / `xclip` / `xsel` / `pbcopy` when local;
 `osc52`; `command`; `off`), `timestamps`, `scroll_lines`, `max_fps` and
-`activity`; `NO_COLOR` turns colours off. `expand_tool_calls = true` still
-works and means `tool_preview = "all"`.
+`activity`; `syntax_highlight` colours code blocks, diffs, new files and
+commands by their language, with the syntax theme a theme's `code` key names
+(`ansi` on the terminal's 16 colours, `atom-one-dark`, `nord`, `gruvbox-dark`,
+`base16-ocean.dark`, `InspiredGitHub`, `Solarized (dark)`, …; each bundled theme
+uses the syntax colours of its own scheme); `NO_COLOR` turns colours off. `expand_tool_calls = true`
+still works and means `tool_preview = "all"`.
 
 While the session works, a line above the input shows what it does, since
 when, and the output tokens of the turn:

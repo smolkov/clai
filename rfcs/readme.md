@@ -138,4 +138,4 @@ Sections that do not apply may be left out.
 | [0014](0014-global-statistics.md) | Global statistics | done |
 | [0015](0015-activity-line.md) | Activity line | done |
 | [0016](0016-copy-and-tool-details.md) | Copy text and see tool details | done |
-| [0017](0017-syntax-highlighting.md) | Syntax highlighting | draft |
+| [0017](0017-syntax-highlighting.md) | Syntax highlighting | done |

@@ -13,7 +13,7 @@ expression: "screen(&mut app, 80, 24)"
 │   tool_output_lines  20        Lines of tool output before it is cut         │
 │   tool_preview       changes   What finished tool calls show                 │
 │   clipboard          auto      How copied text reaches the clipboard         │
-│   syntax_highlight   on        later version                                 │
+│   syntax_highlight   on        Colour code by its language                   │
 │   timestamps         off       Time of each entry                            │
 │   scroll_lines       3         Lines per mouse-wheel step                    │
 │   max_fps            30        Redraw limit                                  │

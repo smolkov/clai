@@ -959,7 +959,7 @@ all sessions, whichever is attached.
 │   tool_output_lines  20        Lines of tool output before it is cut         │
 │   tool_preview       changes   What finished tool calls show                 │
 │   clipboard          auto      How copied text reaches the clipboard         │
-│   syntax_highlight   on        later version                                 │
+│   syntax_highlight   on        Colour code by its language                   │
 │   timestamps         off       Time of each entry                            │
 │   scroll_lines       3         Lines per mouse-wheel step                    │
 │   max_fps            30        Redraw limit                                  │
@@ -1058,6 +1058,52 @@ picker.
 - Unicode symbols (`✓ ✗ ▸ ▾`) fall back to ASCII (`+ x > v`) when the locale
   is not UTF-8, or always with `tui.symbols = "ascii"`.
 - Resizing the terminal re-wraps all text; no content is lost.
+
+### Syntax highlighting
+
+With `tui.syntax_highlight = true` (the default), code is coloured by its
+language:
+
+| Place | Language from |
+|-------|---------------|
+| Code blocks of answers and of questions from the model (prompt bar, ask box) | The fence: ```` ```rust ````, `rs`, `py`, `sh`, `js`, … An indented block or an unknown name is not highlighted. |
+| Diffs of `edit_file` and `write_file`: previews, expanded calls, permission questions, the details view, `/diff` | The file's extension (and `Makefile`, `Dockerfile`), else its first line (`#!/bin/sh`). |
+| New files of `write_file` | As for diffs. |
+| The `$ command` line of `run_command` | Shell. The output is not highlighted. |
+
+- **Diffs:** the `+` and `-` keep the `diff_add` and `diff_remove` colours;
+  the code after them is highlighted. Each hunk is highlighted twice, its old
+  side (`-` and context lines) and its new side (`+` and context lines), so a
+  comment opened on a `-` line does not colour the `+` lines. The `@@` line
+  stays `accent`. With true colour and a theme that sets `background`,
+  changed lines also get a tint of their diff colour behind them. A file of
+  no known language keeps whole lines in the diff colours.
+- **Colours** come from the syntax theme the theme's `code` key names
+  ([`config.md`](config.md), "Themes"). Without one: `ansi` for `terminal`,
+  `base16-ocean.dark` for `dark`, `InspiredGitHub` for `light`. The bundled
+  themes use the syntax colours of the same scheme: `atom-one-dark`, `nord`
+  and `gruvbox-dark` are `clai`'s own, made from each scheme's palette
+  (keywords, strings, numbers, functions, types, variables, operators, tags,
+  comments in italic), and `solarized-light` uses `Solarized (light)`. `ansi`
+  is `clai`'s own too, on the terminal's 16 colours: keywords magenta, strings
+  green, numbers and constants yellow, functions blue, types cyan, comments
+  bright black and italic. Other syntax themes are
+  exact with true colour and the nearest of the 256 colours otherwise. Only
+  foregrounds, bold and italic are used, never a syntax theme's background.
+  `NO_COLOR` turns it off.
+- **Loading:** the grammars load in the background when the TUI starts; until
+  then code is shown in its plain style, and it is laid out again when they
+  are there.
+- **Streaming:** an open code block is highlighted line by line as it grows;
+  the line without its newline yet keeps the `code` style until it is
+  complete. Highlighted texts are cached (the last 512), and a text that grows
+  goes on from where it stopped.
+- **Limits:** a block or diff side of more than 5000 lines, or with a line
+  longer than 2000 characters, is not highlighted.
+- Copying is not changed: colours are not copied.
+- Languages: those `syntect` bundles (Rust, Python, JavaScript, Go, C, C++,
+  Java, Shell, JSON, YAML, Markdown, HTML, CSS, SQL, Ruby, PHP, Makefile, …).
+  TOML and TypeScript are not among them; a `ts` fence uses JavaScript.
 
 ## Performance
 

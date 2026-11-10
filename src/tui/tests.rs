@@ -5271,3 +5271,143 @@ fn diff_shows_the_changes_of_the_last_turn() {
 fn details_top(app: &App) -> usize {
     app.details.as_ref().unwrap().top
 }
+
+// Syntax highlighting (RFC 0017).
+
+fn highlighted(events: Vec<SessionEvent>) -> App {
+    use super::highlight::CodeTheme;
+    use super::style::Colouring;
+    let mut settings = settings(true, true);
+    settings.look = settings
+        .look
+        .highlighted(CodeTheme::Ansi, Colouring::Ansi256);
+    settings.tui.tool_preview = crate::config::ToolPreview::Changes;
+    App::new(settings, attachment(events), Instant::now())
+}
+
+/// The style of the first cell of `text` on the screen.
+fn cell_style(app: &mut App, text: &str) -> ratatui::style::Style {
+    let terminal = screen_of(app, 80, 30);
+    let buffer = terminal.backend().buffer();
+    let area = *buffer.area();
+    for y in 0..area.height {
+        let cells: Vec<&str> = (0..area.width).map(|x| buffer[(x, y)].symbol()).collect();
+        let row: String = cells.concat();
+        if let Some(at) = row.find(text) {
+            // Cells before it, counted by their symbols.
+            let mut seen = 0;
+            for (x, symbol) in cells.iter().enumerate() {
+                if seen == at {
+                    return buffer[(u16::try_from(x).unwrap(), y)].style();
+                }
+                seen += symbol.len();
+            }
+        }
+    }
+    panic!("{text} not on the screen");
+}
+
+fn edit_of(path: &str, diff: &str) -> Vec<SessionEvent> {
+    let mut running = call("e1", "edit_file", CallState::Running);
+    let mut details = edit_details();
+    if let Details::EditFile {
+        path: p, diff: d, ..
+    } = &mut details
+    {
+        p.resolved = path.to_owned();
+        d.text = format!("--- {path}\n+++ {path}\n{diff}");
+    }
+    running.details = Some(Box::new(details));
+    vec![
+        SessionEvent::ToolCall(running),
+        SessionEvent::ToolCall(done(call("e1", "edit_file", CallState::Running), "edited")),
+    ]
+}
+
+#[test]
+fn code_blocks_of_answers_are_highlighted() {
+    let mut app = highlighted(vec![SessionEvent::TextDone {
+        text: "```rust\nfn main() { let s = \"hi\"; }\n```".into(),
+    }]);
+    assert_eq!(cell_style(&mut app, "fn main").fg, Some(Color::Magenta));
+    assert_eq!(cell_style(&mut app, "hi\"").fg, Some(Color::Green));
+    // Off: the `code` colour, as before.
+    let mut app = app_with(vec![SessionEvent::TextDone {
+        text: "```rust\nfn main() {}\n```".into(),
+    }]);
+    assert_eq!(cell_style(&mut app, "fn main").fg, Some(Color::Yellow));
+}
+
+#[test]
+fn diffs_keep_their_markers_and_highlight_the_code() {
+    let mut app = highlighted(edit_of("src/parse.rs", DIFF));
+    assert_eq!(cell_style(&mut app, "+for").fg, Some(Color::Green));
+    assert_eq!(
+        cell_style(&mut app, "for i in 0..lines.len() {").fg,
+        Some(Color::Magenta)
+    );
+    assert_eq!(cell_style(&mut app, "-for").fg, Some(Color::Red));
+    assert_eq!(cell_style(&mut app, "@@ -1").fg, Some(Color::Blue));
+    // A file of no known language: whole lines in the diff colours.
+    let mut app = highlighted(edit_of("notes.zzz", DIFF));
+    assert_eq!(
+        cell_style(&mut app, "for i in 0..lines.len() {").fg,
+        Some(Color::Green)
+    );
+}
+
+#[test]
+fn the_old_and_new_side_are_highlighted_apart() {
+    let diff = "@@ -1,2 +1,2 @@\n-/* old\n+let a = 1;\n let b = 2;\n";
+    let mut app = highlighted(edit_of("src/a.rs", diff));
+    // The comment opened on the old side does not colour the new one.
+    assert_eq!(cell_style(&mut app, "let a").fg, Some(Color::Cyan));
+    assert_eq!(cell_style(&mut app, "/* old").fg, Some(Color::DarkGray));
+}
+
+#[test]
+fn commands_are_highlighted_as_shell() {
+    let mut running = call("r1", "run_command", CallState::Running);
+    running.summary = Some("echo".into());
+    running.arguments = json!({"command": "echo \"hello world\""});
+    let finished = done(running.clone(), "hello world\nexit code 0");
+    let mut app = highlighted(vec![
+        SessionEvent::ToolCall(running),
+        SessionEvent::ToolCall(finished),
+    ]);
+    assert_eq!(cell_style(&mut app, "hello world\"").fg, Some(Color::Green));
+    // The output is not code: it keeps the text style.
+    assert_ne!(cell_style(&mut app, "hello world ").fg, Some(Color::Green));
+}
+
+#[test]
+fn a_streamed_block_ends_as_the_whole_block() {
+    let block = "Here:\n\n```python\ndef f(x):\n    return \"x\" * 2\n```\n";
+    let mut streamed = highlighted(Vec::new());
+    for piece in block.as_bytes().chunks(5) {
+        let text = String::from_utf8(piece.to_vec()).unwrap();
+        streamed.update(live(SessionEvent::TextDelta { text }));
+        screen_of(&mut streamed, 80, 30);
+    }
+    let mut whole = highlighted(vec![SessionEvent::TextDone { text: block.into() }]);
+    let a = screen_of(&mut streamed, 80, 30).backend().buffer().clone();
+    let b = screen_of(&mut whole, 80, 30).backend().buffer().clone();
+    assert_eq!(a, b);
+    assert_eq!(cell_style(&mut whole, "def").fg, Some(Color::Magenta));
+}
+
+#[test]
+fn a_long_diff_lays_out_within_its_budget() {
+    let lines: String = (0..super::highlight::MAX_LINES / 2)
+        .map(|i| format!("-let a{i} = {i};\n+let b{i} = \"{i}\";\n"))
+        .collect();
+    let diff = format!("@@ -1,2500 +1,2500 @@\n{lines}");
+    let mut app = highlighted(edit_of("src/big.rs", &diff));
+    app.update(key(KeyCode::Tab));
+    app.update(key(KeyCode::Enter));
+    app.update(key(KeyCode::Enter));
+    let start = Instant::now();
+    screen_of(&mut app, 80, 30);
+    let elapsed = start.elapsed();
+    assert!(elapsed < Duration::from_secs(20), "{elapsed:?}");
+}

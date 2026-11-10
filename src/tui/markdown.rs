@@ -1,13 +1,15 @@
 //! Markdown as lines for the screen: headings, emphasis, lists, inline code,
-//! code blocks, quotes. No syntax highlighting yet. An unfinished block, while
-//! the text streams, is shown as if it were closed.
+//! code blocks, quotes. Code blocks are highlighted by the language of their
+//! fence (see `highlight`). An unfinished block, while the text streams, is
+//! shown as if it were closed.
 
-use pulldown_cmark::{Event, HeadingLevel, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::Line;
 
 use unicode_width::UnicodeWidthStr;
 
+use super::highlight;
 use super::style::Look;
 use super::wrap::{Piece, Source, wrap_rows};
 
@@ -64,7 +66,8 @@ struct Renderer<'a> {
     /// The marker for the first row of the current list item.
     marker: Option<String>,
     quotes: usize,
-    in_code: bool,
+    /// The open code block: its fence's language and its text so far.
+    code: Option<(String, String)>,
     /// Targets of open links, shown after their text.
     links: Vec<String>,
 }
@@ -81,7 +84,7 @@ impl<'a> Renderer<'a> {
             lists: Vec::new(),
             marker: None,
             quotes: 0,
-            in_code: false,
+            code: None,
             links: Vec::new(),
         }
     }
@@ -153,17 +156,34 @@ impl<'a> Renderer<'a> {
         }
     }
 
-    fn code(&mut self, text: &str) {
+    /// Draws the open code block, highlighted when its language is known.
+    fn code(&mut self) {
+        let Some((language, text)) = self.code.take() else {
+            return;
+        };
         let style = self.look.styles.code;
         let indent = format!("{}  ", self.indent());
         let prefix = (indent, self.look.styles.dim);
-        for line in text.lines() {
-            self.out.extend(wrap_rows(
-                &[(line.to_owned(), style)],
-                self.width,
-                &prefix,
-                &prefix,
-            ));
+        let lines = highlight::highlight(
+            self.look.styles.syntax,
+            &format!("fence:{language}"),
+            highlight::by_token(&language),
+            &text,
+            style,
+        )
+        .unwrap_or_else(|| {
+            text.lines()
+                .map(|line| vec![(line.to_owned(), style)])
+                .collect()
+        });
+        for pieces in lines {
+            let pieces = if pieces.is_empty() {
+                vec![(String::new(), style)]
+            } else {
+                pieces
+            };
+            self.out
+                .extend(wrap_rows(&pieces, self.width, &prefix, &prefix));
         }
     }
 
@@ -171,7 +191,11 @@ impl<'a> Renderer<'a> {
         match event {
             Event::Start(tag) => self.start(&tag),
             Event::End(tag) => self.end(tag),
-            Event::Text(text) if self.in_code => self.code(&text),
+            Event::Text(text) if self.code.is_some() => {
+                if let Some((_, code)) = &mut self.code {
+                    code.push_str(&text);
+                }
+            }
             Event::Text(text) | Event::Html(text) | Event::InlineHtml(text) => self.push(&text),
             Event::Code(text) => {
                 let style = self.look.styles.code;
@@ -205,9 +229,13 @@ impl<'a> Renderer<'a> {
                 self.flush();
                 self.quotes += 1;
             }
-            Tag::CodeBlock(_) => {
+            Tag::CodeBlock(kind) => {
                 self.flush();
-                self.in_code = true;
+                let language = match kind {
+                    CodeBlockKind::Fenced(info) => info.to_string(),
+                    CodeBlockKind::Indented => String::new(),
+                };
+                self.code = Some((language, String::new()));
             }
             Tag::List(start) => {
                 self.flush();
@@ -253,7 +281,7 @@ impl<'a> Renderer<'a> {
                 self.blank();
             }
             TagEnd::CodeBlock => {
-                self.in_code = false;
+                self.code();
                 self.blank();
             }
             TagEnd::List(_) => {
@@ -281,6 +309,7 @@ impl<'a> Renderer<'a> {
     }
 
     fn finish(mut self) -> Vec<(Line<'static>, Source)> {
+        self.code();
         self.flush();
         while self.out.last().is_some_and(|(l, _)| l.width() == 0) {
             self.out.pop();
@@ -404,6 +433,29 @@ mod tests {
             "a\n\nfn a() {\n    b\n}"
         );
         assert_eq!(copied("a\n\n---\n\nb", 3), "a\n\n\nb");
+    }
+
+    #[test]
+    fn code_blocks_are_highlighted_by_their_fence() {
+        use crate::tui::highlight::CodeTheme;
+        use crate::tui::style::Colouring;
+        let on = look().highlighted(CodeTheme::Ansi, Colouring::Ansi256);
+        let md = "```rust\nfn a() {}\n```\n\n```\nfn a() {}\n```";
+        let lines = lines(md, 80, &on);
+        let fn_style = |row: usize| {
+            lines[row]
+                .spans
+                .iter()
+                .find(|s| s.content == "fn")
+                .map(|s| s.style)
+        };
+        assert_eq!(fn_style(0).and_then(|s| s.fg), Some(Color::Magenta));
+        // Without a language: the `code` style, one span.
+        assert!(fn_style(2).is_none());
+        assert_eq!(lines[2].to_string(), "  fn a() {}");
+        // Off: as before.
+        let off = super::lines("```rust\nfn a() {}\n```", 80, &look());
+        assert_eq!(off[0].spans.len(), 2);
     }
 
     #[test]

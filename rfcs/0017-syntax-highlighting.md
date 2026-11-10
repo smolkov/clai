@@ -1,7 +1,7 @@
 # Syntax highlighting
 
 - RFC: 0017
-- Status: draft
+- Status: done
 - Spec: [`spec/tui.md`](../spec/tui.md), "Conversation entries", "Permission
   prompts", "Questions from the model", "Details view", "Appearance";
   [`spec/config.md`](../spec/config.md), "TUI", "Themes"
@@ -154,8 +154,9 @@ Out:
 - **`syntect`** with `default-fancy`: grammars and themes of Sublime Text,
   regexes by `fancy-regex` (pure Rust, no `onig` C library). It bundles the
   syntaxes most code uses (Rust, Python, JavaScript, Go, C, Shell, JSON, YAML,
-  Markdown, diff, …) and seven themes. It makes the binary bigger, by about
-  2 MB **(to measure)**.
+  Markdown, diff, …) and seven themes. Measured: the release binary grows
+  from 14.6 MB to 15.3 MB (0.7 MB), with only the features `parsing`,
+  `default-syntaxes`, `default-themes` and `regex-fancy`.
 - Missing grammars that matter (TOML, TypeScript, Dockerfile) can come from
   `two-face`, which packs the syntaxes of `bat` for `syntect`, at more binary
   size; see the open questions.
@@ -198,36 +199,36 @@ Out:
 ## Implementation plan
 
 1. **Highlighter**
-   - Status: todo
+   - Status: done
    - Files: `Cargo.toml`, `tui/highlight.rs` (new)
    - Result: `highlight(language, text)` with detection, limits and cache
    - Tests: highlighter and detection tests
 2. **Syntax themes**
-   - Status: todo
+   - Status: done
    - Files: `config/tui.rs`, `config/themes.rs`, `tui/style.rs`,
      `themes/*.toml`, `spec/config.md`
    - Result: `code` checked, defaults per theme, `ansi`, colour mapping
    - Tests: theme tests
 3. **Code blocks**
-   - Status: todo
+   - Status: done
    - Files: `tui/markdown.rs`, `tui/conversation.rs`, `spec/tui.md`
    - Result: answers and questions from the model highlighted, also while
      streaming
    - Tests: streaming tests, style snapshots
 4. **Diffs and commands**
-   - Status: todo
+   - Status: done
    - Files: `tui/conversation.rs`, `tui/details.rs`
    - Result: previews, expanded calls, permission questions, details view,
      `/diff`
    - Tests: diff tests, style snapshots
 5. **Loading and settings**
-   - Status: todo
+   - Status: done
    - Files: `tui/mod.rs`, `tui/app.rs`, `tui/settings.rs`
    - Result: background loading; `syntax_highlight` in the settings box; the
      theme preview shows the syntax theme
    - Tests: App tests; performance test
 6. **Docs**
-   - Status: todo
+   - Status: done
    - Files: `readme.md`, `todo.md`, this RFC
    - Result: status `done`
 
@@ -246,7 +247,35 @@ Out:
 - **Colour whole diff lines only (`+` green, `-` red), syntax only for
   context:** simpler, but the changed lines are the ones the user reads.
 
+## Decisions
+
+Built with the proposals of the open questions; the user asked for the RFC to
+be built as it stands. Where the build differs from the design above:
+
+- **No time limit per line:** `syntect` cannot stop a line halfway. The
+  limits by size (5000 lines, 2000 characters per line) are the only guard.
+- **Diff tint:** only with true colour *and* a theme that sets `background`
+  (the bundled dark themes), since the tint is a mix of the diff colour into
+  that background; without one the terminal's background is unknown.
+- **`ts` fences** use JavaScript, as `syntect` has no TypeScript; TOML has no
+  grammar.
+- **`ansi` details:** `let` and other storage words are cyan (`storage.type`),
+  `fn` magenta; string quotes take the string colour.
+- **Bundled themes** use the syntax colours of their own scheme, as the user
+  asked: `atom-one-dark`, `nord` and `gruvbox-dark` are syntax themes of
+  `clai`'s own, built in code from each scheme's palette (no `.tmTheme` files,
+  no `plist` loading), and `solarized-light` uses `syntect`'s
+  `Solarized (light)`. `code` takes their names too (open question 5,
+  changed).
+- **Tests:** the test look has highlighting off, because the grammars load
+  once per test process; tests of highlighting turn it on. A 5000-line diff
+  lays out in about 3.5 s in a debug build.
+- **Edits without details** (logs of an older `clai`) are highlighted too:
+  their old and new text are drawn as one hunk.
+
 ## Open questions
+
+Answered with the proposals when it was built (see "Decisions").
 
 1. **Crate:** `syntect` with `fancy-regex` (proposal), or `tree-sitter`?
 2. **More grammars:** `syntect`'s set (proposal), or `two-face` for TOML,

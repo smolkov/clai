@@ -11,6 +11,7 @@ mod commands;
 mod conversation;
 mod details;
 mod editor;
+mod highlight;
 mod keys;
 mod markdown;
 mod picker;
@@ -224,7 +225,8 @@ fn settings(config: &Config, connect: &Connect, options: &LoadOptions) -> Settin
     Settings {
         look: style::Look::themed(
             terminal.unicode,
-            style::Styles::themed(&tui.theme, &config.themes, colouring()),
+            style::Styles::themed(&tui.theme, &config.themes, colouring())
+                .highlighting(tui.syntax_highlight),
         ),
         client: connect.name.clone(),
         tool_output_lines: usize::try_from(tui.tool_output_lines).unwrap_or(usize::MAX),
@@ -366,6 +368,14 @@ async fn event_loop(
         app.choose_session();
     }
     let (reports, mut incoming) = mpsc::unbounded_channel();
+    // The grammars take a moment to load; code is plain until they are there.
+    {
+        let reports = reports.clone();
+        tokio::task::spawn_blocking(move || {
+            highlight::load();
+            let _ = reports.send(Report::Input(Input::Highlighting));
+        });
+    }
 
     let mut terminal_events = EventStream::new();
     let mut terminate = signal(SignalKind::terminate()).map_err(Error::io("signal handler"))?;

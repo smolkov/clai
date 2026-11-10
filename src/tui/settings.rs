@@ -84,15 +84,12 @@ pub fn rows() -> [Row; 11] {
             "auto: OSC 52, and wl-copy, xclip, xsel or pbcopy when local; osc52; command; off",
             Kind::Choice(&["auto", "osc52", "command", "off"]),
         ),
-        Row {
-            later: true,
-            ..row(
-                "syntax_highlight",
-                "later version",
-                "Highlighting of code blocks and diffs comes with a later version",
-                Kind::OnOff,
-            )
-        },
+        row(
+            "syntax_highlight",
+            "Colour code by its language",
+            "Code blocks, diffs, new files and commands; the theme's code key picks the colours",
+            Kind::OnOff,
+        ),
         row(
             "timestamps",
             "Time of each entry",
