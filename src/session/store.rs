@@ -483,6 +483,7 @@ pub fn repair_events(events: &[SessionEvent]) -> Vec<SessionEvent> {
     }
     for call in calls {
         repair.push(SessionEvent::ToolCall(ToolCallEvent {
+            details: None,
             state: CallState::Cancelled,
             output: None,
             result: Some(CallResult {
@@ -645,6 +646,7 @@ mod tests {
     fn open_turn_is_closed() {
         let call = |state| {
             SessionEvent::ToolCall(ToolCallEvent {
+                details: None,
                 id: "c1".into(),
                 name: "run_command".into(),
                 state,

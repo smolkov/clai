@@ -457,9 +457,10 @@ in the user file. All keys are optional; the values shown are the defaults.
 [tui]
 theme             = "terminal"  # terminal | dark | light | a bundled theme | a [themes.NAME] table or themes/NAME.toml
 symbols           = "auto"      # auto | unicode | ascii
-mouse             = true        # capture the mouse; false keeps the terminal's text selection
+mouse             = true        # capture the mouse: wheel, drag to copy, click; false keeps the terminal's selection
 tool_output_lines = 20          # lines of tool output shown before "… N more lines"; 0 = no limit
-expand_tool_calls = false       # show tool calls expanded instead of collapsed
+tool_preview      = "changes"   # changes | all | none: what finished tool calls show
+clipboard         = "auto"      # auto | osc52 | command | off: how copied text reaches the clipboard
 syntax_highlight  = true        # highlight code blocks and diffs
 timestamps        = false       # show the time of each user message and answer
 scroll_lines      = 3           # lines per mouse-wheel step
@@ -471,9 +472,11 @@ activity          = "playful"   # playful | plain | off: the line while the sess
 |-----|---------|
 | `theme` | Colour theme, see [Themes](#themes). |
 | `symbols` | `auto` uses Unicode symbols (`✓ ✗ ▸ ▾`) when the locale is UTF-8, otherwise ASCII (`+ x > v`). |
-| `mouse` | When `true`, the mouse wheel scrolls the conversation and clicks select entries; the terminal's own selection then needs `Shift` held (in most terminals). |
-| `tool_output_lines` | Maximum lines of a tool's output shown in an expanded entry before it is cut. The full text is shown with `Enter` on the "… N more lines" marker. |
-| `expand_tool_calls` | When `true`, finished tool calls stay expanded. Calls waiting for permission are always expanded. |
+| `mouse` | When `true`, the mouse wheel scrolls the conversation, a drag selects and copies text, and a click on a tool call expands it ([`tui.md`](tui.md), "Copy"); the terminal's own selection then needs `Shift` held (in most terminals). |
+| `tool_output_lines` | Maximum lines of a tool's output shown in an expanded entry or a preview before it is cut. The full text is shown with `Enter` on the call, and in the details view (`o`). |
+| `tool_preview` | What finished tool calls show below their summary ([`tui.md`](tui.md), "Conversation entries"): `changes` the diff of edits and writes, the last lines of commands and the error of failed calls; `all` every call expanded; `none` one line each. Calls waiting for permission are always expanded. |
+| `expand_tool_calls` | Deprecated: `true` reads as `tool_preview = "all"`; `tool_preview` wins when both are set. |
+| `clipboard` | How copied text reaches the clipboard ([`tui.md`](tui.md), "Copy"): `auto` the terminal's OSC 52 sequence and, when the session is local, `wl-copy`, `xclip`, `xsel` or `pbcopy`; `osc52` only the sequence; `command` only the command; `off` nothing. |
 | `syntax_highlight` | Turn highlighting off for slow terminals or plain output. |
 | `timestamps` | Prefix entries with `HH:MM`. |
 | `scroll_lines` | Mouse-wheel scroll step. |

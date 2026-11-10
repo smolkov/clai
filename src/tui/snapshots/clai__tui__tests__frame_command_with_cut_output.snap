@@ -30,5 +30,5 @@ expression: "screen(&mut app, 80, 30)"
 ────────────────────────────────────────────────────────────────────────────────
 >                                                                               
 ────────────────────────────────────────────────────────────────────────────────
-  idle · Enter expand · ? help · Ctrl-D detach                                  
+  idle · Enter expand · o open · y copy · ? help · drag copy · Ctrl-D detach    
   project · ~/ws/project · anthropic/sonnet · 1/1 · 0/200k

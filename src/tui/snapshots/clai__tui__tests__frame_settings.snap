@@ -9,19 +9,19 @@ expression: "screen(&mut app, 80, 24)"
 ┌ Settings ─ /home/u/.config/clai/config.toml ─────────────────────────────────┐
 │   theme              terminal  Colour theme                                  │
 │   symbols            auto      Unicode or ASCII symbols                      │
-│ ▶ mouse             *on        Capture the mouse for scrolling               │
+│ ▶ mouse             *on        Capture the mouse: wheel, drag copies         │
 │   tool_output_lines  20        Lines of tool output before it is cut         │
-│   expand_tool_calls  off       Keep finished tool calls expanded             │
+│   tool_preview       changes   What finished tool calls show                 │
+│   clipboard          auto      How copied text reaches the clipboard         │
 │   syntax_highlight   on        later version                                 │
 │   timestamps         off       Time of each entry                            │
 │   scroll_lines       3         Lines per mouse-wheel step                    │
 │   max_fps            30        Redraw limit                                  │
 │   activity           playful   Line while the session works                  │
 │                                                                              │
-│ mouse: off keeps the terminal's text selection; on scrolls with the wheel    │
+│ mouse: on: the wheel scrolls, a drag selects and copies, a click opens a ca… │
 │ Enter change ─ Left/Right value ─ d default ─ s save ─ Esc close             │
 └──────────────────────────────────────────────────────────────────────────────┘
-────────────────────────────────────────────────────────────────────────────────
 >                                                                               
 ────────────────────────────────────────────────────────────────────────────────
   idle · /help · Ctrl-D detach                                                  

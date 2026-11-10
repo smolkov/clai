@@ -499,6 +499,7 @@ mod tests {
 
     fn call(name: &str, state: CallState) -> SessionEvent {
         SessionEvent::ToolCall(ToolCallEvent {
+            details: None,
             id: "c".into(),
             name: name.into(),
             state,

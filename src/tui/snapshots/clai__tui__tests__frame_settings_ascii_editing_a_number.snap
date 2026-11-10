@@ -9,9 +9,10 @@ expression: text
 + Settings - /home/u/.config/clai/config.toml ---------------------------------+
 |   theme              terminal  Colour theme                                  |
 |   symbols            auto      Unicode or ASCII symbols                      |
-|   mouse              on        Capture the mouse for scrolling               |
+|   mouse              on        Capture the mouse: wheel, drag copies         |
 |   tool_output_lines  20        Lines of tool output before it is cut         |
-|   expand_tool_calls  off       Keep finished tool calls expanded             |
+|   tool_preview       changes   What finished tool calls show                 |
+|   clipboard          auto      How copied text reaches the clipboard         |
 |   syntax_highlight   on        later version                                 |
 |   timestamps         off       Time of each entry                            |
 |   scroll_lines       3         Lines per mouse-wheel step                    |
@@ -21,7 +22,6 @@ expression: text
 | max_fps: Frames per second, 1 to 120                                         |
 | Enter take - Esc back                                                        |
 +------------------------------------------------------------------------------+
---------------------------------------------------------------------------------
 >                                                                               
 --------------------------------------------------------------------------------
   idle - /help - Ctrl-D detach                                                  

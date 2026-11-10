@@ -32,6 +32,57 @@ pub enum ActivityLine {
     Off,
 }
 
+/// `tui.tool_preview`: what finished tool calls show below their summary
+/// (see `spec/tui.md`, "Conversation entries").
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ToolPreview {
+    /// Edits, writes and commands show a preview; failed calls their error.
+    #[default]
+    Changes,
+    /// Every call is expanded.
+    All,
+    /// Every finished call is one line.
+    None,
+}
+
+impl ToolPreview {
+    pub fn name(self) -> &'static str {
+        match self {
+            ToolPreview::Changes => "changes",
+            ToolPreview::All => "all",
+            ToolPreview::None => "none",
+        }
+    }
+}
+
+/// `tui.clipboard`: how copied text reaches the clipboard (see
+/// `spec/tui.md`, "Copy").
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Clipboard {
+    /// OSC 52, and a clipboard command when the session is local.
+    #[default]
+    Auto,
+    /// Only the terminal's OSC 52 sequence.
+    Osc52,
+    /// Only a clipboard command: `wl-copy`, `xclip`, `xsel`, `pbcopy`.
+    Command,
+    /// Nothing is copied.
+    Off,
+}
+
+impl Clipboard {
+    pub fn name(self) -> &'static str {
+        match self {
+            Clipboard::Auto => "auto",
+            Clipboard::Osc52 => "osc52",
+            Clipboard::Command => "command",
+            Clipboard::Off => "off",
+        }
+    }
+}
+
 /// TUI settings, with the defaults of `spec/config.md`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Tui {
@@ -40,7 +91,9 @@ pub struct Tui {
     pub mouse: bool,
     /// 0 = no limit.
     pub tool_output_lines: u32,
-    pub expand_tool_calls: bool,
+    /// `tool_preview`; `expand_tool_calls = true` reads as `all`.
+    pub tool_preview: ToolPreview,
+    pub clipboard: Clipboard,
     pub syntax_highlight: bool,
     pub timestamps: bool,
     pub scroll_lines: u16,
@@ -55,7 +108,8 @@ impl Default for Tui {
             symbols: Symbols::Auto,
             mouse: true,
             tool_output_lines: 20,
-            expand_tool_calls: false,
+            tool_preview: ToolPreview::Changes,
+            clipboard: Clipboard::Auto,
             syntax_highlight: true,
             timestamps: false,
             scroll_lines: 3,
@@ -282,7 +336,14 @@ pub(crate) fn build_tui(
     }
     tui.symbols = file.symbols.unwrap_or(tui.symbols);
     tui.mouse = file.mouse.unwrap_or(tui.mouse);
-    tui.expand_tool_calls = file.expand_tool_calls.unwrap_or(tui.expand_tool_calls);
+    // `expand_tool_calls` is deprecated: `true` reads as `all`, and
+    // `tool_preview` wins when both are set.
+    tui.tool_preview = match (file.tool_preview, file.expand_tool_calls) {
+        (Some(preview), _) => preview,
+        (None, Some(true)) => ToolPreview::All,
+        (None, _) => tui.tool_preview,
+    };
+    tui.clipboard = file.clipboard.unwrap_or(tui.clipboard);
     tui.syntax_highlight = file.syntax_highlight.unwrap_or(tui.syntax_highlight);
     tui.timestamps = file.timestamps.unwrap_or(tui.timestamps);
     tui.activity = file.activity.unwrap_or(tui.activity);

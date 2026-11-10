@@ -165,6 +165,7 @@ fn events_round_trip() {
             state: State::Waiting,
         },
         SessionEvent::ToolCall(ToolCallEvent {
+            details: None,
             id: "c1".into(),
             name: "read_file".into(),
             state: CallState::Done,

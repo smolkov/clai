@@ -181,6 +181,7 @@ fn call_event(id: &str, name: &str, state: CallState, arguments: Value) -> Sessi
 
 fn tool_call(id: &str, name: &str, state: CallState, arguments: Value) -> ToolCallEvent {
     ToolCallEvent {
+        details: None,
         id: id.to_owned(),
         name: name.to_owned(),
         state,

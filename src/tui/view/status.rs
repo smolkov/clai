@@ -47,8 +47,13 @@ pub fn text(app: &App) -> String {
     if app.focus == Focus::Conversation {
         if app.selected_is_call() {
             parts.push("Enter expand".to_owned());
+            parts.push("o open".to_owned());
         }
+        parts.push("y copy".to_owned());
         parts.push("? help".to_owned());
+        if app.settings.tui.mouse {
+            parts.push("drag copy".to_owned());
+        }
     } else {
         parts.push("/help".to_owned());
     }

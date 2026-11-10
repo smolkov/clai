@@ -6,13 +6,16 @@
 mod activity;
 mod app;
 mod ask;
+mod clipboard;
 mod commands;
 mod conversation;
+mod details;
 mod editor;
 mod keys;
 mod markdown;
 mod picker;
 mod prompt;
+mod selection;
 mod sessions;
 mod settings;
 mod status;
@@ -225,7 +228,6 @@ fn settings(config: &Config, connect: &Connect, options: &LoadOptions) -> Settin
         ),
         client: connect.name.clone(),
         tool_output_lines: usize::try_from(tui.tool_output_lines).unwrap_or(usize::MAX),
-        expand_tool_calls: tui.expand_tool_calls,
         scroll_lines: usize::from(tui.scroll_lines),
         timestamps: tui.timestamps.then_some(theming.offset),
         windows,
@@ -423,6 +425,16 @@ async fn event_loop(
                 Effect::Redraw => dirty = true,
                 Effect::Exit(exit) => return Ok(exit),
                 Effect::Request(request) => send(&mut connection, request, &reports),
+                Effect::Copy(text) => {
+                    let plan = clipboard::Plan::new(
+                        app.settings.tui.clipboard,
+                        |name| std::env::var(name).ok(),
+                        clipboard::on_path,
+                    );
+                    if let Err(e) = clipboard::copy(&plan, &text) {
+                        let _ = reports.send(Report::Input(Input::CopyFailed(e)));
+                    }
+                }
                 Effect::Mouse(on) => {
                     if let Err(e) = terminal::set_mouse(on) {
                         tracing::info!("mouse capture: {e}");

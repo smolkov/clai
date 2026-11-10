@@ -284,6 +284,7 @@ Changing the model of a running session:
 | User message   | Prefixed with `>`, in the user colour. |
 | Model text     | Rendered Markdown: headings, emphasis, lists, inline code, code blocks with syntax highlighting. Streams in as it arrives. |
 | Tool call      | One summary line: marker, tool name, main argument, state. |
+| Tool preview   | Below the summary of a finished edit, write or command, and of a failed call: see below. |
 | Tool details   | Below the summary when expanded: diff for edits, file excerpt for reads, command and output for commands. |
 | Error          | Red line with the error message; the session continues. |
 | Notice         | Dim line for events such as "turn cancelled" or "limit reached". |
@@ -296,7 +297,44 @@ permission (`?`).
 Tool calls are collapsed (`▸`) by default and expanded (`▾`) while they wait
 for permission. Long outputs are cut to `tui.tool_output_lines` lines (default
 20) in the view, with a "… N more lines" marker; the full text stays
-available in the expanded entry. See [`config.md`](config.md), "TUI".
+available in the expanded entry and the [details view](#details-view). See
+[`config.md`](config.md), "TUI".
+
+```
+▸ read_file src/parse.rs                                          ✓ 120 lines
+▾ edit_file src/parse.rs                                          ✓ edited …
+  @@ -12,3 +12,3 @@
+  - for i in 0..lines.len() - 1 {
+  + for i in 0..lines.len() {
+▾ run_command cargo test parse                                    ✓ exit code 0
+  $ cargo test parse
+  … 38 lines
+  test parse::last_line ... ok
+  test result: ok. 4 passed; 0 failed; 0 ignored
+  exit code 0
+```
+
+**Previews.** With `tui.tool_preview = "changes"` (the default), a finished
+call shows a preview (`▾`) below its summary:
+
+- `edit_file`, `write_file`: the diff, without its `---` / `+++` header, up to
+  `tool_output_lines` lines; a new file its first lines.
+- `run_command`: the command and the **last** 6 lines of its output, with
+  `… N lines` above them for what is hidden. While a command runs, the same
+  shows its live output.
+- A failed call of any tool: its error, up to `tool_output_lines` lines.
+- `read_file`, `list_files`, `search_files` and others that did not fail: no
+  preview; they stay one line.
+
+`"all"` expands every call, `"none"` keeps every finished call on one line.
+`Enter` on a call with a preview expands it, as from collapsed; what the user
+chose for a call wins over the setting. `Ctrl-T` shows the previews of all
+calls of the last turn (expanding calls without one), or collapses them all
+when any of them shows more than its summary.
+
+The details of an edit come with the call's `tool_call` event (see
+[`architecture.md`](architecture.md), "Protocol"), also when no question was
+asked, so its diff is known after it ran.
 
 ## Activity line
 
@@ -493,6 +531,8 @@ the session row counts the question in `●`, as for other questions.
 | `/theme [NAME]` | Open the theme list; with a name, switch to that theme. Either way the theme is saved as the default. See [Theme list](#theme-list). |
 | `/kill`, `/delete` | Delete the attached session, after the confirmation of [Delete](#delete), and open the session list. |
 | `/commit [HINT]` | Generate a commit message for all changes in the workspace and commit them after confirmation; see [Commit](#commit) and [`commit.md`](commit.md). |
+| `/copy [N\|code]` | Copy the last answer of the model as Markdown; `N` the answer N back (`/copy 2` is the one before the last); `code` the last code block of the last answer. See [Copy](#copy). |
+| `/diff` | Open the details view with the diffs of all edits and writes of the last turn, one after the other. |
 | `/detach`, `/quit` | Detach and exit the TUI; the session keeps running. |
 
 ### Command list
@@ -627,7 +667,12 @@ the diff.
 | `Tab`                | Move focus between input and conversation. |
 | `Enter` (conversation focus) | Expand or collapse the selected tool call. |
 | `Up` / `Down` (conversation focus) | Select the previous / next entry. |
+| `o` (conversation focus) | Open the selected tool call in the [details view](#details-view). |
+| `y` / `Y` (conversation focus) | Copy the selected entry / the last code block of the selected answer. See [Copy](#copy). |
 | `?` (conversation focus) | Show help. |
+| `Ctrl-Y`             | Copy the last answer, as `/copy`. |
+| `Ctrl-T`             | Show or hide the previews of the tool calls of the last turn. |
+| Click on a tool call | Expand or collapse it, as `Enter`; the focus does not move. A click on its `… N lines` row opens the details view. |
 
 `Ctrl-Z` does nothing for now: the TUI does not suspend.
 
@@ -635,9 +680,97 @@ While new output arrives, the view follows the end of the conversation,
 unless the user scrolled up; then it stays put and the status line shows
 "↓ new output". `Ctrl-End` resumes following.
 
-Mouse wheel scrolls the conversation. Mouse capture can be turned off with
-`tui.mouse = false` so the terminal's own text selection works (see
-[`config.md`](config.md), "TUI").
+Mouse wheel scrolls the conversation, a drag selects text and copies it (see
+[Copy](#copy)). Mouse capture can be turned off with `tui.mouse = false` so
+the terminal's own text selection works (see [`config.md`](config.md), "TUI");
+with it on, `Shift`-drag uses the terminal's selection in most terminals.
+
+With the focus on the conversation, the footer says `Enter expand ─ o open`
+when a call is selected, and `y copy`, `? help` and, with the mouse on,
+`drag copy`.
+
+## Copy
+
+```
+> fix the failing test
+
+The test fails because `parse` drops the last line. Let me look.
+for i in 0..lines.len() {            ← selected text in reverse colours
+▸ read_file src/parse.rs                                          ✓ 120 lines
+```
+
+- **Selection:** with `tui.mouse = true`, a left-button drag in the
+  conversation or the details view selects text, shown in reverse colours;
+  the release copies it. The selection stays shown until `Esc`, a key or a
+  click clears it; `Esc` then does nothing else. A double click selects and
+  copies a word (letters, digits and `_-./:~@#%+`, without a `.` or `:` at
+  its end), a triple click the line with its wrapped rows. Dragging above or
+  below the area scrolls it, so a selection can be longer than the screen.
+  While the view follows the end, a selection stops the following until it is
+  cleared, so the text does not move under the mouse.
+- **What is copied** is the text as it is read, not as it is drawn: rows the
+  TUI wrapped are joined again; the markers of the TUI (`▸ ▾`, the `> ` of a
+  message, quote marks, indentation, the state of a call, `… N more lines`,
+  rules) are left out; list markers stay; trailing spaces go. Code blocks are
+  drawn without fences, so their rows copy as their source.
+- **`y`** copies the selected entry: a message or answer as its Markdown
+  source; for a tool call:
+
+  | Tool | Text |
+  |------|------|
+  | `edit_file`, `write_file` | The diff as a unified diff with `a/PATH` and `b/PATH` headers, so it applies with `git apply`; a new file is its content. Without details (a log of an older `clai`), the old and new text as `-` and `+` lines. |
+  | `run_command` | `$ command`, then the output with its exit code. |
+  | others, and failed calls | The result. |
+
+- **`Y`** copies the last code block of the selected answer, or of the last
+  answer when the selected entry has none. **`/copy`** and **`Ctrl-Y`** copy
+  the last answer, `/copy N` the answer N back, `/copy code` its last code
+  block.
+- **The clipboard:** `tui.clipboard` ([`config.md`](config.md), "TUI").
+  `auto` writes the terminal's OSC 52 sequence (which works over SSH; in tmux
+  it needs `set-clipboard on`) and, when the session is local (neither
+  `SSH_TTY` nor `SSH_CONNECTION` is set), also gives the text to `wl-copy`
+  (Wayland), `xclip` or `xsel` (X11) or `pbcopy` (macOS), the first one
+  installed. `osc52` and `command` use only one of the two; `off` copies
+  nothing and says so. OSC 52 carries at most 100 kB of text; the rest is
+  left out of it.
+- After a copy the footer says `copied 12 lines` for two seconds. The TUI
+  cannot know whether the terminal took the text, so it says `copied`. A
+  clipboard command that cannot be started says `cannot copy: …`.
+
+## Details view
+
+`o` on a selected call, a click on its `… N lines` row, or `/diff` opens a
+view over the whole screen:
+
+```
+┌ edit_file src/parse.rs ─ ✓ edited src/parse.rs: replaced 1 occurrence ─────┐
+│ @@ -12,3 +12,3 @@                                                          │
+│      let lines: Vec<&str> = text.lines().collect();                        │
+│ -    for i in 0..lines.len() - 1 {                                         │
+│ +    for i in 0..lines.len() {                                             │
+│          out.push(parse_line(lines[i])?);                                  │
+│                                                                            │
+│ Up Down scroll ─ / search ─ n next ─ y copy ─ w wrap ─ Esc close           │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+- It shows all of the call, as its expanded entry does without the limit:
+  for an edit the diff with its context, for a command the command, its
+  directory and the whole output with the exit code. The output is the one
+  the tool gave; a text cut at 1 MiB is said under it in the warning colour.
+- `/diff` shows the diffs of the edits and writes of the last turn, each under
+  its tool and file; the title counts the files. Without any, a notice says
+  `the last turn changed no file`.
+- Keys: `Up` / `Down` (also `k` / `j`), `PgUp` / `PgDn` (also `Space`),
+  `Home` / `End` scroll; `/` types a search, `Enter` finds it (in any case)
+  and `Esc` drops it; `n` / `N` find the next / previous match, round the end;
+  the line found is marked, and `not found: …` says when there is none. `y`
+  copies all of it, `w` turns wrapping off and on (without it, `Left` /
+  `Right` scroll sideways), `Esc`, `q` or `Ctrl-C` close. The mouse wheel
+  scrolls it and a drag selects and copies in it, as in the conversation.
+- A question that opens closes it, as it closes the other boxes; so does a
+  switch to another session.
 
 ## Cancellation and exit
 
@@ -822,15 +955,16 @@ all sessions, whichever is attached.
 ┌ Settings ─ ~/.config/clai/config.toml ───────────────────────────────────────┐
 │   theme              terminal  Colour theme                                  │
 │   symbols            auto      Unicode or ASCII symbols                      │
-│ ▶ mouse             *on        Capture the mouse for scrolling               │
+│ ▶ mouse             *on        Capture the mouse: wheel, drag copies         │
 │   tool_output_lines  20        Lines of tool output before it is cut         │
-│   expand_tool_calls  off       Keep finished tool calls expanded             │
+│   tool_preview       changes   What finished tool calls show                 │
+│   clipboard          auto      How copied text reaches the clipboard         │
 │   syntax_highlight   on        later version                                 │
 │   timestamps         off       Time of each entry                            │
 │   scroll_lines       3         Lines per mouse-wheel step                    │
 │   max_fps            30        Redraw limit                                  │
 │   activity           playful   Line while the session works                  │
-│ mouse: off keeps the terminal's text selection; on scrolls with the wheel    │
+│ mouse: on: the wheel scrolls, a drag selects and copies, a click opens a cal…│
 │ Enter change ─ Left/Right value ─ d default ─ s save ─ Esc close             │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```

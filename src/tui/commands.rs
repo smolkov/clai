@@ -96,6 +96,11 @@ pub const COMMANDS: &[Command] = &[
         command("commit", "Commit the changes, after a question"),
         "[HINT]",
     )),
+    optional(
+        command("copy", "Copy the last answer, the one N back, or its code"),
+        "[N|code]",
+    ),
+    command("diff", "Show the changes of the last turn"),
     Command {
         alias: Some("quit"),
         ..command("detach", "Leave; the session keeps running")

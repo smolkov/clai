@@ -285,7 +285,7 @@ Session events, in the order they happen:
 | `state` | `idle`, `working` or `waiting`, and why. |
 | `user_message` | A message as the session received it (also from other clients). |
 | `text_delta`, `text_done` | Streamed model text. |
-| `tool_call` | A tool call and its state: `pending`, `waiting`, `running`, `done`, `error`, `denied`, `cancelled`; with output as it arrives. |
+| `tool_call` | A tool call and its state: `pending`, `waiting`, `running`, `done`, `error`, `denied`, `cancelled`; with output as it arrives, and once its `details` (as a permission question shows them: the diff of an edit, the command and its directory). |
 | `question`, `question_closed` | A question with all its details, and its answer with the client that gave it (see [`sessions.md`](sessions.md), "Questions"). |
 | `usage` | Tokens of a request, context size, and the request's `provider/model` (none in a log of an older `clai`). The session sums them; the session info has the totals as `usage`. |
 | `error` | A provider or session error that ended a request or turn. |

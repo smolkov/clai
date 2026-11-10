@@ -6,11 +6,22 @@ use pulldown_cmark::{Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::Line;
 
+use unicode_width::UnicodeWidthStr;
+
 use super::style::Look;
-use super::wrap::{Piece, wrap};
+use super::wrap::{Piece, Source, wrap_rows};
 
 /// `text` as rows of at most `width` cells.
 pub fn lines(text: &str, width: usize, look: &Look) -> Vec<Line<'static>> {
+    rows(text, width, look)
+        .into_iter()
+        .map(|(line, _)| line)
+        .collect()
+}
+
+/// As [`lines`], with where each row comes from: quote marks and
+/// indentation are not text, list markers are.
+pub fn rows(text: &str, width: usize, look: &Look) -> Vec<(Line<'static>, Source)> {
     let mut r = Renderer::new(width, look);
     for event in Parser::new_ext(text, Options::ENABLE_STRIKETHROUGH) {
         r.event(event);
@@ -18,10 +29,31 @@ pub fn lines(text: &str, width: usize, look: &Look) -> Vec<Line<'static>> {
     r.finish()
 }
 
+/// The code blocks of `text`, as their source, in order.
+pub fn code_blocks(text: &str) -> Vec<String> {
+    let mut blocks = Vec::new();
+    let mut open: Option<String> = None;
+    for event in Parser::new_ext(text, Options::ENABLE_STRIKETHROUGH) {
+        match event {
+            Event::Start(Tag::CodeBlock(_)) => open = Some(String::new()),
+            Event::Text(text) => {
+                if let Some(block) = &mut open {
+                    block.push_str(&text);
+                }
+            }
+            Event::End(TagEnd::CodeBlock) => blocks.extend(open.take()),
+            _ => {}
+        }
+    }
+    // An unfinished block, while the text streams.
+    blocks.extend(open);
+    blocks
+}
+
 struct Renderer<'a> {
     width: usize,
     look: &'a Look,
-    out: Vec<Line<'static>>,
+    out: Vec<(Line<'static>, Source)>,
     /// The inline text of the block being read.
     pieces: Vec<Piece>,
     /// The inline style: base plus emphasis.
@@ -89,6 +121,7 @@ impl<'a> Renderer<'a> {
         }
         let dim = self.look.styles.dim;
         let indent = self.indent();
+        let indent_width = indent.width();
         let (first, rest) = match marker {
             Some(marker) => {
                 let rest = " ".repeat(marker.chars().count());
@@ -105,13 +138,18 @@ impl<'a> Renderer<'a> {
             }
         };
         let pieces = std::mem::take(&mut self.pieces);
-        self.out.extend(wrap(&pieces, self.width, &first, &rest));
+        let mut rows = wrap_rows(&pieces, self.width, &first, &rest);
+        // A list marker is text; the indentation before it is not.
+        if let Some((_, source)) = rows.first_mut() {
+            source.prefix = indent_width;
+        }
+        self.out.extend(rows);
     }
 
     /// A blank row between blocks, unless there is one or nothing yet.
     fn blank(&mut self) {
-        if self.out.last().is_some_and(|l| l.width() > 0) {
-            self.out.push(Line::default());
+        if self.out.last().is_some_and(|(l, _)| l.width() > 0) {
+            self.out.push((Line::default(), Source::default()));
         }
     }
 
@@ -120,7 +158,7 @@ impl<'a> Renderer<'a> {
         let indent = format!("{}  ", self.indent());
         let prefix = (indent, self.look.styles.dim);
         for line in text.lines() {
-            self.out.extend(wrap(
+            self.out.extend(wrap_rows(
                 &[(line.to_owned(), style)],
                 self.width,
                 &prefix,
@@ -145,7 +183,8 @@ impl<'a> Renderer<'a> {
                 self.flush();
                 self.blank();
                 let rule = self.look.symbols.rule.repeat(self.width);
-                self.out.push(Line::styled(rule, self.look.styles.dim));
+                self.out
+                    .push((Line::styled(rule, self.look.styles.dim), Source::skipped()));
                 self.blank();
             }
             _ => {}
@@ -241,9 +280,9 @@ impl<'a> Renderer<'a> {
         }
     }
 
-    fn finish(mut self) -> Vec<Line<'static>> {
+    fn finish(mut self) -> Vec<(Line<'static>, Source)> {
         self.flush();
-        while self.out.last().is_some_and(|l| l.width() == 0) {
+        while self.out.last().is_some_and(|(l, _)| l.width() == 0) {
             self.out.pop();
         }
         self.out
@@ -349,6 +388,30 @@ mod tests {
         assert_eq!(text("[a](http://b)", 80), ["a (http://b)"]);
         assert_eq!(text("<http://b>", 80), ["http://b"]);
         assert_eq!(text("a\n\n---\n\nb", 3), ["a", "", "───", "", "b"]);
+    }
+
+    fn copied(md: &str, width: usize) -> String {
+        let rows = rows(md, width, &look());
+        crate::tui::wrap::copy_text(rows.iter().map(|(l, s)| Some((l, s))), 0, usize::MAX)
+    }
+
+    #[test]
+    fn copies_as_read() {
+        assert_eq!(copied("> quoted text here", 8), "quoted text here");
+        assert_eq!(copied("- aaa bbb\n- c", 6), "• aaa bbb\n• c");
+        assert_eq!(
+            copied("a\n\n```\nfn a() {\n    b\n}\n```", 80),
+            "a\n\nfn a() {\n    b\n}"
+        );
+        assert_eq!(copied("a\n\n---\n\nb", 3), "a\n\n\nb");
+    }
+
+    #[test]
+    fn code_blocks_as_source() {
+        assert_eq!(
+            code_blocks("x\n```rust\nfn a() {}\n```\n\n    b\n\n```\nopen"),
+            ["fn a() {}\n", "b\n", "open"]
+        );
     }
 
     #[test]

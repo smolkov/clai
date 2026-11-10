@@ -66,7 +66,9 @@ session list). Leaving only detaches: the session keeps running.
 | `Ctrl-O` | Choose the model: type to filter, `Up` / `Down` select, `Enter` changes it, `Esc` closes. |
 | `Ctrl-S` | Session list: `Enter` attach, `n` new (workspace, name, then the model), `r` rename, `k` kill, `Esc` close. |
 | `Ctrl-N` / `Ctrl-P` | Attach to the next / previous session. |
-| `Tab` | Switch to the conversation: `Up` / `Down` select, `Enter` expands a tool call, `?` shows help. |
+| `Tab` | Switch to the conversation: `Up` / `Down` select, `Enter` expands a tool call, `o` opens it in a view with all of it (`/` search, `y` copy, `w` wrap), `y` copies the entry, `Y` its code block, `?` shows help. |
+| `Ctrl-Y` / `Ctrl-T` | Copy the last answer / show or hide the tool calls of the last turn. |
+| Mouse | Drag to select and copy (wrapped lines joined, markers left out), double click a word, triple click a line; click a tool call to expand it. `Shift`-drag uses the terminal's selection. |
 
 A tool call that needs permission opens a prompt: `y` yes, `a` always (`Tab`
 widens the rule, `Enter` confirms), `n` no, `e` no with a message to the model,
@@ -75,7 +77,8 @@ widens the rule, `Enter` confirms), `n` no, `e` no with a message to the model,
 Commands: `/help`, `/model [PROVIDER/MODEL]` (without one, choose it as with
 `Ctrl-O`), `/sessions`, `/new [NAME]` (a session in the same workspace; the model
 picker starts on `default_model`, so `Enter` takes it), `/attach [NAME]`,
-`/rename NAME`, `/status [NAME]`, `/stats [7d|30d|all]`, `/settings`, `/theme [NAME]`, `/kill`, `/detach`, `/quit`. `/` in the empty input lists them:
+`/rename NAME`, `/status [NAME]`, `/stats [7d|30d|all]`, `/settings`, `/theme [NAME]`, `/kill`, `/copy [N|code]`
+(the last answer, the one N back, or its last code block), `/diff` (the changes of the last turn), `/detach`, `/quit`. `/` in the empty input lists them:
 type to search, `Up` / `Down` select, `Enter` runs, `Tab` completes, `Esc` closes
 the list and keeps the text. After `/attach ` and `/model ` a list offers the
 session names and models the same way. The list also shows commands of later
@@ -118,8 +121,12 @@ size nor a bill.
 
 Without a terminal the TUI exits with `2`; use `clai run` or `clai chat`.
 `[tui]` in the configuration has `symbols`, `mouse` (off: the terminal's own
-text selection works), `tool_output_lines`, `expand_tool_calls`, `timestamps`,
-`scroll_lines`, `max_fps` and `activity`; `NO_COLOR` turns colours off.
+text selection works), `tool_output_lines`, `tool_preview` (`changes`: diffs and
+the end of command output under finished calls; `all`; `none`), `clipboard`
+(`auto`: OSC 52, plus `wl-copy` / `xclip` / `xsel` / `pbcopy` when local;
+`osc52`; `command`; `off`), `timestamps`, `scroll_lines`, `max_fps` and
+`activity`; `NO_COLOR` turns colours off. `expand_tool_calls = true` still
+works and means `tool_preview = "all"`.
 
 While the session works, a line above the input shows what it does, since
 when, and the output tokens of the turn:

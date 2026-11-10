@@ -24,6 +24,7 @@ fn call(
     result: &str,
 ) -> SessionEvent {
     SessionEvent::ToolCall(ToolCallEvent {
+        details: None,
         id: id.into(),
         name: name.into(),
         state,
@@ -473,6 +474,7 @@ fn conversation_streams() {
     let mut c = Conversation::new(true, false);
     let call = |state, result: Option<&str>| {
         SessionEvent::ToolCall(ToolCallEvent {
+            details: None,
             id: "c1".into(),
             name: "read_file".into(),
             state,

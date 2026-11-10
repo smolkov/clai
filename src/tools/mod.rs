@@ -31,7 +31,7 @@ use crate::permissions::{Checker, Decision, Proposal, SessionRules, Workspace};
 use crate::provider::ToolSpec;
 
 pub use ask_user::{AskOption, AskQuestion, UserAnswer};
-pub use output::{ToolOutput, cut_for_model, group};
+pub use output::{FULL_BYTES, ToolOutput, cut_for_model, group};
 pub use question::{Details, PathDetails, Text};
 
 /// Receives the output of a running command as it arrives, at most every

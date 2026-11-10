@@ -436,6 +436,31 @@ async fn tool_round_trip_in_order() {
             ("c2".into(), CallState::Done)
         ]
     );
+    // A call allowed without a question sends its details with `running`,
+    // once; a question sends them with `waiting`.
+    let details: Vec<(CallState, bool)> = events
+        .iter()
+        .filter_map(|e| match e {
+            SessionEvent::ToolCall(c) if c.id == "c1" => Some((c.state, c.details.is_some())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        details,
+        [
+            (CallState::Pending, false),
+            (CallState::Pending, false),
+            (CallState::Running, true),
+            (CallState::Done, false)
+        ]
+    );
+    assert!(matches!(
+        events.iter().find_map(|e| match e {
+            SessionEvent::ToolCall(c) => c.details.as_deref(),
+            _ => None,
+        }),
+        Some(crate::tools::Details::ReadFile { .. })
+    ));
 }
 
 #[tokio::test]
@@ -514,6 +539,17 @@ async fn permission_answers() {
     ]);
     let (end, events) = f.turn("write", &asker).await;
     assert_eq!(end.reason, EndReason::Done);
+    let waiting: Vec<bool> = events
+        .iter()
+        .filter_map(|e| match e {
+            SessionEvent::ToolCall(c) if c.id == "c1" && c.state != CallState::Pending => {
+                Some(c.details.is_some())
+            }
+            _ => None,
+        })
+        .collect();
+    // `waiting` carries them; `running` after the answer does not again.
+    assert_eq!(waiting, [true, false, false]);
     assert!(f.root.join("a.txt").exists());
     assert!(!f.root.join("b.txt").exists());
     assert!(!f.root.join("c.txt").exists());

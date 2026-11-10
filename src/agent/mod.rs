@@ -455,6 +455,7 @@ impl Agent {
                 }
             };
             events.emit(SessionEvent::ToolCall(ToolCallEvent {
+                details: None,
                 id: call.id.clone(),
                 name: call.name.clone(),
                 state,
@@ -527,6 +528,7 @@ impl Agent {
             CallState::Waiting,
             Some(headers.join(", ")),
             None,
+            None,
         );
         let question = self.question(
             budget,
@@ -592,7 +594,14 @@ impl Agent {
         };
         let summary = Some(prepared.summary.clone());
         if prepared.action() == Action::Ask {
-            self.emit_call(events, call, CallState::Waiting, summary.clone(), None);
+            self.emit_call(
+                events,
+                call,
+                CallState::Waiting,
+                summary.clone(),
+                None,
+                Some(&prepared.details),
+            );
             match self
                 .ask_permission(call, &prepared, budget, events, asker, cancel)
                 .await
@@ -605,13 +614,15 @@ impl Agent {
                 }
             }
         }
-        self.emit_call(events, call, CallState::Running, summary, None);
+        // A question gave the details already.
+        let details = (prepared.action() != Action::Ask).then_some(&prepared.details);
+        self.emit_call(events, call, CallState::Running, summary, None, details);
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let env = self.env.clone();
         let run = prepared.run_with_progress(&env, cancel.clone(), Some(tx));
         let forward = async {
             while let Some(text) = rx.recv().await {
-                self.emit_call(events, call, CallState::Running, None, Some(text));
+                self.emit_call(events, call, CallState::Running, None, Some(text), None);
             }
         };
         let (output, ()) = tokio::join!(run, forward);
@@ -633,8 +644,10 @@ impl Agent {
         state: CallState,
         summary: Option<String>,
         output: Option<String>,
+        details: Option<&tools::Details>,
     ) {
         events.emit(SessionEvent::ToolCall(ToolCallEvent {
+            details: details.map(|d| Box::new(d.clone())),
             id: call.id.clone(),
             name: call.name.clone(),
             state,

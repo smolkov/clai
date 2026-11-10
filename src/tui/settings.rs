@@ -9,7 +9,7 @@ use std::ops::RangeInclusive;
 use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::config::edit::Setting;
-use crate::config::{ActivityLine, Symbols, Tui};
+use crate::config::{ActivityLine, Clipboard, Symbols, ToolPreview, Tui};
 
 use super::editor::{Edit, Editor};
 use super::keys;
@@ -46,7 +46,7 @@ const fn row(key: &'static str, description: &'static str, help: &'static str, k
 }
 
 /// The keys of `[tui]`, in the order of `spec/config.md`, "TUI".
-pub fn rows() -> [Row; 10] {
+pub fn rows() -> [Row; 11] {
     [
         row(
             "theme",
@@ -62,8 +62,8 @@ pub fn rows() -> [Row; 10] {
         ),
         row(
             "mouse",
-            "Capture the mouse for scrolling",
-            "off keeps the terminal's text selection; on scrolls with the wheel",
+            "Capture the mouse: wheel, drag copies",
+            "on: the wheel scrolls, a drag selects and copies, a click opens a call; off: the terminal selects",
             Kind::OnOff,
         ),
         row(
@@ -73,10 +73,16 @@ pub fn rows() -> [Row; 10] {
             Kind::Number(0..=1_000_000),
         ),
         row(
-            "expand_tool_calls",
-            "Keep finished tool calls expanded",
-            "Calls that wait for permission are always expanded",
-            Kind::OnOff,
+            "tool_preview",
+            "What finished tool calls show",
+            "changes: diffs and command output; all: every call expanded; none: one line",
+            Kind::Choice(&["changes", "all", "none"]),
+        ),
+        row(
+            "clipboard",
+            "How copied text reaches the clipboard",
+            "auto: OSC 52, and wl-copy, xclip, xsel or pbcopy when local; osc52; command; off",
+            Kind::Choice(&["auto", "osc52", "command", "off"]),
         ),
         Row {
             later: true,
@@ -137,7 +143,8 @@ pub fn get(tui: &Tui, key: &str) -> Setting {
         "symbols" => Setting::Text(symbols_name(tui.symbols).to_owned()),
         "mouse" => Setting::Bool(tui.mouse),
         "tool_output_lines" => Setting::Int(i64::from(tui.tool_output_lines)),
-        "expand_tool_calls" => Setting::Bool(tui.expand_tool_calls),
+        "tool_preview" => Setting::Text(tui.tool_preview.name().to_owned()),
+        "clipboard" => Setting::Text(tui.clipboard.name().to_owned()),
         "syntax_highlight" => Setting::Bool(tui.syntax_highlight),
         "timestamps" => Setting::Bool(tui.timestamps),
         "scroll_lines" => Setting::Int(i64::from(tui.scroll_lines)),
@@ -165,7 +172,21 @@ pub fn set(tui: &mut Tui, key: &str, value: &Setting) {
             };
         }
         ("mouse", Setting::Bool(b)) => tui.mouse = *b,
-        ("expand_tool_calls", Setting::Bool(b)) => tui.expand_tool_calls = *b,
+        ("tool_preview", Setting::Text(t)) => {
+            tui.tool_preview = match t.as_str() {
+                "all" => ToolPreview::All,
+                "none" => ToolPreview::None,
+                _ => ToolPreview::Changes,
+            };
+        }
+        ("clipboard", Setting::Text(t)) => {
+            tui.clipboard = match t.as_str() {
+                "osc52" => Clipboard::Osc52,
+                "command" => Clipboard::Command,
+                "off" => Clipboard::Off,
+                _ => Clipboard::Auto,
+            };
+        }
         ("syntax_highlight", Setting::Bool(b)) => tui.syntax_highlight = *b,
         ("timestamps", Setting::Bool(b)) => tui.timestamps = *b,
         ("tool_output_lines", Setting::Int(n)) => {
@@ -662,7 +683,8 @@ mod tests {
         assert_eq!(
             shown,
             [
-                "terminal", "auto", "on", "20", "off", "on", "off", "3", "30", "playful"
+                "terminal", "auto", "on", "20", "changes", "auto", "on", "off", "3", "30",
+                "playful"
             ]
         );
         let mut tui = Tui::default();

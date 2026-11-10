@@ -9,6 +9,7 @@ use serde_json::Value;
 use tokio::sync::mpsc;
 
 use super::question::{Closed, Question};
+use crate::tools::Details;
 
 /// What a session is doing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -72,6 +73,10 @@ pub struct ToolCallEvent {
     /// Set in the final state.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<CallResult>,
+    /// What the call does, as a permission question shows it: the diff of an
+    /// edit, the command and its directory. Sent once the call is prepared.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub details: Option<Box<Details>>,
 }
 
 /// How a turn ended.

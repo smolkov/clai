@@ -8,7 +8,7 @@ use serde::Deserialize;
 use toml::Spanned;
 
 use super::permissions::Action;
-use super::tui::{ActivityLine, Symbols};
+use super::tui::{ActivityLine, Clipboard, Symbols, ToolPreview};
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -120,7 +120,10 @@ pub struct TuiFile {
     pub symbols: Option<Symbols>,
     pub mouse: Option<bool>,
     pub tool_output_lines: Option<Spanned<i64>>,
+    /// Deprecated: `tool_preview`.
     pub expand_tool_calls: Option<bool>,
+    pub tool_preview: Option<ToolPreview>,
+    pub clipboard: Option<Clipboard>,
     pub syntax_highlight: Option<bool>,
     pub timestamps: Option<bool>,
     pub scroll_lines: Option<Spanned<i64>>,

@@ -39,6 +39,17 @@ pub enum Action {
     NextSession,
     /// `Ctrl-P`.
     PreviousSession,
+    /// `y` in the conversation: copy the selected entry.
+    Copy,
+    /// `Y` in the conversation: copy the last code block of the selected
+    /// answer.
+    CopyCode,
+    /// `o` in the conversation: open the selected call in the details view.
+    Open,
+    /// `Ctrl-Y`: copy the last answer.
+    CopyAnswer,
+    /// `Ctrl-T`: show or hide the calls of the last turn.
+    ToggleCalls,
     Nothing,
 }
 
@@ -75,6 +86,8 @@ pub fn action(key: KeyEvent, focus: Focus) -> Action {
         KeyCode::Char('s') if ctrl(key) => return Action::SessionList,
         KeyCode::Char('n') if ctrl(key) => return Action::NextSession,
         KeyCode::Char('p') if ctrl(key) => return Action::PreviousSession,
+        KeyCode::Char('y') if ctrl(key) => return Action::CopyAnswer,
+        KeyCode::Char('t') if ctrl(key) => return Action::ToggleCalls,
         KeyCode::Tab | KeyCode::BackTab => return Action::SwitchFocus,
         _ => {}
     }
@@ -84,6 +97,9 @@ pub fn action(key: KeyEvent, focus: Focus) -> Action {
             KeyCode::Down => Action::Down,
             KeyCode::Enter => Action::Toggle,
             KeyCode::Char('?') => Action::Help,
+            KeyCode::Char('y') => Action::Copy,
+            KeyCode::Char('Y') => Action::CopyCode,
+            KeyCode::Char('o') => Action::Open,
             _ => Action::Nothing,
         },
         Focus::Input => match key.code {

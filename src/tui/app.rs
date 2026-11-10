@@ -19,16 +19,20 @@ use indexmap::IndexMap;
 use super::activity::Activity;
 use super::commands::{self, Command};
 use super::conversation::{Conversation, Expansion, Kind};
+use super::details::Details;
 use super::editor::{Browse, Edit, Editor};
 use super::keys::{self, Action, Focus};
 use super::picker::{Picker, Purpose};
 use super::prompt::Prompt;
+use super::selection::Selection;
 use super::sessions::{ListAction, SessionList};
 use super::settings::{BoxAction, SettingsBox};
 use super::status::{Counted, StatusBox, Tab};
 use super::style::{Colouring, Look, Styles};
 use super::themes::{self, ThemeList};
 use super::view;
+
+mod copying;
 
 /// `Ctrl-C` twice within this time detaches.
 const DOUBLE_INTERRUPT: Duration = Duration::from_secs(1);
@@ -68,7 +72,6 @@ pub struct Settings {
     /// Who this client is to the server: `tui pts/3`.
     pub client: String,
     pub tool_output_lines: usize,
-    pub expand_tool_calls: bool,
     pub scroll_lines: usize,
     /// `tui.timestamps`: the offset of local time from UTC, in seconds.
     pub timestamps: Option<i64>,
@@ -173,6 +176,8 @@ pub enum Input {
     Saved(Result<Option<Stamp>, String>),
     /// A switch to another session failed; the current one stays.
     SwitchFailed(String),
+    /// Copied text did not reach the clipboard: why.
+    CopyFailed(String),
 }
 
 /// What the shell has to do.
@@ -187,6 +192,8 @@ pub enum Effect {
     Switch(String),
     /// Turn mouse capture on or off.
     Mouse(bool),
+    /// Put the text in the clipboard, as `tui.clipboard` says.
+    Copy(String),
     /// Load `[tui]` and the themes from the user file again.
     ReloadConfig,
     /// Write `[tui]` changes into the user file, if it still has `stamp`.
@@ -317,6 +324,19 @@ pub struct App {
     pub ended: Option<String>,
     /// A short message in the status line, until the next key.
     pub message: Option<String>,
+    /// When a message that goes by itself was set: `copied 12 lines`.
+    message_at: Option<Instant>,
+    /// The details view of a call, or of `/diff`.
+    pub details: Option<Details>,
+    /// Text selected with the mouse.
+    pub selection: Option<Selection>,
+    /// The last click and how many came in a row, for double and triple
+    /// clicks.
+    last_click: Option<(Instant, u16, u16, u8)>,
+    /// Where the conversation and the details view are, from the last
+    /// layout.
+    pub conversation_area: Rect,
+    pub details_area: Rect,
     /// The current time; the shell sets it before each input.
     pub now: Instant,
     last_interrupt: Option<Instant>,
@@ -337,7 +357,7 @@ impl App {
         let conversation = Conversation::new(
             settings.look,
             settings.tool_output_lines,
-            settings.expand_tool_calls,
+            settings.tui.tool_preview,
         );
         let mut app = App {
             settings,
@@ -378,6 +398,12 @@ impl App {
             lost_since: None,
             ended: None,
             message: None,
+            message_at: None,
+            details: None,
+            selection: None,
+            last_click: None,
+            conversation_area: Rect::default(),
+            details_area: Rect::default(),
             now,
             last_interrupt: None,
             ticks: 0,
@@ -401,6 +427,8 @@ impl App {
         let asked_now = self.prompt.as_ref().map(|p| p.id());
         if asked_now.is_some() && asked_now != asked_before.as_deref() {
             self.status_box = None;
+            self.details = None;
+            self.clear_selection();
             let mut restored = self.close_theme_boxes();
             effects.append(&mut restored);
             self.picker = None;
@@ -735,6 +763,10 @@ impl App {
                 self.saved(result);
                 vec![Effect::Redraw]
             }
+            Input::CopyFailed(message) => {
+                self.flash(format!("cannot copy: {message}"));
+                vec![Effect::Redraw]
+            }
             Input::SwitchFailed(message) => {
                 self.switching = None;
                 self.conversation.error(message);
@@ -751,10 +783,9 @@ impl App {
         let limit = usize::try_from(tui.tool_output_lines).unwrap_or(usize::MAX);
         let changed = look != self.settings.look
             || limit != self.settings.tool_output_lines
-            || tui.expand_tool_calls != self.settings.expand_tool_calls;
+            || tui.tool_preview != self.settings.tui.tool_preview;
         if changed {
-            self.conversation
-                .reconfigure(look, limit, tui.expand_tool_calls);
+            self.conversation.reconfigure(look, limit, tui.tool_preview);
         }
         let mut effects = Vec::new();
         if tui.mouse != self.settings.tui.mouse {
@@ -762,7 +793,6 @@ impl App {
         }
         self.settings.look = look;
         self.settings.tool_output_lines = limit;
-        self.settings.expand_tool_calls = tui.expand_tool_calls;
         self.settings.scroll_lines = usize::from(tui.scroll_lines);
         self.settings.timestamps = tui.timestamps.then_some(self.settings.theming.offset);
         self.settings.tui = tui;
@@ -872,6 +902,8 @@ impl App {
         self.list_wanted = false;
         self.command_list = None;
         self.status_box = None;
+        self.details = None;
+        self.selection = None;
         self.ended = None;
         self.new_output = false;
         self.reveal = None;
@@ -1465,6 +1497,9 @@ impl App {
         if !self.animating() && self.conversation.tick() {
             effects.push(Effect::Redraw);
         }
+        if self.expire_message() {
+            effects.push(Effect::Redraw);
+        }
         effects.extend(self.ask_start());
         if self.lost_since.is_none() {
             effects.extend(self.status_asks());
@@ -1565,6 +1600,11 @@ impl App {
             return Vec::new();
         }
         self.message = None;
+        self.message_at = None;
+        // A key ends a selection; `Esc` does nothing else then.
+        if self.key_clears_selection() && key.code == KeyCode::Esc {
+            return vec![Effect::Redraw];
+        }
         if self.prompt.is_some() {
             // Opened over the prompt with `Ctrl-S`.
             if self.picker.is_some() {
@@ -1574,6 +1614,9 @@ impl App {
                 return self.session_list_key(key);
             }
             return self.prompt_key(key);
+        }
+        if self.details.is_some() {
+            return self.details_key(key);
         }
         if self.status_box.is_some() {
             return self.status_box_key(key);
@@ -1932,6 +1975,23 @@ impl App {
             Action::SessionList => return self.open_sessions(),
             Action::NextSession => return self.cycle(true),
             Action::PreviousSession => return self.cycle(false),
+            Action::Copy => return self.copy_selected(),
+            Action::CopyCode => return self.copy_code_of_selected(),
+            Action::Open => {
+                if let Some(entry) = self.selected
+                    && !self.open_details(entry)
+                {
+                    self.flash("o opens a tool call");
+                }
+            }
+            Action::CopyAnswer => return self.copy_command("").unwrap_or_default(),
+            Action::ToggleCalls => {
+                if self.conversation.toggle_last_turn() {
+                    self.follow = self.follow || self.focus == Focus::Input;
+                } else {
+                    self.flash("the last turn has no tool calls");
+                }
+            }
             Action::Detach | Action::Nothing => {}
         }
         Vec::new()
@@ -2017,9 +2077,28 @@ impl App {
 
     fn mouse(&mut self, mouse: MouseEvent) -> Vec<Effect> {
         let step = self.settings.scroll_lines;
+        let boxed = self.picker.is_some()
+            || self.session_list.is_some()
+            || self.settings_box.is_some()
+            || self.theme_list.is_some()
+            || self.status_box.is_some()
+            || self.dialog.is_some()
+            || self.prompt.as_ref().is_some_and(Prompt::is_ask);
         match mouse.kind {
-            MouseEventKind::ScrollUp => self.scroll_up(step),
-            MouseEventKind::ScrollDown => self.scroll_down(step),
+            MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
+                let by = isize::try_from(step).unwrap_or(3);
+                let up = mouse.kind == MouseEventKind::ScrollUp;
+                match &mut self.details {
+                    Some(details) => details.scroll(if up { -by } else { by }),
+                    None if up => self.scroll_up(step),
+                    None => self.scroll_down(step),
+                }
+            }
+            MouseEventKind::Down(_) | MouseEventKind::Drag(_) | MouseEventKind::Up(_)
+                if !boxed && self.ended.is_none() =>
+            {
+                return self.mouse_button(mouse);
+            }
             _ => return Vec::new(),
         }
         vec![Effect::Redraw]
@@ -2112,6 +2191,18 @@ impl App {
                 // The input stays, so that it can be corrected.
                 None => return Vec::new(),
             },
+            ("copy", argument) => match self.copy_command(argument) {
+                Some(effects) => effects,
+                None => {
+                    // The input stays, so that it can be corrected.
+                    self.conversation.notice("usage: /copy [N|code]");
+                    return Vec::new();
+                }
+            },
+            ("diff", _) => {
+                self.open_diff();
+                Vec::new()
+            }
             ("stats", "") => self.open_stats(Range::default()),
             ("stats", range) => match Range::parse(range) {
                 Some(range) => self.open_stats(range),
@@ -2186,6 +2277,14 @@ impl App {
         };
         let width = usize::from(areas.conversation.width);
         self.view_height = usize::from(areas.conversation.height);
+        self.conversation_area = areas.conversation;
+        self.details_area = view::details_area(self, size);
+        if let Some(details) = &mut self.details {
+            details.layout(
+                usize::from(self.details_area.width),
+                usize::from(self.details_area.height),
+            );
+        }
         // Keep the entry at the top when the width changes the row numbers.
         let anchor = (self.width.is_some_and(|w| w != width))
             .then(|| self.conversation.entry_at(self.top))

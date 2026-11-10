@@ -1,7 +1,7 @@
 # Copy text and see tool details
 
 - RFC: 0016
-- Status: draft
+- Status: done
 - Spec: [`spec/tui.md`](../spec/tui.md), "Conversation entries", "Keys";
   [`spec/config.md`](../spec/config.md), "TUI"
 
@@ -251,41 +251,41 @@ over the conversation, at full size:
 ## Implementation plan
 
 1. **Clipboard**
-   - Status: todo
+   - Status: done
    - Files: `tui/clipboard.rs` (new), `config/`, `spec/config.md`
    - Result: OSC 52 and the clipboard commands, with `tui.clipboard`
    - Tests: sequence and command choice
 2. **Copy keys**
-   - Status: todo
+   - Status: done
    - Files: `tui/app.rs`, `tui/conversation.rs`, `tui/commands.rs`,
      `spec/tui.md`
    - Result: `y`, `Y`, `/copy [N|code]`, `Ctrl-Y`
    - Tests: text per entry and tool; `git apply` of a copied diff
 3. **Tool previews**
-   - Status: todo
+   - Status: done
    - Files: `tui/conversation.rs`, `config/`, `spec/tui.md`,
      `spec/config.md`
    - Result: diffs and command tails after the call; live command output;
      `tui.tool_preview`
    - Tests: preview snapshots
 4. **Click and `Ctrl-T`**
-   - Status: todo
+   - Status: done
    - Files: `tui/app.rs`, `tui/view/conversation.rs`
    - Result: a call opens without moving the focus
    - Tests: App tests
 5. **Details view**
-   - Status: todo
+   - Status: done
    - Files: `tui/details.rs` (new), `tui/view/details.rs` (new), `tui/app.rs`
    - Result: `o`, the full call, search, wrap, copy; `/diff`
    - Tests: snapshots and App tests
 6. **Mouse selection**
-   - Status: todo
+   - Status: done
    - Files: `tui/selection.rs` (new), `tui/conversation.rs`,
      `tui/view/conversation.rs`, `tui/app.rs`
    - Result: drag selects and copies in the conversation and the details view
    - Tests: copy text tests; App tests for drag, scroll and clear
 7. **Docs**
-   - Status: todo
+   - Status: done
    - Files: `readme.md`, `todo.md`, this RFC
    - Result: status `done`
 
@@ -309,7 +309,37 @@ previews already answer most of the need.
   TUI and needs the alternate screen to be given up for a moment. The details
   view stays in the TUI. An `e` key "open in `$PAGER`" can be added later.
 
+## Decisions
+
+Built with the proposals of the open questions; the user asked for the RFC to
+be built as it stands. Where the build differs from the design above:
+
+- **Details in `tool_call`:** an edit allowed without a question had no diff
+  in the TUI; only the permission question carried it. The first `waiting` or
+  `running` event of a call now carries `details`. An optional field, so no
+  new protocol version.
+- **Hint row:** the `o open  y copy` hint is in the footer (`Enter expand ─
+  o open ─ y copy ─ ? help ─ drag copy`), not a row under the call, so a
+  selection does not change the rows of the conversation.
+- **`Enter` on `… N lines`:** `Enter` acts on the selected entry, not a row;
+  a click on that row opens the details instead, and `o` does from the keys.
+- **Code blocks:** they are drawn without fences, so a selection over one
+  copies its source as it is; no special case was needed.
+- **Diff header:** previews and the details view leave out the `---` / `+++`
+  lines, which repeat the file of the summary; `y` keeps them, as `a/` and
+  `b/` paths.
+- **Details view:** the whole screen. `k` / `j` and `Space` scroll too; the
+  match found is marked and the view shows it, as far as the end allows.
+- **Clipboard:** `command` without an installed command says
+  `cannot copy: no clipboard command found`; OSC 52 carries at most 100 kB.
+- **Expanded previews:** `Enter` on a preview expands; collapsed and expanded
+  then go round as before.
+- **Not checked yet:** the run in a real terminal of the testing plan; it is
+  a todo.
+
 ## Open questions
+
+Answered with the proposals when it was built (see "Decisions").
 
 1. **Command preview length:** the last 6 lines (proposal), or
    `tool_output_lines` as for diffs?

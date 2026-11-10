@@ -2,9 +2,11 @@
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
+use ratatui::style::Modifier;
 
 use crate::tui::app::App;
 use crate::tui::keys::Focus;
+use crate::tui::selection::Surface;
 
 pub fn draw(app: &App, buffer: &mut Buffer, area: Rect) {
     let selected = (app.focus == Focus::Conversation)
@@ -19,6 +21,20 @@ pub fn draw(app: &App, buffer: &mut Buffer, area: Rect) {
         if row.first && row.entry == selected && selected.is_some() {
             let cells = Rect::new(area.x, y, area.width, 1);
             buffer.set_style(cells, app.settings.look.styles.selection);
+        }
+        // Text selected with the mouse, in reverse colours.
+        if let Some(selection) = app
+            .selection
+            .filter(|s| s.surface == Surface::Conversation && s.dragged)
+        {
+            let at = app.top + i;
+            for x in 0..area.width {
+                if selection.contains(at, usize::from(x))
+                    && let Some(cell) = buffer.cell_mut((area.x + x, y))
+                {
+                    cell.modifier.toggle(Modifier::REVERSED);
+                }
+            }
         }
     }
 }

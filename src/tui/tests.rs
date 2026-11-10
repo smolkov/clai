@@ -4,7 +4,9 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEvent, MouseEventKind};
+use crossterm::event::{
+    KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+};
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use ratatui::layout::Rect;
@@ -40,7 +42,6 @@ fn settings(unicode: bool, colour: bool) -> Settings {
         look: Look::new(unicode, colour),
         client: "tui pts/3".to_owned(),
         tool_output_lines: 20,
-        expand_tool_calls: false,
         scroll_lines: 3,
         timestamps: None,
         windows: HashMap::from([("anthropic/sonnet".to_owned(), 200_000)]),
@@ -50,6 +51,9 @@ fn settings(unicode: bool, colour: bool) -> Settings {
             } else {
                 crate::config::Symbols::Ascii
             },
+            // Finished calls are one line, as before previews; the tests of
+            // previews set `changes`.
+            tool_preview: crate::config::ToolPreview::None,
             ..crate::config::Tui::default()
         },
         theming: super::app::Theming {
@@ -187,6 +191,7 @@ fn notices(app: &App) -> Vec<String> {
 
 fn call(id: &str, name: &str, state: CallState) -> ToolCallEvent {
     ToolCallEvent {
+        details: None,
         id: id.to_owned(),
         name: name.to_owned(),
         state,
@@ -803,9 +808,9 @@ fn long_output_is_cut_and_enter_shows_the_whole() {
 }
 
 #[test]
-fn expand_tool_calls_setting_and_zero_means_no_limit() {
+fn tool_preview_all_and_zero_means_no_limit() {
     let mut settings = settings(true, true);
-    settings.expand_tool_calls = true;
+    settings.tui.tool_preview = crate::config::ToolPreview::All;
     settings.tool_output_lines = 0;
     let output = (1..=30)
         .map(|i| format!("o{i}"))
@@ -3246,7 +3251,7 @@ fn applied_settings_change_the_conversation() {
     let before = screen(&mut app, 80, 40);
     assert!(before.contains("▸ run_command"), "{before}");
     let effects = app.apply(tui_with(|t| {
-        t.expand_tool_calls = true;
+        t.tool_preview = crate::config::ToolPreview::All;
         t.tool_output_lines = 5;
         t.symbols = crate::config::Symbols::Ascii;
         t.scroll_lines = 7;
@@ -3494,28 +3499,34 @@ fn settings_preview_and_save() {
     select_row(&mut app, "mouse");
     let effects = app.update(key(KeyCode::Enter));
     assert!(effects.contains(&Effect::Mouse(true)));
-    select_row(&mut app, "expand_tool_calls");
+    select_row(&mut app, "tool_preview");
     app.update(key(KeyCode::Right));
-    assert!(app.settings.expand_tool_calls);
+    assert_eq!(
+        app.settings.tui.tool_preview,
+        crate::config::ToolPreview::All
+    );
     let effects = app.update(ch('s'));
     assert_eq!(
         saves(&effects),
         [vec![
             ("mouse", Some(Setting::Bool(true))),
-            ("expand_tool_calls", Some(Setting::Bool(true)))
+            ("tool_preview", Some(Setting::Text("all".into())))
         ]]
     );
     app.update(Input::Saved(Ok(None)));
     let settings = app.settings_box.as_ref().expect("still open");
     assert!(settings.changes().is_empty());
     assert!(screen(&mut app, 100, 30).contains("saved"));
-    assert!(app.settings.theming.file.tui.expand_tool_calls);
+    assert_eq!(
+        app.settings.theming.file.tui.tool_preview,
+        crate::config::ToolPreview::All
+    );
     assert!(
         app.settings
             .theming
             .file
             .keys
-            .contains(&"expand_tool_calls".to_owned())
+            .contains(&"tool_preview".to_owned())
     );
     // Nothing changed now: Esc closes at once.
     app.update(key(KeyCode::Esc));
@@ -3829,6 +3840,7 @@ fn status_of(state: State) -> crate::protocol::SessionStatus {
     let t = CREATED * 1000;
     let tool = |name: &str, state: CallState| {
         SessionEvent::ToolCall(ToolCallEvent {
+            details: None,
             id: "c".into(),
             name: name.into(),
             state,
@@ -4861,4 +4873,401 @@ fn frame_global_tab_narrow() {
     command(&mut app, "/stats");
     app.update(global_answer(Range::Week, week_stats()));
     insta::assert_snapshot!(screen(&mut app, 42, 40));
+}
+
+// Copy and tool details (RFC 0016).
+
+fn previewing(events: Vec<SessionEvent>) -> App {
+    let mut settings = settings(true, true);
+    settings.tui.tool_preview = crate::config::ToolPreview::Changes;
+    App::new(settings, attachment(events), Instant::now())
+}
+
+fn edit_details() -> Details {
+    Details::EditFile {
+        path: PathDetails {
+            written: "src/parse.rs".to_owned(),
+            resolved: "src/parse.rs".to_owned(),
+            area: "workspace".to_owned(),
+        },
+        diff: Text {
+            text: format!("--- src/parse.rs\n+++ src/parse.rs\n{DIFF}"),
+            cut: false,
+        },
+        first_line: 1,
+        last_line: 1,
+        occurrences: 1,
+        size: 10,
+        modified: None,
+    }
+}
+
+/// An edit allowed without a question: its details come with `running`.
+fn edited() -> Vec<SessionEvent> {
+    let mut running = call("e1", "edit_file", CallState::Running);
+    running.details = Some(Box::new(edit_details()));
+    vec![
+        SessionEvent::UserMessage {
+            text: "fix it".into(),
+        },
+        SessionEvent::ToolCall(running),
+        SessionEvent::ToolCall(done(
+            call("e1", "edit_file", CallState::Running),
+            "edited src/parse.rs: replaced 1 occurrence (line 1)",
+        )),
+    ]
+}
+
+fn command_run(id: &str, lines: usize) -> Vec<SessionEvent> {
+    let mut running = call(id, "run_command", CallState::Running);
+    running.summary = Some("cargo test parse".into());
+    running.arguments = json!({"command": "cargo test parse"});
+    let output: Vec<String> = (1..=lines).map(|i| format!("line {i}")).collect();
+    let mut finished = running.clone();
+    finished = done(finished, &format!("{}\nexit code 0", output.join("\n")));
+    vec![
+        SessionEvent::ToolCall(running),
+        SessionEvent::ToolCall(finished),
+    ]
+}
+
+fn copies(effects: &[Effect]) -> Vec<String> {
+    effects
+        .iter()
+        .filter_map(|e| match e {
+            Effect::Copy(text) => Some(text.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn mouse(kind: MouseEventKind, column: u16, row: u16) -> Input {
+    Input::Mouse(MouseEvent {
+        kind,
+        column,
+        row,
+        modifiers: KeyModifiers::NONE,
+    })
+}
+
+/// The screen row that shows `text`.
+fn row_of(app: &mut App, text: &str) -> u16 {
+    let shown = screen(app, 80, 30);
+    let row = shown
+        .lines()
+        .position(|l| l.contains(text))
+        .unwrap_or_else(|| panic!("{text} not on the screen:\n{shown}"));
+    u16::try_from(row).unwrap()
+}
+
+#[test]
+fn frame_tool_previews() {
+    let mut events = edited();
+    events.extend(command_run("r1", 40));
+    let mut failed = call("f1", "read_file", CallState::Running);
+    failed.state = CallState::Error;
+    failed.result = Some(CallResult {
+        text: "src/gone.rs: no such file".into(),
+        is_error: true,
+    });
+    events.push(SessionEvent::ToolCall(failed));
+    events.push(SessionEvent::ToolCall(done(
+        call("r2", "read_file", CallState::Running),
+        "1: fn main() {}",
+    )));
+    let mut live = call("r3", "run_command", CallState::Running);
+    live.summary = Some("cargo build".into());
+    live.arguments = json!({"command": "cargo build"});
+    events.push(SessionEvent::ToolCall(live.clone()));
+    live.output = Some("   Compiling clai v0.1.0\n".into());
+    events.push(SessionEvent::ToolCall(live));
+    let mut app = previewing(events);
+    insta::assert_snapshot!(screen(&mut app, 80, 34));
+}
+
+#[test]
+fn tool_preview_none_keeps_calls_on_one_line() {
+    let mut app = app_with(edited());
+    let text = screen(&mut app, 80, 20);
+    assert!(text.contains("▸ edit_file"), "{text}");
+    assert!(!text.contains("+for i"), "{text}");
+    // `Ctrl-T` shows the previews of the last turn, and hides them again.
+    app.update(ctrl('t'));
+    let text = screen(&mut app, 80, 20);
+    assert!(text.contains("+for i in 0..lines.len() {"), "{text}");
+    app.update(ctrl('t'));
+    assert!(!screen(&mut app, 80, 20).contains("+for i"));
+}
+
+#[test]
+fn enter_on_a_preview_expands_and_a_collapsed_call_stays_collapsed() {
+    let mut app = previewing(command_run("r1", 40));
+    let text = screen(&mut app, 80, 30);
+    assert!(text.contains("… 35 lines"), "{text}");
+    assert!(!text.contains("line 1\n"), "{text}");
+    app.update(key(KeyCode::Tab));
+    app.update(key(KeyCode::Enter));
+    let text = screen(&mut app, 80, 60);
+    assert!(text.contains("more lines"), "{text}");
+    app.update(key(KeyCode::Enter));
+    app.update(key(KeyCode::Enter));
+    let text = screen(&mut app, 80, 60);
+    assert!(text.contains("▸ run_command"), "{text}");
+}
+
+#[test]
+fn y_copies_the_selected_entry() {
+    let mut events = vec![SessionEvent::UserMessage {
+        text: "hello".into(),
+    }];
+    events.push(SessionEvent::TextDone {
+        text: "Use **this**:\n\n```sh\nls -l\n```\n".into(),
+    });
+    events.extend(command_run("r1", 2));
+    let mut app = previewing(events);
+    app.update(key(KeyCode::Tab));
+    let effects = app.update(ch('y'));
+    assert_eq!(
+        copies(&effects),
+        ["$ cargo test parse\nline 1\nline 2\nexit code 0"]
+    );
+    assert!(screen(&mut app, 80, 30).contains("copied 4 lines"));
+    app.update(key(KeyCode::Up));
+    assert_eq!(
+        copies(&app.update(ch('y'))),
+        ["Use **this**:\n\n```sh\nls -l\n```\n"]
+    );
+    assert_eq!(copies(&app.update(ch('Y'))), ["ls -l\n"]);
+    app.update(key(KeyCode::Up));
+    assert_eq!(copies(&app.update(ch('y'))), ["hello"]);
+}
+
+#[test]
+fn a_copied_edit_applies_with_git_apply() {
+    let mut app = previewing(edited());
+    app.update(key(KeyCode::Tab));
+    let effects = app.update(ch('y'));
+    let [diff] = copies(&effects).try_into().unwrap();
+    assert!(
+        diff.starts_with("--- a/src/parse.rs\n+++ b/src/parse.rs\n"),
+        "{diff}"
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let git = |args: &[&str]| {
+        std::process::Command::new("git")
+            .args(args)
+            .current_dir(dir.path())
+            .output()
+            .unwrap()
+    };
+    if !git(&["init", "-q"]).status.success() {
+        return;
+    }
+    std::fs::create_dir(dir.path().join("src")).unwrap();
+    std::fs::write(
+        dir.path().join("src/parse.rs"),
+        "for i in 0..lines.len() - 1 {\n",
+    )
+    .unwrap();
+    std::fs::write(dir.path().join("p.diff"), &diff).unwrap();
+    let applied = git(&["apply", "p.diff"]);
+    assert!(applied.status.success(), "{applied:?}");
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("src/parse.rs")).unwrap(),
+        "for i in 0..lines.len() {\n"
+    );
+}
+
+#[test]
+fn copy_commands() {
+    let mut app = app_with(vec![
+        SessionEvent::TextDone {
+            text: "first\n\n```\ncode one\n```".into(),
+        },
+        SessionEvent::UserMessage {
+            text: "more".into(),
+        },
+        SessionEvent::TextDone {
+            text: "second".into(),
+        },
+    ]);
+    assert_eq!(copies(&command(&mut app, "/copy")), ["second"]);
+    assert_eq!(
+        copies(&command(&mut app, "/copy 2")),
+        ["first\n\n```\ncode one\n```"]
+    );
+    let effects = command(&mut app, "/copy 3");
+    assert!(copies(&effects).is_empty());
+    assert!(notices(&app).contains(&"only 2 answers".to_owned()));
+    let effects = command(&mut app, "/copy code");
+    assert!(copies(&effects).is_empty());
+    assert!(notices(&app).contains(&"the last answer has no code block".to_owned()));
+    let effects = command(&mut app, "/copy x");
+    assert!(copies(&effects).is_empty());
+    assert_eq!(app.editor.text(), "/copy x");
+    app.editor.clear();
+    // `Ctrl-Y` from the input.
+    assert_eq!(copies(&app.update(ctrl('y'))), ["second"]);
+}
+
+#[test]
+fn copying_off_and_the_message_goes_by_itself() {
+    let mut settings = settings(true, true);
+    settings.tui.clipboard = crate::config::Clipboard::Off;
+    let mut app = App::new(
+        settings,
+        attachment(vec![SessionEvent::TextDone { text: "a".into() }]),
+        Instant::now(),
+    );
+    assert!(copies(&app.update(ctrl('y'))).is_empty());
+    assert!(screen(&mut app, 80, 20).contains("copying is off"));
+    app.now += Duration::from_secs(3);
+    app.update(Input::Tick);
+    assert!(!screen(&mut app, 80, 20).contains("copying is off"));
+    app.update(Input::CopyFailed("xclip: broken pipe".into()));
+    assert!(screen(&mut app, 80, 20).contains("cannot copy: xclip: broken pipe"));
+}
+
+#[test]
+fn a_drag_selects_and_a_release_copies() {
+    let mut app = previewing(vec![
+        SessionEvent::UserMessage {
+            text: "first line".into(),
+        },
+        SessionEvent::TextDone {
+            text: "an answer that the TUI wraps because it is longer than the width of the screen \
+                   it is shown on"
+                .into(),
+        },
+    ]);
+    let user = row_of(&mut app, "> first line");
+    let answer = row_of(&mut app, "an answer");
+    assert!(app.follow);
+    app.update(mouse(MouseEventKind::Down(MouseButton::Left), 2, user));
+    app.update(mouse(
+        MouseEventKind::Drag(MouseButton::Left),
+        8,
+        answer + 1,
+    ));
+    // The view stops following while the text is selected.
+    assert!(!app.follow);
+    let effects = app.update(mouse(MouseEventKind::Up(MouseButton::Left), 8, answer + 1));
+    assert_eq!(
+        copies(&effects),
+        [
+            "first line\n\nan answer that the TUI wraps because it is longer than the width of the screen it is sho"
+        ]
+    );
+    assert!(app.selection.is_some());
+    // A key clears it; the view follows again.
+    app.update(key(KeyCode::Esc));
+    assert!(app.selection.is_none());
+    assert!(app.follow);
+}
+
+#[test]
+fn double_and_triple_clicks() {
+    let mut app = previewing(vec![SessionEvent::TextDone {
+        text: "see src/parse.rs: here, and a line long enough to wrap at the edge of the screen"
+            .into(),
+    }]);
+    let row = row_of(&mut app, "see src");
+    app.update(mouse(MouseEventKind::Down(MouseButton::Left), 6, row));
+    app.update(mouse(MouseEventKind::Up(MouseButton::Left), 6, row));
+    let word = app.update(mouse(MouseEventKind::Down(MouseButton::Left), 6, row));
+    assert_eq!(copies(&word), ["src/parse.rs"]);
+    app.update(mouse(MouseEventKind::Up(MouseButton::Left), 6, row));
+    let line = app.update(mouse(MouseEventKind::Down(MouseButton::Left), 6, row));
+    assert_eq!(
+        copies(&line),
+        ["see src/parse.rs: here, and a line long enough to wrap at the edge of the screen"]
+    );
+}
+
+#[test]
+fn a_click_toggles_a_call_and_the_focus_stays() {
+    let mut app = app_with(edited());
+    let row = row_of(&mut app, "▸ edit_file");
+    app.update(mouse(MouseEventKind::Down(MouseButton::Left), 10, row));
+    app.update(mouse(MouseEventKind::Up(MouseButton::Left), 10, row));
+    assert_eq!(app.focus, Focus::Input);
+    let text = screen(&mut app, 80, 30);
+    assert!(text.contains("▾ edit_file"), "{text}");
+    typed(&mut app, "x");
+    assert_eq!(app.editor.text(), "x");
+}
+
+#[test]
+fn a_click_on_more_lines_opens_the_details() {
+    let mut app = previewing(command_run("r1", 40));
+    let row = row_of(&mut app, "… 35 lines");
+    app.update(mouse(MouseEventKind::Down(MouseButton::Left), 4, row));
+    app.update(mouse(MouseEventKind::Up(MouseButton::Left), 4, row));
+    assert!(app.details.is_some());
+}
+
+#[test]
+fn frame_details_view() {
+    let mut app = previewing(command_run("r1", 40));
+    app.update(key(KeyCode::Tab));
+    app.update(ch('o'));
+    assert!(app.details.is_some());
+    insta::assert_snapshot!(screen(&mut app, 80, 24));
+}
+
+#[test]
+fn details_view_search_wrap_copy_and_close() {
+    let mut app = previewing(command_run("r1", 40));
+    app.update(key(KeyCode::Tab));
+    app.update(ch('o'));
+    screen(&mut app, 80, 24);
+    typed(&mut app, "/line 30");
+    assert!(screen(&mut app, 80, 24).contains("/line 30"));
+    app.update(key(KeyCode::Enter));
+    let details = app.details.as_ref().unwrap();
+    assert_eq!(details.found, Some(30));
+    // Near the end, the last page is shown with the match on it.
+    let text = screen(&mut app, 80, 24);
+    assert!(text.contains("line 30"), "{text}");
+    assert_eq!(details_top(&app), app.details.as_ref().unwrap().max_top());
+    typed(&mut app, "/zzz");
+    app.update(key(KeyCode::Enter));
+    assert!(screen(&mut app, 80, 24).contains("not found: zzz"));
+    app.update(ch('w'));
+    assert!(!app.details.as_ref().unwrap().wrap);
+    let effects = app.update(ch('y'));
+    let [text] = copies(&effects).try_into().unwrap();
+    assert!(text.starts_with("$ cargo test parse\n"), "{text}");
+    assert!(text.ends_with("line 40\nexit code 0\n"), "{text}");
+    app.update(key(KeyCode::Esc));
+    assert!(app.details.is_none());
+    // A question closes it.
+    app.update(ch('o'));
+    assert!(app.details.is_some());
+    app.update(live(SessionEvent::ToolCall(call(
+        "c1",
+        "edit_file",
+        CallState::Waiting,
+    ))));
+    app.update(live(SessionEvent::Question(Box::new(permission()))));
+    assert!(app.details.is_none());
+}
+
+#[test]
+fn diff_shows_the_changes_of_the_last_turn() {
+    let mut app = previewing(edited());
+    command(&mut app, "/diff");
+    let details = app.details.as_ref().expect("open");
+    assert!(details.title.contains("1 file"), "{}", details.title);
+    let text = screen(&mut app, 80, 24);
+    assert!(text.contains("+for i in 0..lines.len() {"), "{text}");
+    app.update(key(KeyCode::Esc));
+    let mut app = previewing(command_run("r1", 2));
+    command(&mut app, "/diff");
+    assert!(app.details.is_none());
+    assert!(notices(&app).contains(&"the last turn changed no file".to_owned()));
+}
+
+fn details_top(app: &App) -> usize {
+    app.details.as_ref().unwrap().top
 }

@@ -8,6 +8,7 @@ mod ask;
 mod commands;
 mod conversation;
 mod day_chart;
+mod details;
 mod info;
 mod input;
 mod picker;
@@ -53,6 +54,11 @@ pub struct Areas {
 /// How far the status box can scroll on a screen of `size`.
 pub fn status_max_top(app: &App, size: Rect) -> usize {
     status_box::max_top(app, size)
+}
+
+/// Where the details view shows its text on a screen of `size`.
+pub fn details_area(app: &App, size: Rect) -> Rect {
+    details::area(app, size)
 }
 
 /// The areas for a screen of `size`; `None` if it is too small.
@@ -145,6 +151,7 @@ pub fn draw(app: &App, frame: &mut Frame<'_>) {
                 && app.session_list.is_none()
                 && app.settings_box.is_none()
                 && app.status_box.is_none()
+                && app.details.is_none()
                 && app.theme_list.is_none() =>
         {
             frame.set_cursor_position((x, y));
@@ -160,6 +167,7 @@ pub fn draw(app: &App, frame: &mut Frame<'_>) {
     settings::draw(app, frame, size);
     themes::draw(app, frame, size);
     status_box::draw(app, frame, size);
+    details::draw(app, frame, size);
     paint(frame.buffer_mut(), look);
 }
 

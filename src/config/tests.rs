@@ -698,6 +698,33 @@ code = "Solarized (dark)"
 }
 
 #[test]
+fn tool_preview_clipboard_and_the_old_key() {
+    let tui = |text: &str| ok(&with(&format!("[tui]\n{text}"))).tui;
+    assert_eq!(tui("").tool_preview, ToolPreview::Changes);
+    assert_eq!(tui("").clipboard, Clipboard::Auto);
+    assert_eq!(
+        tui("tool_preview = \"none\"").tool_preview,
+        ToolPreview::None
+    );
+    assert_eq!(tui("clipboard = \"osc52\"").clipboard, Clipboard::Osc52);
+    // `expand_tool_calls` is read as `all`; `tool_preview` wins.
+    assert_eq!(
+        tui("expand_tool_calls = true").tool_preview,
+        ToolPreview::All
+    );
+    assert_eq!(
+        tui("expand_tool_calls = false").tool_preview,
+        ToolPreview::Changes
+    );
+    assert_eq!(
+        tui("expand_tool_calls = true\ntool_preview = \"none\"").tool_preview,
+        ToolPreview::None
+    );
+    let e = errs(&with("[tui]\nclipboard = \"x11\"\n"), None);
+    assert!(e[0].contains("unknown variant `x11`"), "{e:?}");
+}
+
+#[test]
 fn tui_errors() {
     let e = errs(
         &with(

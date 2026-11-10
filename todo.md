@@ -197,6 +197,22 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [x] `session_status` request, protocol 4.
 - [x] `/status [NAME]` in the TUI (live, scrollable) and in `clai chat`.
 
+## Copy text and see tool details (RFC 0016)
+
+- [x] Clipboard: OSC 52 and `wl-copy` / `xclip` / `xsel` / `pbcopy`,
+      `tui.clipboard`.
+- [x] `y`, `Y`, `/copy [N|code]`, `Ctrl-Y`; a copied edit applies with
+      `git apply`.
+- [x] Previews of finished edits, writes, commands and errors; live command
+      output; `tui.tool_preview`, `expand_tool_calls` deprecated.
+- [x] `tool_call` events carry the call's details once.
+- [x] Click on a call, `Ctrl-T`.
+- [x] Details view: `o`, search, wrap, copy; `/diff`.
+- [x] Mouse selection in the conversation and the details view, double and
+      triple click.
+- [ ] Check the selection and OSC 52 in a real terminal (kitty, foot, tmux).
+- [ ] `e` in the details view: open in `$PAGER` (RFC 0016, alternatives).
+
 ## Global statistics (RFC 0014)
 
 - [x] `usage` events carry the model.

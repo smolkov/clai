@@ -15,6 +15,12 @@ Alt-Enter        new line (Shift-Enter where the terminal reports it)
 Up / Down        earlier messages; select an entry in the conversation
 Tab              switch between input and conversation
 Enter            expand a tool call (conversation)
+o                open a tool call in the details view (conversation)
+y / Y            copy the entry / its code block (conversation)
+Ctrl-Y           copy the last answer
+Ctrl-T           show or hide the tool calls of the last turn
+drag             select and copy; click a tool call to expand it;
+                 Shift-drag uses the terminal's own selection
 /                list the commands; type to search, Esc closes the list
 Ctrl-O           choose the model
 Ctrl-S           sessions: attach, new, rename, kill
