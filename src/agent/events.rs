@@ -125,6 +125,10 @@ pub enum SessionEvent {
         output_tokens: u64,
         /// Input plus output tokens of the last request.
         context_tokens: u64,
+        /// The `provider/model` of the request; empty in a log of an older
+        /// `clai`.
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        model: String,
     },
     Error {
         message: String,

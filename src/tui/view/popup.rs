@@ -2,6 +2,7 @@
 
 use ratatui::Frame;
 use ratatui::layout::Rect;
+use ratatui::text::Line;
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 
 use crate::tui::app::{App, Dialog};
@@ -75,6 +76,25 @@ pub fn open(
     rows: u16,
     look: &Look,
 ) -> Rect {
+    open_titled(
+        frame,
+        size,
+        (Line::raw(title.to_owned()), None),
+        cells,
+        rows,
+        look,
+    )
+}
+
+/// As [`open`], with a styled title and one at the right.
+pub fn open_titled(
+    frame: &mut Frame<'_>,
+    size: Rect,
+    (title, right): (Line<'static>, Option<Line<'static>>),
+    cells: u16,
+    rows: u16,
+    look: &Look,
+) -> Rect {
     let width = cells.saturating_add(4).min(size.width);
     let height = rows.saturating_add(2).min(size.height);
     let area = Rect::new(
@@ -83,11 +103,14 @@ pub fn open(
         width,
         height,
     );
-    let block = Block::new()
+    let mut block = Block::new()
         .borders(Borders::ALL)
         .border_set(look.symbols.border)
         .border_style(look.styles.border)
-        .title(title.to_owned());
+        .title(title);
+    if let Some(right) = right {
+        block = block.title(right.right_aligned());
+    }
     let inner = block.inner(area);
     frame.render_widget(Clear, area);
     frame.render_widget(block, area);

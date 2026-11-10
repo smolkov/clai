@@ -9,7 +9,7 @@ use std::ops::RangeInclusive;
 use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::config::edit::Setting;
-use crate::config::{Symbols, Tui};
+use crate::config::{ActivityLine, Symbols, Tui};
 
 use super::editor::{Edit, Editor};
 use super::keys;
@@ -46,7 +46,7 @@ const fn row(key: &'static str, description: &'static str, help: &'static str, k
 }
 
 /// The keys of `[tui]`, in the order of `spec/config.md`, "TUI".
-pub fn rows() -> [Row; 9] {
+pub fn rows() -> [Row; 10] {
     [
         row(
             "theme",
@@ -105,6 +105,12 @@ pub fn rows() -> [Row; 9] {
             "Frames per second, 1 to 120",
             Kind::Number(1..=120),
         ),
+        row(
+            "activity",
+            "Line while the session works",
+            "playful: a verb per turn; plain: Thinking / Writing; off: no line",
+            Kind::Choice(&["playful", "plain", "off"]),
+        ),
     ]
 }
 
@@ -113,6 +119,14 @@ fn symbols_name(symbols: Symbols) -> &'static str {
         Symbols::Auto => "auto",
         Symbols::Unicode => "unicode",
         Symbols::Ascii => "ascii",
+    }
+}
+
+fn activity_name(activity: ActivityLine) -> &'static str {
+    match activity {
+        ActivityLine::Playful => "playful",
+        ActivityLine::Plain => "plain",
+        ActivityLine::Off => "off",
     }
 }
 
@@ -127,6 +141,7 @@ pub fn get(tui: &Tui, key: &str) -> Setting {
         "syntax_highlight" => Setting::Bool(tui.syntax_highlight),
         "timestamps" => Setting::Bool(tui.timestamps),
         "scroll_lines" => Setting::Int(i64::from(tui.scroll_lines)),
+        "activity" => Setting::Text(activity_name(tui.activity).to_owned()),
         _ => Setting::Int(i64::from(tui.max_fps)),
     }
 }
@@ -140,6 +155,13 @@ pub fn set(tui: &mut Tui, key: &str, value: &Setting) {
                 "unicode" => Symbols::Unicode,
                 "ascii" => Symbols::Ascii,
                 _ => Symbols::Auto,
+            };
+        }
+        ("activity", Setting::Text(t)) => {
+            tui.activity = match t.as_str() {
+                "plain" => ActivityLine::Plain,
+                "off" => ActivityLine::Off,
+                _ => ActivityLine::Playful,
             };
         }
         ("mouse", Setting::Bool(b)) => tui.mouse = *b,
@@ -502,6 +524,23 @@ mod tests {
     }
 
     #[test]
+    fn the_activity_line_steps_through_its_choices() {
+        let mut s = settings();
+        select(&mut s, "activity");
+        assert_eq!(s.key(key(KeyCode::Enter)), Some(BoxAction::Preview));
+        assert_eq!(s.current.activity, ActivityLine::Plain);
+        assert_eq!(
+            s.changes(),
+            [("activity", Some(Setting::Text("plain".into())))]
+        );
+        s.key(key(KeyCode::Right));
+        assert_eq!(s.current.activity, ActivityLine::Off);
+        s.key(key(KeyCode::Right));
+        assert_eq!(s.current.activity, ActivityLine::Playful);
+        assert!(s.changes().is_empty());
+    }
+
+    #[test]
     fn numbers_step_within_the_range_and_are_typed() {
         let mut s = settings();
         select(&mut s, "max_fps");
@@ -623,7 +662,7 @@ mod tests {
         assert_eq!(
             shown,
             [
-                "terminal", "auto", "on", "20", "off", "on", "off", "3", "30"
+                "terminal", "auto", "on", "20", "off", "on", "off", "3", "30", "playful"
             ]
         );
         let mut tui = Tui::default();

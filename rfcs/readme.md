@@ -135,3 +135,6 @@ Sections that do not apply may be left out.
 | [0011](0011-session-list-delete-and-filter.md) | Session list: delete, marks and filter | done |
 | [0012](0012-questions-from-the-model.md) | Questions from the model | done |
 | [0013](0013-commit-message.md) | Commit messages from staged changes | done |
+| [0014](0014-global-statistics.md) | Global statistics | done |
+| [0015](0015-activity-line.md) | Activity line | done |
+| [0016](0016-copy-and-tool-details.md) | Copy text and see tool details | draft |

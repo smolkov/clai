@@ -306,6 +306,27 @@ impl Conversation {
         })
     }
 
+    /// Whether a call shows a spinner.
+    pub fn spinning(&self) -> bool {
+        self.running_calls().next().is_some()
+    }
+
+    /// The calls that are pending or running, in the order of the
+    /// conversation.
+    pub fn running_calls(&self) -> impl Iterator<Item = &ToolCall> {
+        let mut at: Vec<usize> = self.calls.values().copied().collect();
+        at.sort_unstable();
+        at.into_iter()
+            .filter_map(|i| match self.entries.get(i).map(|e| &e.kind) {
+                Some(Kind::Call(call))
+                    if matches!(call.state, CallState::Pending | CallState::Running) =>
+                {
+                    Some(&**call)
+                }
+                _ => None,
+            })
+    }
+
     /// The next spinner frame; `true` if a spinner is on the screen.
     pub fn tick(&mut self) -> bool {
         self.spinner = self.spinner.wrapping_add(1);

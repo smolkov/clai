@@ -291,6 +291,26 @@ stop, a crash or a reboot. `clai run` sessions are not saved.
   `at` (an older `clai`) has an unknown time; the format stays `1`. Events that
   close a turn left open by a crash get the time of the last event, so the time
   the server was away does not count as work. `clai export` keeps the times.
+- **Statistics over all sessions** (`global_stats`, the TUI's `/stats`): the
+  server counts the log of every saved session, running ones included (each
+  event is appended before it is sent). Deleted sessions and bundles that are
+  not imported are not counted. A log that cannot be read is left out and
+  counted as skipped.
+  - **Per model:** a `usage` event carries the `provider/model` of its request
+    (`model`; a log of an older `clai` has none). Without it, the tokens and
+    requests go to the model in effect: the `from` of the first
+    `model_changed`, or the model of `session.json` when the log never
+    changes it; each `model_changed` sets it for the events after it. Before
+    a first `model_changed` without `from`, the model is `unknown`.
+  - **Per day:** an event's day is its `at` in the client's time zone, which
+    the request gives as an offset from UTC. A range is the last 7 or 30 days,
+    today included, or all time. Events without `at` count only in all time,
+    and not in a day. Time in `working` is split at the boundaries of days;
+    a stretch the log leaves open runs until now for a running session and
+    until its last event for a saved one.
+  - **Cache:** the server keeps the count of each log, by quarter hour in UTC,
+    with the size and modification time of `events.jsonl`, and counts it again
+    when they change. Any range and offset is made from these counts.
 - **Saved state:** a server that starts lists every saved session with the
   state `saved`, reading only `session.json`. A command that names it
   resumes it: `attach`, `send`, `set_model` (`clai chat NAME`, `clai send`,

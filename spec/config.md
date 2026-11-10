@@ -464,6 +464,7 @@ syntax_highlight  = true        # highlight code blocks and diffs
 timestamps        = false       # show the time of each user message and answer
 scroll_lines      = 3           # lines per mouse-wheel step
 max_fps           = 30          # redraw limit, 1–120
+activity          = "playful"   # playful | plain | off: the line while the session works
 ```
 
 | Key | Meaning |
@@ -477,6 +478,7 @@ max_fps           = 30          # redraw limit, 1–120
 | `timestamps` | Prefix entries with `HH:MM`. |
 | `scroll_lines` | Mouse-wheel scroll step. |
 | `max_fps` | Upper limit for redraws per second. |
+| `activity` | The activity line above the input while the session works ([`tui.md`](tui.md), "Activity line"). `playful`: a playful verb per turn with a shimmer; `plain`: `Thinking…` and `Writing…`; `off`: no line (tool call spinners still move). |
 
 ### Themes
 

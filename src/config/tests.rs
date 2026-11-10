@@ -668,6 +668,7 @@ theme = "solar"
 symbols = "ascii"
 mouse = false
 max_fps = 60
+activity = "plain"
 
 [themes.solar]
 base = "dark"
@@ -682,6 +683,7 @@ code = "Solarized (dark)"
     assert!(!config.tui.mouse);
     assert_eq!(config.tui.max_fps, 60);
     assert_eq!(config.tui.scroll_lines, 3);
+    assert_eq!(config.tui.activity, ActivityLine::Plain);
     let solar = &config.themes["solar"];
     assert_eq!(solar.base, BuiltinTheme::Dark);
     assert_eq!(
@@ -726,6 +728,8 @@ text = "purple"
     ] {
         assert!(joined.contains(want), "{joined}\nmissing: {want}");
     }
+    let e = errs(&with("[tui]\nactivity = \"loud\"\n"), None);
+    assert!(e[0].contains("unknown variant `loud`"), "{e:?}");
     let e = errs(&with("[themes.x]\nshadow = \"red\"\n"), None);
     assert!(e[0].contains("unknown field `shadow`"), "{e:?}");
 }

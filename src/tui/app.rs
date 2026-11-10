@@ -10,12 +10,13 @@ use ratatui::layout::Rect;
 
 use crate::agent::{Closed, QuestionKind, SessionEvent, State, now_secs};
 use crate::config::edit::{Setting, Stamp};
-use crate::config::{Symbols, Theme, ThemeWarning, Tui};
+use crate::config::{ActivityLine, Symbols, Theme, ThemeWarning, Tui};
 use crate::protocol::{
-    ModelInfo, Notice, Payload, Request, ServerMessage, SessionInfo, TokenTotals,
+    ModelInfo, Notice, Payload, Range, Request, ServerMessage, SessionInfo, TokenTotals,
 };
 use indexmap::IndexMap;
 
+use super::activity::Activity;
 use super::commands::{self, Command};
 use super::conversation::{Conversation, Expansion, Kind};
 use super::editor::{Browse, Edit, Editor};
@@ -24,7 +25,7 @@ use super::picker::{Picker, Purpose};
 use super::prompt::Prompt;
 use super::sessions::{ListAction, SessionList};
 use super::settings::{BoxAction, SettingsBox};
-use super::status::StatusBox;
+use super::status::{Counted, StatusBox, Tab};
 use super::style::{Colouring, Look, Styles};
 use super::themes::{self, ThemeList};
 use super::view;
@@ -35,6 +36,10 @@ const DOUBLE_INTERRUPT: Duration = Duration::from_secs(1);
 pub const RECONNECT_FOR: Duration = Duration::from_secs(10);
 /// How many ticks between two `list` requests for the session row.
 const LIST_TICKS: u32 = 2;
+/// The time between two animation frames while the session works.
+pub const FRAME_EVERY: Duration = Duration::from_millis(120);
+/// The activity line is shown from this terminal height on.
+pub const ACTIVITY_MIN_HEIGHT: u16 = 14;
 
 /// The error of a request whose connection was lost: a reconnect follows, so
 /// it is no news to the user.
@@ -156,6 +161,8 @@ pub enum Input {
     },
     /// The 1 s timer.
     Tick,
+    /// The animation timer, every [`FRAME_EVERY`] while the session works.
+    Frame,
     Disconnected,
     /// Attached again after a lost connection, or to another session.
     Attached(Box<Attachment>),
@@ -248,6 +255,8 @@ pub struct App {
     pub settings: Settings,
     pub session: SessionInfo,
     pub conversation: Conversation,
+    /// The activity line: what the turn does, and since when.
+    pub activity: Activity,
     pub editor: Editor,
     pub prompt: Option<Prompt>,
     pub dialog: Option<Dialog>,
@@ -334,6 +343,7 @@ impl App {
             settings,
             session: attachment.session.clone(),
             conversation,
+            activity: Activity::new(0x5eed),
             editor: Editor::default(),
             prompt: None,
             dialog: None,
@@ -676,6 +686,7 @@ impl App {
             Input::Server(message) => self.server(message),
             Input::Response { request, result } => self.response(request, result),
             Input::Tick => self.tick(),
+            Input::Frame => self.frame(),
             Input::Disconnected => self.disconnected(),
             Input::Attached(attachment) => {
                 self.lost_since = None;
@@ -790,6 +801,7 @@ impl App {
         // Summed again from the log, so that a reconnect does not add to it.
         self.context_tokens = 0;
         self.usage = None;
+        self.activity.reset();
         let earlier = self.prompt.take();
         for message in backlog {
             let _ = self.server(message);
@@ -799,6 +811,12 @@ impl App {
         let current = sessions.iter().find(|s| s.id == self.session.id);
         if let Some(current) = current {
             self.session = current.clone();
+        }
+        // The replay has no times: the start comes from `session_status`.
+        if self.running() {
+            self.activity.attached_working(self.now);
+        } else {
+            self.activity.working = false;
         }
         let question = current.and_then(|s| s.question.clone());
         let held = self.prompt.take().or(earlier);
@@ -944,6 +962,7 @@ impl App {
     }
 
     fn event(&mut self, event: SessionEvent, replay: bool) {
+        self.activity.event(&event, (!replay).then_some(self.now));
         if !replay
             && let Some(open) = &mut self.status_box
             && open.id() == Some(self.session.id)
@@ -1077,6 +1096,11 @@ impl App {
                 return self.created(&session);
             }
             (Request::SessionStatus { session }, result) => {
+                if let Ok(Payload::SessionStatus { status }) = &result
+                    && status.session.id == self.session.id
+                {
+                    self.turn_start(status);
+                }
                 let Some(open) = self.status_box.as_mut().filter(|b| b.name == session) else {
                     return Vec::new();
                 };
@@ -1095,6 +1119,40 @@ impl App {
                         }
                     }
                     _ => {}
+                }
+            }
+            (Request::GlobalStats { range, .. }, result) => {
+                let Some(open) = &mut self.status_box else {
+                    return Vec::new();
+                };
+                open.global_asking.remove(&range);
+                match result {
+                    Ok(Payload::GlobalStats { stats }) => {
+                        if range == open.range {
+                            open.global_error = None;
+                        }
+                        open.global.insert(
+                            range,
+                            Counted {
+                                stats,
+                                at: self.now,
+                            },
+                        );
+                    }
+                    // A refresh that fails keeps what is shown.
+                    Err(_) if lost || open.global.contains_key(&range) => {}
+                    // A first answer that fails: with nothing else to show,
+                    // the box closes with the error.
+                    Err(message) if open.status.is_none() && !open.asking => {
+                        self.status_box = None;
+                        self.conversation.error(message);
+                    }
+                    Err(message) => {
+                        if range == open.range {
+                            open.global_error = Some(message);
+                        }
+                    }
+                    Ok(_) => {}
                 }
             }
             (Request::Send { text, .. }, Err(message)) => {
@@ -1156,6 +1214,18 @@ impl App {
             _ => return Vec::new(),
         }
         vec![Effect::Redraw]
+    }
+
+    /// The start of the running turn, from the server's clock.
+    fn turn_start(&mut self, status: &crate::protocol::SessionStatus) {
+        let stats = &status.stats;
+        let Some(started) = stats.turn.and_then(|t| t.started).or(stats.working_since) else {
+            return;
+        };
+        let elapsed = Duration::from_millis(status.now.saturating_sub(started));
+        if let Some(start) = self.now.checked_sub(elapsed) {
+            self.activity.set_start(start);
+        }
     }
 
     /// The server's models: its context windows count from now on, and the
@@ -1220,17 +1290,39 @@ impl App {
         vec![Effect::Request(Request::SessionStatus { session: name })]
     }
 
-    /// A key while the status box is open: it scrolls and closes.
+    /// `/stats`: the box opens at once on the Global tab and fills with the
+    /// answer.
+    fn open_stats(&mut self, range: Range) -> Vec<Effect> {
+        self.status_box = Some(StatusBox::global(self.session.name.clone(), range));
+        self.status_asks()
+    }
+
+    /// A key while the status box is open: it switches tabs and ranges,
+    /// scrolls and closes.
     fn status_box_key(&mut self, key: KeyEvent) -> Vec<Effect> {
-        let effects = vec![Effect::Redraw];
+        let mut effects = vec![Effect::Redraw];
         let Some(open) = &mut self.status_box else {
             return effects;
         };
         let page = isize::try_from(self.view_height.max(2) - 1).unwrap_or(isize::MAX);
+        let global = open.tab == Tab::Global;
         match key.code {
             KeyCode::Esc | KeyCode::Char('q') => self.status_box = None,
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.status_box = None;
+            }
+            KeyCode::Tab | KeyCode::BackTab | KeyCode::Left | KeyCode::Right => open.switch(),
+            KeyCode::Char('7') if global => open.set_range(Range::Week),
+            KeyCode::Char('3') if global => open.set_range(Range::Month),
+            KeyCode::Char('a') if global => open.set_range(Range::All),
+            KeyCode::Char('r') if global => open.set_range(open.range.next()),
+            // Asks again; what is shown stays until the answer.
+            KeyCode::Char('R') if global && !open.global_asking.contains(&open.range) => {
+                open.global_asking.insert(open.range);
+                effects.push(Effect::Request(Request::GlobalStats {
+                    range: open.range,
+                    offset: self.settings.theming.offset,
+                }));
             }
             KeyCode::Up => open.scroll(-1),
             KeyCode::Down => open.scroll(1),
@@ -1239,6 +1331,9 @@ impl App {
             KeyCode::Home => open.top = 0,
             KeyCode::End => open.top = open.max_top,
             _ => {}
+        }
+        if self.lost_since.is_none() {
+            effects.extend(self.status_asks());
         }
         effects
     }
@@ -1366,20 +1461,82 @@ impl App {
         {
             effects.push(Effect::Request(Request::List));
         }
-        if self.conversation.tick() {
+        // While frames run, they move the spinners.
+        if !self.animating() && self.conversation.tick() {
             effects.push(Effect::Redraw);
         }
-        if self.lost_since.is_none()
-            && let Some(open) = &mut self.status_box
-            && open.due()
-        {
+        effects.extend(self.ask_start());
+        if self.lost_since.is_none() {
+            effects.extend(self.status_asks());
+        }
+        effects
+    }
+
+    /// The requests the status box needs now: the session's status when it
+    /// is due, and the range shown on the Global tab when it has no answer.
+    fn status_asks(&mut self) -> Vec<Effect> {
+        let offset = self.settings.theming.offset;
+        let Some(open) = &mut self.status_box else {
+            return Vec::new();
+        };
+        let mut effects = Vec::new();
+        if open.due() {
             open.asking = true;
             open.stale = false;
             effects.push(Effect::Request(Request::SessionStatus {
                 session: open.name.clone(),
             }));
         }
+        if open.global_due() {
+            open.global_asking.insert(open.range);
+            effects.push(Effect::Request(Request::GlobalStats {
+                range: open.range,
+                offset,
+            }));
+        }
         effects
+    }
+
+    /// An animation frame: the glyph, the shimmer and the tool spinners
+    /// move. Nothing while the session does not work.
+    fn frame(&mut self) -> Vec<Effect> {
+        if !self.animating() {
+            return Vec::new();
+        }
+        self.activity.frame();
+        self.conversation.tick();
+        let mut effects = vec![Effect::Redraw];
+        effects.extend(self.ask_start());
+        effects
+    }
+
+    /// Asks once for the start of a turn that ran before the attach.
+    fn ask_start(&mut self) -> Vec<Effect> {
+        if !self.activity.wants_start() || self.lost_since.is_some() || self.switching.is_some() {
+            return Vec::new();
+        }
+        self.activity.asked_start = true;
+        vec![Effect::Request(Request::SessionStatus {
+            session: self.session.name.clone(),
+        })]
+    }
+
+    /// Whether the activity line is on for the state of the session; the
+    /// view also needs the terminal to be high enough.
+    pub fn activity_on(&self) -> bool {
+        self.settings.tui.activity != ActivityLine::Off
+            && self.session.state == State::Working
+            && self.activity.working
+            && self.prompt.is_none()
+            && self.ended.is_none()
+    }
+
+    /// Whether the animation timer runs: the session works, and the line or
+    /// a tool spinner is there to move.
+    pub fn animating(&self) -> bool {
+        self.running()
+            && self.ended.is_none()
+            && (self.activity_on() || self.conversation.spinning())
     }
 
     fn disconnected(&mut self) -> Vec<Effect> {
@@ -1620,6 +1777,19 @@ impl App {
                     search_description: false,
                 })
                 .collect()
+        } else if command == "stats" {
+            [
+                (Range::Week, "the last 7 days"),
+                (Range::Month, "the last 30 days"),
+                (Range::All, "all time"),
+            ]
+            .into_iter()
+            .map(|(range, description)| commands::Value {
+                value: range.name().to_owned(),
+                description: description.to_owned(),
+                search_description: false,
+            })
+            .collect()
         } else if command == "attach" || command == "status" {
             let symbols = &self.settings.look.symbols;
             // `/status` shows the attached session too.
@@ -1717,8 +1887,9 @@ impl App {
         matches!(self.session.state, State::Working | State::Waiting)
     }
 
-    fn cancel(&self) -> Vec<Effect> {
+    fn cancel(&mut self) -> Vec<Effect> {
         if self.running() {
+            self.activity.cancel();
             vec![Effect::Request(Request::Cancel {
                 session: self.session.name.clone(),
             })]
@@ -1940,6 +2111,15 @@ impl App {
                 Some(effects) => effects,
                 // The input stays, so that it can be corrected.
                 None => return Vec::new(),
+            },
+            ("stats", "") => self.open_stats(Range::default()),
+            ("stats", range) => match Range::parse(range) {
+                Some(range) => self.open_stats(range),
+                None => {
+                    // The input stays, so that it can be corrected.
+                    self.conversation.notice("usage: /stats [7d|30d|all]");
+                    return Vec::new();
+                }
             },
             ("status", "") => self.open_status(session),
             ("status", name) => {

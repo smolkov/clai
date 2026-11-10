@@ -149,6 +149,7 @@ impl Fixture {
                 max_output_tokens: Some(1000),
                 temperature: None,
             },
+            model_name: "test/m".into(),
             limits,
             env: Env {
                 permissions: Arc::new(parse_for_test(CONFIG, None)),
@@ -366,7 +367,8 @@ async fn plain_answer() {
             SessionEvent::Usage {
                 input_tokens: 100,
                 output_tokens: 10,
-                context_tokens: 110
+                context_tokens: 110,
+                model: "test/m".into(),
             },
             SessionEvent::TurnEnd(end),
             SessionEvent::State { state: State::Idle },

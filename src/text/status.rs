@@ -2,7 +2,7 @@
 //! box"): the TUI draws them in a box, `clai chat` prints them as text.
 
 use crate::agent::{State, date_of};
-use crate::protocol::{SessionStatus, Stats, ToolCounts};
+use crate::protocol::{SessionStatus, Stats, ToolCounts, TurnCounts};
 
 use super::{short_tokens, tokens};
 
@@ -48,16 +48,16 @@ pub struct Options<'a> {
 }
 
 impl Options<'_> {
-    fn rule(&self) -> &'static str {
+    pub(crate) fn rule(&self) -> &'static str {
         if self.unicode { " ─ " } else { " - " }
     }
 
-    fn warning(&self) -> &'static str {
+    pub(crate) fn warning(&self) -> &'static str {
         if self.unicode { "⚠" } else { "!" }
     }
 }
 
-fn row(label: &str, value: impl Into<String>) -> Row {
+pub(crate) fn row(label: &str, value: impl Into<String>) -> Row {
     Row {
         label: label.to_owned(),
         value: value.into(),
@@ -65,7 +65,7 @@ fn row(label: &str, value: impl Into<String>) -> Row {
     }
 }
 
-fn warn(label: &str, value: impl Into<String>) -> Row {
+pub(crate) fn warn(label: &str, value: impl Into<String>) -> Row {
     Row {
         tone: Tone::Warning,
         ..row(label, value)
@@ -84,7 +84,7 @@ pub fn duration(ms: u64) -> String {
 }
 
 /// `1 message`, `2 messages`.
-fn count(n: u64, one: &str, many: &str) -> String {
+pub(crate) fn count(n: u64, one: &str, many: &str) -> String {
     format!("{n} {}", if n == 1 { one } else { many })
 }
 
@@ -349,11 +349,9 @@ fn this_turn(status: &SessionStatus) -> Option<Section> {
     })
 }
 
-fn totals(status: &SessionStatus, options: &Options<'_>) -> Section {
-    let stats = &status.stats;
-    let rule = options.rule();
-    let turns = &stats.turns;
-    let mut turn_value = turns.total().to_string();
+/// `87: 80 done, 3 cancelled`.
+pub(crate) fn turns_text(turns: &TurnCounts) -> String {
+    let mut value = turns.total().to_string();
     let detail = parts(
         &[
             (turns.done, "done"),
@@ -364,30 +362,46 @@ fn totals(status: &SessionStatus, options: &Options<'_>) -> Section {
         ", ",
     );
     if !detail.is_empty() {
-        turn_value.push_str(&format!(": {detail}"));
+        value.push_str(&format!(": {detail}"));
     }
-    let mut requests = stats.requests.to_string();
+    value
+}
+
+/// `1.4k ─ 21 retries ─ 3 errors`, with `requests` as given.
+pub(crate) fn requests_text(requests: String, retries: u64, errors: u64, rule: &str) -> String {
+    let mut value = requests;
     let more = parts(
         &[
-            (
-                stats.retries,
-                if stats.retries == 1 {
-                    "retry"
-                } else {
-                    "retries"
-                },
-            ),
-            (
-                stats.errors,
-                if stats.errors == 1 { "error" } else { "errors" },
-            ),
+            (retries, if retries == 1 { "retry" } else { "retries" }),
+            (errors, if errors == 1 { "error" } else { "errors" }),
         ],
         rule,
     );
     if !more.is_empty() {
-        requests.push_str(rule);
-        requests.push_str(&more);
+        value.push_str(rule);
+        value.push_str(&more);
     }
+    value
+}
+
+/// `≥ ` (or `>= `) for a time that is not exact, else nothing.
+pub(crate) fn at_least(exact: bool, unicode: bool) -> &'static str {
+    match (exact, unicode) {
+        (true, _) => "",
+        (false, true) => "≥ ",
+        (false, false) => ">= ",
+    }
+}
+
+fn totals(status: &SessionStatus, options: &Options<'_>) -> Section {
+    let stats = &status.stats;
+    let rule = options.rule();
+    let requests = requests_text(
+        stats.requests.to_string(),
+        stats.retries,
+        stats.errors,
+        rule,
+    );
     let (working, exact) = stats.working_time(status.now);
     let age = status
         .now
@@ -395,19 +409,18 @@ fn totals(status: &SessionStatus, options: &Options<'_>) -> Section {
     let working = if !exact && working == 0 {
         "?".to_owned()
     } else {
-        let at_least = if exact { "" } else { "≥ " };
-        let at_least = if options.unicode || exact {
-            at_least
-        } else {
-            ">= "
-        };
-        format!("{at_least}{} of {}", duration(working), duration(age))
+        format!(
+            "{}{} of {}",
+            at_least(exact, options.unicode),
+            duration(working),
+            duration(age)
+        )
     };
     Section {
         title: "Totals".to_owned(),
         head: String::new(),
         rows: vec![
-            row("turns", turn_value),
+            row("turns", turns_text(&stats.turns)),
             row("requests", requests),
             row(
                 "tokens",
@@ -571,6 +584,7 @@ pub(crate) mod tests {
                 input_tokens: 1200,
                 output_tokens: 30,
                 context_tokens: 1230,
+                model: String::new(),
             },
             None,
         );

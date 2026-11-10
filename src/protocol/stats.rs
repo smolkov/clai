@@ -356,6 +356,137 @@ pub struct SessionStatus {
     pub server: Status,
 }
 
+/// The days a `global_stats` request counts.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Range {
+    /// The last 7 days, today included.
+    #[default]
+    #[serde(rename = "7d")]
+    Week,
+    /// The last 30 days, today included.
+    #[serde(rename = "30d")]
+    Month,
+    #[serde(rename = "all")]
+    All,
+}
+
+impl Range {
+    pub const ALL: [Range; 3] = [Range::Week, Range::Month, Range::All];
+
+    /// `7d`, `30d`, `all`: as typed after `/stats`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Range::Week => "7d",
+            Range::Month => "30d",
+            Range::All => "all",
+        }
+    }
+
+    pub fn parse(text: &str) -> Option<Range> {
+        Range::ALL.into_iter().find(|r| r.name() == text)
+    }
+
+    /// The days it spans, if fixed.
+    pub fn days(self) -> Option<i64> {
+        match self {
+            Range::Week => Some(7),
+            Range::Month => Some(30),
+            Range::All => None,
+        }
+    }
+
+    /// The next one, for a key that goes round.
+    pub fn next(self) -> Range {
+        match self {
+            Range::Week => Range::Month,
+            Range::Month => Range::All,
+            Range::All => Range::Week,
+        }
+    }
+}
+
+/// The sessions of a `global_stats` answer.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionCounts {
+    /// With at least one event in the range.
+    pub active: u64,
+    /// All saved sessions.
+    pub saved: u64,
+    /// Loaded in the server now.
+    pub running: u64,
+}
+
+/// The totals over all sessions, as in [`Stats`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GlobalTotals {
+    pub turns: TurnCounts,
+    pub requests: u64,
+    pub retries: u64,
+    pub errors: u64,
+    pub tokens: TokenTotals,
+    /// Time in `working`, in milliseconds, over stretches with known times.
+    pub working_ms: u64,
+    /// Stretches in `working` whose start or end has no time.
+    pub unknown_stretches: u64,
+}
+
+/// The use of one model.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ModelTotals {
+    /// `provider/model`, or `unknown`.
+    pub model: String,
+    /// In the server's configuration now.
+    pub configured: bool,
+    pub sessions: u64,
+    pub requests: u64,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+}
+
+impl ModelTotals {
+    pub fn tokens(&self) -> u64 {
+        self.input_tokens.saturating_add(self.output_tokens)
+    }
+}
+
+/// The tokens of one day.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DayTokens {
+    /// Days since 1970 in the client's time zone.
+    pub day: i64,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+}
+
+impl DayTokens {
+    pub fn total(&self) -> u64 {
+        self.input_tokens.saturating_add(self.output_tokens)
+    }
+}
+
+/// The answer to `global_stats`: statistics over the logs of all saved
+/// sessions (see `spec/sessions.md`, "Statistics").
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GlobalStats {
+    pub range: Range,
+    /// The first and the last day, as days since 1970 in the client's time
+    /// zone; the last is today.
+    pub first_day: i64,
+    pub last_day: i64,
+    pub sessions: SessionCounts,
+    pub totals: GlobalTotals,
+    /// Most tokens first.
+    pub models: Vec<ModelTotals>,
+    /// One per day of the range, empty days included.
+    pub days: Vec<DayTokens>,
+    /// Tokens of events without a time; counted in `all` only.
+    pub undated_tokens: u64,
+    /// Logs that could not be read.
+    pub skipped: u64,
+    /// The server's clock, in milliseconds since 1970.
+    pub now: u64,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -383,6 +514,7 @@ mod tests {
             input_tokens: input,
             output_tokens: output,
             context_tokens: input + output,
+            model: String::new(),
         }
     }
 

@@ -14,7 +14,9 @@ use super::*;
 use crate::agent::{Answer, CallState, Closed, EndReason, SessionEvent, State};
 use crate::client::{Client, Connect};
 use crate::config::Environment;
-use crate::protocol::{ClientKind, ModelInfo, Payload, Request, SessionInfo, TokenTotals};
+use crate::protocol::{
+    ClientKind, GlobalStats, ModelInfo, Payload, Request, SessionInfo, TokenTotals,
+};
 use crate::provider::{Event, EventStream, ProviderError, Request as ProviderRequest, StopReason};
 use crate::session::Store;
 
@@ -1687,5 +1689,93 @@ async fn a_question_from_the_model_waits_for_any_client() {
         result,
         "The user answered:\n\n1. Which database?\n   SQLite"
     );
+    fx.stop().await;
+}
+
+async fn global_stats(client: &mut Client, range: crate::protocol::Range) -> GlobalStats {
+    match client
+        .request(Request::GlobalStats { range, offset: 0 })
+        .await
+        .unwrap()
+    {
+        Payload::GlobalStats { stats } => *stats,
+        other => panic!("{other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn global_stats_count_all_saved_sessions() {
+    use crate::protocol::Range;
+    let one = Script::new(vec![say_counted("a", 100, 10)]);
+    let two = Script::new(vec![say_counted("b", 200, 20)]);
+    // The provider for the model change.
+    let three = Script::new(vec![say_counted("c", 1, 1)]);
+    let mut fx = Fixture::start(vec![one, two, three]).await;
+    let mut c = fx.client("tui", true).await;
+    for name in ["s1", "s2"] {
+        new_session(&mut c, &fx.ws, Some(name)).await;
+        attach(&mut c, name).await;
+        send(&mut c, name, "hi").await;
+        turn_end(&mut c).await;
+    }
+    c.request(Request::SetModel {
+        session: "s2".into(),
+        model: "fake/two".into(),
+    })
+    .await
+    .unwrap();
+    send(&mut c, "s2", "again").await;
+    turn_end(&mut c).await;
+
+    let stats = global_stats(&mut c, Range::Week).await;
+    assert_eq!(stats.sessions.saved, 2);
+    assert_eq!(stats.sessions.running, 2);
+    assert_eq!(stats.sessions.active, 2);
+    assert_eq!(stats.totals.tokens, totals(301, 31));
+    assert_eq!(stats.totals.turns.done, 3);
+    assert_eq!(stats.totals.requests, 3);
+    assert_eq!(stats.days.len(), 7);
+    assert_eq!(stats.days[6].input_tokens, 301);
+    let models: Vec<(&str, u64, u64, bool)> = stats
+        .models
+        .iter()
+        .map(|m| (m.model.as_str(), m.sessions, m.input_tokens, m.configured))
+        .collect();
+    assert_eq!(
+        models,
+        [("fake/one", 2, 300, true), ("fake/two", 1, 1, true)]
+    );
+    assert_eq!(stats.skipped, 0);
+    drop(c);
+
+    // Saved sessions count the same, from their logs.
+    fx.restart().await;
+    let mut c = fx.client("tui", true).await;
+    let saved = global_stats(&mut c, Range::All).await;
+    assert_eq!(saved.sessions.running, 0);
+    assert_eq!(saved.totals.tokens, stats.totals.tokens);
+    assert_eq!(saved.models, stats.models);
+    // New `usage` events carry the model.
+    let dirs: Vec<PathBuf> = fs::read_dir(fx.sessions_dir())
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .collect();
+    let log = |dir: &Path| dir.join("events.jsonl");
+    let text = fs::read_to_string(log(&dirs[0])).unwrap();
+    assert!(text.contains("\"model\":\"fake/"), "{text}");
+
+    // The same log is not read twice: a change that keeps the size and the
+    // time is not seen.
+    let file = fs::File::options().write(true).open(log(&dirs[0])).unwrap();
+    let modified = file.metadata().unwrap().modified().unwrap();
+    fs::write(log(&dirs[0]), "x".repeat(text.len())).unwrap();
+    file.set_modified(modified).unwrap();
+    assert_eq!(global_stats(&mut c, Range::All).await.skipped, 0);
+    // A log that changed is counted again; one that cannot be read is left
+    // out and counted.
+    fs::write(log(&dirs[0]), format!("broken\n{text}")).unwrap();
+    let broken = global_stats(&mut c, Range::All).await;
+    assert_eq!(broken.skipped, 1);
+    assert_eq!(broken.sessions.saved, 2);
     fx.stop().await;
 }

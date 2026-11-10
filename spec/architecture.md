@@ -261,9 +261,9 @@ Message kinds:
 | Direction | Kind | Content |
 |-----------|------|---------|
 | client → server | `hello` | Protocol version; client kind (`tui`, `chat`, `cli`, `bridge`) and name (e.g. `tui pts/3`, `clai chat`), which is shown as who answered; whether it answers questions. |
-| client → server | `request` | An id and a command: `new`, `list`, `kill`, `rename`, `attach`, `detach`, `send` (message), `set_model`, `cancel`, `answer`, `export`, `import`, `status`, `session_status`, `models`, `stop`. Each gets exactly one `response`. Sessions are named by their current name; `attach`, `send` and `set_model` resume a saved session. |
+| client → server | `request` | An id and a command: `new`, `list`, `kill`, `rename`, `attach`, `detach`, `send` (message), `set_model`, `cancel`, `answer`, `export`, `import`, `status`, `session_status`, `global_stats`, `models`, `stop`. Each gets exactly one `response`. Sessions are named by their current name; `attach`, `send` and `set_model` resume a saved session. |
 | server → client | `hello` | Protocol version and the server's PID. |
-| server → client | `response` | The request's id and its `result`: `ok` with a payload (`done`, a session, the session list, the status, a session's status, the models; a session is its id, name, workspace, model, state, created and last updated time, turns, queued messages, open question and token totals) or `error` with a message, marked `usage` when the request itself was wrong (the command then exits `2`). |
+| server → client | `response` | The request's id and its `result`: `ok` with a payload (`done`, a session, the session list, the status, a session's status, the global statistics, the models; a session is its id, name, workspace, model, state, created and last updated time, turns, queued messages, open question and token totals) or `error` with a message, marked `usage` when the request itself was wrong (the command then exits `2`). |
 | server → client | `event` | Something that happened in an attached session, with the session's id, and `replay` when it is part of the log sent on attach (see below). |
 | server → client | `notice` | Server-wide: `config_reloaded`, `config_rejected` (with the errors), `session_created`, `stopping`. |
 | server → client | `error` | The connection cannot go on: wrong version, a message that is not valid. |
@@ -287,7 +287,7 @@ Session events, in the order they happen:
 | `text_delta`, `text_done` | Streamed model text. |
 | `tool_call` | A tool call and its state: `pending`, `waiting`, `running`, `done`, `error`, `denied`, `cancelled`; with output as it arrives. |
 | `question`, `question_closed` | A question with all its details, and its answer with the client that gave it (see [`sessions.md`](sessions.md), "Questions"). |
-| `usage` | Tokens of a request, context size. The session sums them; the session info has the totals as `usage`. |
+| `usage` | Tokens of a request, context size, and the request's `provider/model` (none in a log of an older `clai`). The session sums them; the session info has the totals as `usage`. |
 | `error` | A provider or session error that ended a request or turn. |
 | `retry` | A model request failed and is tried again: the attempt (from 1), `max_retries` and the reason. |
 | `turn_end` | The turn ended: done, cancelled, limit reached or failed. |
@@ -316,6 +316,18 @@ none when it is no longer configured; the limits in effect for the workspace;
 the server's clock and its `status`. A saved session is counted from its
 `events.jsonl` and stays saved (see [`sessions.md`](sessions.md),
 "Statistics").
+
+The `global_stats` request has a `range` (`7d`, `30d`, `all`) and the client's
+`offset` from UTC in seconds, and answers with statistics over the logs of all
+saved sessions (see [`sessions.md`](sessions.md), "Statistics over all
+sessions"): the range as its first and last day (days since 1970 in the
+client's time zone); the sessions active in the range, saved and running; the
+totals (turns by how they ended, requests, retries, errors, tokens, time in
+`working` and stretches without a time); per model its name, whether it is
+configured now, sessions, requests, input and output tokens, most tokens first;
+the input and output tokens of each day of the range, empty days included;
+the tokens without a date; the logs skipped; and the server's clock. Weeks and
+months for a chart are made by the client. It came with protocol 7.
 
 The session list has the state `saved` besides `idle`, `working` and
 `waiting`: a session on disk, not loaded. `status` reports the sessions,

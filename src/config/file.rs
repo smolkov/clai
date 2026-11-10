@@ -8,7 +8,7 @@ use serde::Deserialize;
 use toml::Spanned;
 
 use super::permissions::Action;
-use super::tui::Symbols;
+use super::tui::{ActivityLine, Symbols};
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -125,6 +125,7 @@ pub struct TuiFile {
     pub timestamps: Option<bool>,
     pub scroll_lines: Option<Spanned<i64>>,
     pub max_fps: Option<Spanned<i64>>,
+    pub activity: Option<ActivityLine>,
 }
 
 #[derive(Debug, Default, Deserialize)]

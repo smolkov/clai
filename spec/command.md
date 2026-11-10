@@ -356,6 +356,9 @@ The test passes now.
   (`tokens: in 45.1k, out 3.2k; context 12.3k`), `/status [NAME]` prints the
   status and statistics of the attached session or of session `NAME` as the
   TUI's status box shows them (see [`tui.md`](tui.md), "Status box"), as text,
+  `/stats [7d|30d|all]` prints the statistics over all sessions of the TUI's
+  Global tab as text: Totals, Models, and one line per day with its tokens and
+  a bar (see [`tui.md`](tui.md), "Global tab"),
   `/detach` leaves, `/kill` ends the session and leaves, `/help` lists them.
   A `retry` event prints `clai: retrying (1/3): …`.
 - Sessions: `/sessions` prints the table of `clai ls`, the attached session

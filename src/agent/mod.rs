@@ -48,6 +48,8 @@ const NO_ONE: &str = "denied: needs permission, and no one can answer";
 pub struct Setup {
     pub provider: Arc<dyn Provider>,
     pub model: Model,
+    /// `provider/model`, for the `usage` events; empty when not known.
+    pub model_name: String,
     pub limits: Limits,
     /// Permissions, session rules and workspace.
     pub env: Env,
@@ -58,22 +60,46 @@ pub struct Setup {
     pub can_ask: bool,
 }
 
-/// The provider and model of a session. The session can change them while
-/// a turn runs; the change applies from the next request.
+/// The provider and model of a session, with its `provider/model` name. The
+/// session can change them while a turn runs; the change applies from the
+/// next request.
 #[derive(Clone)]
-pub struct ModelHandle(Arc<Mutex<(Arc<dyn Provider>, Model)>>);
+pub struct ModelHandle(Arc<Mutex<Current>>);
+
+#[derive(Clone)]
+struct Current {
+    provider: Arc<dyn Provider>,
+    model: Model,
+    /// `provider/model`; empty when not known.
+    name: String,
+}
 
 impl ModelHandle {
-    pub fn new(provider: Arc<dyn Provider>, model: Model) -> ModelHandle {
-        ModelHandle(Arc::new(Mutex::new((provider, model))))
+    pub fn new(provider: Arc<dyn Provider>, model: Model, name: String) -> ModelHandle {
+        ModelHandle(Arc::new(Mutex::new(Current {
+            provider,
+            model,
+            name,
+        })))
     }
 
     pub fn get(&self) -> (Arc<dyn Provider>, Model) {
-        lock(&self.0).clone()
+        let current = lock(&self.0);
+        (current.provider.clone(), current.model.clone())
     }
 
-    pub fn set(&self, provider: Arc<dyn Provider>, model: Model) {
-        *lock(&self.0) = (provider, model);
+    /// The provider, the model and its `provider/model` name, read at once.
+    fn get_named(&self) -> (Arc<dyn Provider>, Model, String) {
+        let current = lock(&self.0).clone();
+        (current.provider, current.model, current.name)
+    }
+
+    pub fn set(&self, provider: Arc<dyn Provider>, model: Model, name: String) {
+        *lock(&self.0) = Current {
+            provider,
+            model,
+            name,
+        };
     }
 }
 
@@ -167,7 +193,7 @@ impl Agent {
     pub fn new(setup: Setup) -> Agent {
         Agent {
             cancel_reason: CancelReason::default(),
-            model: ModelHandle::new(setup.provider, setup.model),
+            model: ModelHandle::new(setup.provider, setup.model, setup.model_name),
             limits: setup.limits,
             env: setup.env,
             system: setup.system,
@@ -331,7 +357,7 @@ impl Agent {
             budget.requests += 1;
             budget.total_requests += 1;
 
-            let (provider, model) = self.model.get();
+            let (provider, model, model_name) = self.model.get_named();
             let request = Request {
                 model: model.id.clone(),
                 system: self.system.clone(),
@@ -349,6 +375,7 @@ impl Agent {
                     input_tokens: input,
                     output_tokens: output,
                     context_tokens: input + output,
+                    model: model_name,
                 });
             }
             match &answer.end {

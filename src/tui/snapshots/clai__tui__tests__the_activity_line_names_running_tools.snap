@@ -1,0 +1,28 @@
+---
+source: src/tui/tests.rs
+expression: "screen(&mut app, 80, 24)"
+---
+> fix the failing test                                                          
+                                                                                
+The test fails because parse drops the last line. Let me look.                  
+                                                                                
+▸ read_file src/parse.rs                                               ✓ 2 lines
+▸ run_command cargo test                                                       ⠋
+▸ edit_file src/parse.rs                                                       ⠋
+▸ edit_file src/parse.rs                                                       ⠋
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+· Running cargo test… +2 (14s · ↓ 1.2k tokens · Esc cancel)                     
+────────────────────────────────────────────────────────────────────────────────
+>                                                                               
+────────────────────────────────────────────────────────────────────────────────
+  running tool… 1 request, 1 tool call · Esc cancel · /help · Ctrl-D detach     
+  project · ~/ws/project · anthropic/sonnet · 1/1 · 5.2k/200k · in 4k out 1.2k

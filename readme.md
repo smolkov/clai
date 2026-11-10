@@ -75,7 +75,7 @@ widens the rule, `Enter` confirms), `n` no, `e` no with a message to the model,
 Commands: `/help`, `/model [PROVIDER/MODEL]` (without one, choose it as with
 `Ctrl-O`), `/sessions`, `/new [NAME]` (a session in the same workspace; the model
 picker starts on `default_model`, so `Enter` takes it), `/attach [NAME]`,
-`/rename NAME`, `/status [NAME]`, `/settings`, `/theme [NAME]`, `/kill`, `/detach`, `/quit`. `/` in the empty input lists them:
+`/rename NAME`, `/status [NAME]`, `/stats [7d|30d|all]`, `/settings`, `/theme [NAME]`, `/kill`, `/detach`, `/quit`. `/` in the empty input lists them:
 type to search, `Up` / `Down` select, `Enter` runs, `Tab` completes, `Esc` closes
 the list and keeps the text. After `/attach ` and `/model ` a list offers the
 session names and models the same way. The list also shows commands of later
@@ -90,6 +90,11 @@ context use and settings; the running turn against `[limits]`; and statistics
 over the whole session: turns, requests, retries, errors, tokens, time spent
 working, tool calls per tool, and questions by answer and client. It updates
 while open; `Esc` closes it.
+
+`/stats` opens the same box on its Global tab (`Tab` switches): statistics over
+all sessions of the server for the last 7 days, 30 days or all time (`7`, `3`,
+`a`): sessions, turns, requests, tokens and working time, a table per model
+with its share of the tokens, and a chart of tokens per day. `R` counts again.
 
 `/settings` shows the `[tui]` settings: change one with `Enter` or `Left` /
 `Right` and see it at once, `d` sets the default, `s` saves into the config file
@@ -114,7 +119,14 @@ size nor a bill.
 Without a terminal the TUI exits with `2`; use `clai run` or `clai chat`.
 `[tui]` in the configuration has `symbols`, `mouse` (off: the terminal's own
 text selection works), `tool_output_lines`, `expand_tool_calls`, `timestamps`,
-`scroll_lines` and `max_fps`; `NO_COLOR` turns colours off.
+`scroll_lines`, `max_fps` and `activity`; `NO_COLOR` turns colours off.
+
+While the session works, a line above the input shows what it does, since
+when, and the output tokens of the turn:
+`✻ Prestidigitating… (14s · ↓ 1.2k tokens · Esc cancel)`. The glyph turns to
+the warning colour when the model has been quiet for 30 s.
+`tui.activity = "plain"` says `Thinking…` instead of a playful verb, `"off"`
+hides the line.
 
 ## Running a task
 
@@ -165,7 +177,7 @@ clai import api.json                  # add it again (e.g. on another machine)
 `clai chat` is a plain-text chat: lines you type go to the model, its text
 streams back with one line per tool call. `Ctrl-C` cancels the running
 turn, `Ctrl-D` detaches (the session keeps working), `/help` lists the
-commands (`/cancel`, `/model`, `/usage`, `/status [NAME]`, `/sessions`, `/attach NAME`,
+commands (`/cancel`, `/model`, `/usage`, `/status [NAME]`, `/stats [RANGE]`, `/sessions`, `/attach NAME`,
 `/new [NAME] [PROVIDER/MODEL]`, `/models`, `/detach`, `/kill`). It shows each question
 with the diff or command and reads the answer as a line: `y` allow, `a` always (then a rule), `n` deny, `e` deny
 with a message, `c` cancel the turn; for a limit question `y` continue,

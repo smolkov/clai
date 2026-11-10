@@ -7,8 +7,9 @@ mod stats;
 mod tests;
 
 pub use stats::{
-    AnswerCounts, ClientInfo, DirInfo, LimitsInfo, ModelStatus, RunningTurn, SessionStatus, Stats,
-    ToolCounts, TurnCounts,
+    AnswerCounts, ClientInfo, DayTokens, DirInfo, GlobalStats, GlobalTotals, LimitsInfo,
+    ModelStatus, ModelTotals, Range, RunningTurn, SessionCounts, SessionStatus, Stats, ToolCounts,
+    TurnCounts,
 };
 
 use std::path::PathBuf;
@@ -20,7 +21,7 @@ use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWrite, AsyncWr
 use crate::agent::{Answer, Question, SessionEvent, State};
 
 /// The protocol version; a new message or event kind needs a new one.
-pub const VERSION: u32 = 6;
+pub const VERSION: u32 = 7;
 
 /// The longest message accepted, in bytes.
 pub const MAX_LINE: usize = 16 << 20;
@@ -129,6 +130,13 @@ pub enum Request {
     SessionStatus {
         session: String,
     },
+    /// Statistics over the logs of all saved sessions.
+    GlobalStats {
+        range: Range,
+        /// The client's time zone, in seconds east of UTC: it sets the days.
+        #[serde(default)]
+        offset: i64,
+    },
     /// The models of the server's configuration.
     Models,
     /// Stops the server; running sessions stop and stay saved.
@@ -209,6 +217,9 @@ pub enum Payload {
     Status(Status),
     SessionStatus {
         status: Box<SessionStatus>,
+    },
+    GlobalStats {
+        stats: Box<GlobalStats>,
     },
     Models {
         models: Vec<ModelInfo>,

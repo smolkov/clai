@@ -3,6 +3,7 @@
 //! holds all view state. It connects, attaches, sets up the terminal, feeds
 //! inputs to `App::update`, carries out its effects and draws.
 
+mod activity;
 mod app;
 mod ask;
 mod commands;
@@ -49,7 +50,9 @@ use crate::runtime::current_thread;
 use crate::server::runtime_dir;
 
 pub use app::Exit;
-use app::{App, Attachment, Effect, FileTui, Input, LOST, Reloaded, Settings, Theming};
+use app::{
+    App, Attachment, Effect, FRAME_EVERY, FileTui, Input, LOST, Reloaded, Settings, Theming,
+};
 
 /// How long to wait between two tries to connect again.
 const RECONNECT_EVERY: Duration = Duration::from_millis(500);
@@ -356,6 +359,7 @@ async fn event_loop(
     let Attached { client, attachment } = attached;
     let mut connection = Some(Connection::spawn(client));
     let mut app = App::new(settings, attachment, std::time::Instant::now());
+    app.activity.reseed(seed());
     if choose {
         app.choose_session();
     }
@@ -367,6 +371,9 @@ async fn event_loop(
     let second = Duration::from_secs(1);
     let mut ticks = interval_at(Instant::now() + second, second);
     ticks.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    // Polled only while the session works, so an idle TUI wakes once a second.
+    let mut frames = interval_at(Instant::now() + FRAME_EVERY, FRAME_EVERY);
+    frames.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
     // A whole replay is applied before this first frame.
     draw(&mut screen, &mut app)?;
@@ -405,6 +412,7 @@ async fn event_loop(
                 None
             }
             _ = ticks.tick() => Some(Input::Tick),
+            _ = frames.tick(), if app.animating() => Some(Input::Frame),
             _ = terminate.recv() => return Ok(Exit::Signal),
             _ = hangup.recv() => return Ok(Exit::Signal),
         };
@@ -460,6 +468,14 @@ async fn event_loop(
             }
         }
     }
+}
+
+/// A seed for the verbs of the activity line, different for each run.
+fn seed() -> u64 {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.subsec_nanos());
+    u64::from(nanos) ^ u64::from(std::process::id()).rotate_left(32)
 }
 
 /// Sends a request; its response comes back as an input, in its own time.

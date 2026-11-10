@@ -8,7 +8,7 @@ expression: "screen(&mut app, 80, 56)"
                                                                                 
                                                                                 
                                                                                 
-┌ Status ─ project ────────────────────────────────────────────────────────────┐
+┌ Status ─ project │ Global ───────────────────────────────────────────────────┐
 │ Session                                                                      │
 │   name         project  (id 1)                                               │
 │   state        working                                                       │
@@ -49,7 +49,7 @@ expression: "screen(&mut app, 80, 56)"
 │                                                                              │
 │ Server         0.4.0 ─ pid 4242 ─ 3 sessions, 2 running ─ 3 clients          │
 │                                                                              │
-│ Up Down PgUp PgDn scroll ─ Esc close                                         │
+│ Tab global ─ Up Down PgUp PgDn scroll ─ Esc close                            │
 └──────────────────────────────────────────────────────────────────────────────┘
                                                                                 
                                                                                 

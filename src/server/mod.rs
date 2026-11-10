@@ -94,6 +94,15 @@ struct Shared {
     next_client: AtomicU64,
     questions: Arc<AtomicU64>,
     stop: CancellationToken,
+    /// The summaries of the session logs for `global_stats`, by directory,
+    /// with the size and time of the log they were counted from.
+    summaries: Mutex<HashMap<PathBuf, Counted>>,
+}
+
+/// A log counted for `global_stats`.
+struct Counted {
+    mark: Option<(u64, SystemTime)>,
+    summary: Arc<crate::session::global::Summary>,
 }
 
 fn stamp(path: &Path) -> Option<(SystemTime, u64)> {
@@ -166,6 +175,7 @@ pub async fn serve(options: Options) -> Result<()> {
         next_client: AtomicU64::new(0),
         questions: Arc::new(AtomicU64::new(0)),
         stop: options.stop.clone(),
+        summaries: Mutex::new(HashMap::new()),
     });
     load_saved(&shared);
     tokio::spawn(idle_watch(shared.clone(), options.idle));

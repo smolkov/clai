@@ -9,14 +9,15 @@ use crate::agent::{Agent, SessionEvent, Setup, State, now_ms, now_secs, system_p
 use crate::config::{self, Config, LoadOptions};
 use crate::permissions::{SessionRules, Workspace};
 use crate::protocol::{
-    DirInfo, ErrorReply, LimitsInfo, ModelInfo, ModelStatus, Notice, Outcome, Payload, Request,
-    SessionInfo, SessionStatus, Stats, Status,
+    DirInfo, ErrorReply, LimitsInfo, ModelInfo, ModelStatus, Notice, Outcome, Payload, Range,
+    Request, SessionInfo, SessionStatus, Stats, Status,
 };
+use crate::session::global::{self, Part, Summary};
 use crate::session::store::{self, Meta, Store};
 use crate::session::{self, SessionHandle, Spec};
 use crate::tools::Env;
 
-use super::{Conn, Entry, Shared, Slot, broadcast, busy, check_name, error_lines, lock};
+use super::{Conn, Counted, Entry, Shared, Slot, broadcast, busy, check_name, error_lines, lock};
 
 type Reply = std::result::Result<Payload, ErrorReply>;
 
@@ -84,6 +85,7 @@ impl Shared {
         let mut agent = Agent::new(Setup {
             provider,
             model: model_config.clone(),
+            model_name: model_ref.to_string(),
             limits: config.limits,
             system: system_prompt(&ws, &today()),
             can_ask: true,
@@ -354,6 +356,81 @@ impl Shared {
         })
     }
 
+    /// The summary of a session's log, counted again only when the log
+    /// changed.
+    fn summary(&self, store: &Store) -> Result<Arc<Summary>, String> {
+        let mark = store.log_mark();
+        if let Some(counted) = lock(&self.summaries).get(store.dir())
+            && counted.mark == mark
+            && mark.is_some()
+        {
+            return Ok(counted.summary.clone());
+        }
+        let summary = Arc::new(Summary::of_store(store)?);
+        lock(&self.summaries).insert(
+            store.dir().to_path_buf(),
+            Counted {
+                mark,
+                summary: summary.clone(),
+            },
+        );
+        Ok(summary)
+    }
+
+    /// Statistics over the logs of all saved sessions.
+    fn global_stats(&self, range: Range, offset: i64) -> Payload {
+        let stores: Vec<(Store, bool)> = lock(&self.sessions)
+            .iter()
+            .filter_map(|(_, entry)| {
+                let running = matches!(entry.slot, Slot::Running(_));
+                entry.store.clone().map(|store| (store, running))
+            })
+            .collect();
+        let mut summaries = Vec::new();
+        let mut skipped = 0;
+        for (store, running) in &stores {
+            match self.summary(store) {
+                Ok(summary) => summaries.push((summary, *running)),
+                Err(e) => {
+                    tracing::warn!("global statistics: {e}");
+                    skipped += 1;
+                }
+            }
+        }
+        // Sessions that are gone keep no summary.
+        lock(&self.summaries).retain(|dir, _| stores.iter().any(|(s, _)| s.dir() == dir));
+        let configured: std::collections::HashSet<String> = self
+            .config(&std::env::temp_dir())
+            .map(|config| {
+                config
+                    .providers
+                    .values()
+                    .flat_map(|p| p.models.values().map(|m| format!("{}/{}", p.name, m.name)))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let parts: Vec<Part<'_>> = summaries
+            .iter()
+            .map(|(summary, running)| Part {
+                summary,
+                running: *running,
+            })
+            .collect();
+        let stats = global::combine(
+            &parts,
+            &global::Request {
+                range,
+                offset,
+                now: now_ms(),
+                configured: &|name| configured.contains(name),
+                skipped,
+            },
+        );
+        Payload::GlobalStats {
+            stats: Box::new(stats),
+        }
+    }
+
     async fn list(&self) -> Vec<SessionInfo> {
         let entries: Vec<(u64, Result<SessionHandle, SessionInfo>)> = lock(&self.sessions)
             .iter()
@@ -454,6 +531,7 @@ impl Conn {
             Request::Import { path, name } => self.import(&path, name),
             Request::Status => Ok(Payload::Status(shared.server_status().await)),
             Request::SessionStatus { session } => shared.session_status(&session).await,
+            Request::GlobalStats { range, offset } => Ok(shared.global_stats(range, offset)),
             Request::Models => shared.models(),
             Request::Stop => {
                 tracing::info!(client = %self.outbox.name, "stop requested");

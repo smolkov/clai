@@ -32,6 +32,7 @@ commands:
   /cancel          cancel the running turn
   /model [MODEL]   show or change the model (PROVIDER/MODEL)
   /status [NAME]   status and statistics of this or another session
+  /stats [RANGE]   statistics over all sessions: 7d (default), 30d or all
   /usage           show the tokens used so far
   /sessions        list the sessions; * is this one
   /attach NAME     attach to another session
@@ -96,6 +97,16 @@ fn status_text(status: &crate::protocol::SessionStatus, unicode: bool, offset: i
         me: CLIENT_NAME,
     };
     crate::text::status::text(&crate::text::status::sections(status, &options))
+}
+
+/// What `/stats` prints.
+fn stats_text(stats: &crate::protocol::GlobalStats, unicode: bool, offset: i64) -> String {
+    let options = crate::text::status::Options {
+        unicode,
+        offset,
+        me: CLIENT_NAME,
+    };
+    crate::text::global::text(stats, &options)
 }
 
 /// The name this client has for the server.
@@ -276,7 +287,7 @@ impl Talk {
         self.replay().await
     }
 
-    /// `/new`, `/attach`, `/sessions`, `/models`, `/status`; `None` for other
+    /// `/new`, `/attach`, `/sessions`, `/models`, `/status`, `/stats`; `None` for other
     /// commands.
     async fn session_command(&mut self, name: &str, argument: &str) -> Option<Result<()>> {
         let result = match name {
@@ -316,6 +327,26 @@ impl Talk {
                     Err(e) => Err(e),
                 }
             }
+            "stats" => match crate::protocol::Range::parse(argument)
+                .or_else(|| argument.is_empty().then(crate::protocol::Range::default))
+            {
+                Some(range) => {
+                    let offset = crate::tui::local_offset();
+                    match self
+                        .client
+                        .request(Request::GlobalStats { range, offset })
+                        .await
+                    {
+                        Ok(Payload::GlobalStats { stats }) => {
+                            self.out(&stats_text(&stats, self.unicode, offset));
+                            Ok(())
+                        }
+                        Ok(other) => Err(unexpected(&other)),
+                        Err(e) => Err(e),
+                    }
+                }
+                None => Err(Error::Usage("usage: /stats [7d|30d|all]".into())),
+            },
             "attach" if argument.is_empty() => Err(Error::Usage(
                 "usage: /attach NAME; /sessions lists them".into(),
             )),
@@ -727,5 +758,16 @@ mod tests {
         let text = status_text(&status, true, 0);
         assert!(text.contains("clients      1: clai chat (this)"), "{text}");
         assert!(text.contains("⚠ not configured"), "{text}");
+    }
+
+    #[test]
+    fn stats_print_totals_models_and_days() {
+        let text = stats_text(&crate::text::global::tests::week(), true, 0);
+        assert!(
+            text.starts_with("Totals         2026-11-04 – 2026-11-10\n"),
+            "{text}"
+        );
+        assert!(text.contains("  anthropic/sonnet       9"), "{text}");
+        assert!(text.contains("  Sun 11-08    4.1M  ███"), "{text}");
     }
 }

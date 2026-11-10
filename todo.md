@@ -197,6 +197,16 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [x] `session_status` request, protocol 4.
 - [x] `/status [NAME]` in the TUI (live, scrollable) and in `clai chat`.
 
+## Global statistics (RFC 0014)
+
+- [x] `usage` events carry the model.
+- [x] Counting per model and per day, cached per log; `global_stats`,
+      protocol 7.
+- [x] Status box tabs; `/stats [7d|30d|all]` with Totals, Models and the
+      chart of tokens per day.
+- [x] `/stats` in `clai chat`.
+- [ ] Keep the tokens of deleted sessions (RFC 0014, open question 1).
+
 ## Security hardening (RFC 0010)
 
 - [x] Log file `0600`, state directory `0700`, narrowed on start.
@@ -225,6 +235,17 @@ Milestones and their order: [`implementation.md`](implementation.md).
       all `kill`s are answered.
 - [x] Filter: `/` with text and time words (`>7d`, `<1h`).
 - [ ] `clai ls`: `USED` instead of `AGE` too (RFC 0011, open question 3).
+
+## Activity line (RFC 0015)
+
+- [x] 120 ms frame tick while the session works; tool call spinners use it.
+- [x] Activity line above the input: verb or tool, time, output tokens,
+      `Esc cancel`; cut to fit; hidden below 14 rows and while a prompt is
+      open; stalled colour after 30 s.
+- [x] Start time of a running turn from `session_status` after an attach.
+- [x] `tui.activity` (`playful`, `plain`, `off`), in `/settings`.
+- [ ] `clai chat`: a spinner before the first text (RFC 0015, out of scope).
+- [ ] Custom verb lists, `tui.activity_words` (RFC 0015, open question 3).
 
 ## Commit messages (RFC 0013)
 

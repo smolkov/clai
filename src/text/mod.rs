@@ -7,6 +7,7 @@ mod asker;
 mod conversation;
 mod dialog;
 mod events;
+pub mod global;
 mod question;
 pub mod sessions;
 pub mod status;

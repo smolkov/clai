@@ -352,6 +352,7 @@ fn totals_sum_only_usage_events() {
         input_tokens,
         output_tokens,
         context_tokens: 999,
+        model: String::new(),
     };
     let log = [
         usage(10, 1),

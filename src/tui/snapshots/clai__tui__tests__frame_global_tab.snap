@@ -1,0 +1,44 @@
+---
+source: src/tui/tests.rs
+expression: "screen(&mut app, 80, 40)"
+---
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+┌ Status ─ project │ Global ─────────────────────────── 7 days │ 30 days │ all ┐
+│ Totals         2026-11-04 – 2026-11-10                                       │
+│   sessions     12 active of 31 ─ 4 running                                   │
+│   turns        87: 80 done, 3 cancelled, 2 limit, 2 failed                   │
+│   requests     1.4k ─ 21 retries ─ 3 errors                                  │
+│   tokens       in 10.9M ─ out 340k                                           │
+│   working      6h 40m                                                        │
+│                                                                              │
+│ Models            sessions  requests      in     out   share                 │
+│   anthropic/sonnet       9      1.1k    9.9M    300k   ██████████░░  90%     │
+│   openai/gpt-old         4       300      1M     40k   █░░░░░░░░░░░   9%     │
+│   all                   12      1.4k   10.9M    340k                         │
+│                                                                              │
+│ Tokens per day  █ in  █ out                                                  │
+│    5M ┤                                                                      │
+│       │                                    ▅▅▅▅▅▅▅▅                          │
+│       │                                    ████████                          │
+│       │                                    ████████                          │
+│  2.5M ┤         ▆▆▆▆▆▆▆▆                   ████████ ▂▂▂▂▂▂▂▂                 │
+│       │         ████████                   ████████ ████████                 │
+│       │▇▇▇▇▇▇▇▇ ████████          ▄▄▄▄▄▄▄▄ ████████ ████████                 │
+│       │████████ ████████          ████████ ████████ ████████ ▇▇▇▇▇▇▇▇        │
+│     0 ┼───────────────────────────────────────────────────────────────       │
+│        Wed      Thu      Fri      Sat      Sun      Mon      Tue             │
+│        max 4.1M on Sun 11-08 ─ avg 1.6M                                      │
+│                                                                              │
+│ Tab session ─ 7 3 a range ─ R count again ─ Up Down scroll ─ Esc close       │
+└──────────────────────────────────────────────────────────────────────────────┘
+                                                                                
+────────────────────────────────────────────────────────────────────────────────
+>                                                                               
+────────────────────────────────────────────────────────────────────────────────
+  idle · /help · Ctrl-D detach                                                  
+  project · ~/ws/project · anthropic/sonnet · 1/1 · 0/200k

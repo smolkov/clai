@@ -33,7 +33,7 @@ pub use permissions::{
 };
 pub use secret::{ApiKey, KEY_CMD_TIMEOUT, KeySource, KeyStatus};
 pub use themes::ThemeText;
-pub use tui::{BuiltinTheme, Colour, Symbols, Theme, ThemeSource, Tui};
+pub use tui::{ActivityLine, BuiltinTheme, Colour, Symbols, Theme, ThemeSource, Tui};
 
 /// Example user config, printed when there is none.
 pub const EXAMPLE: &str = include_str!("example.toml");

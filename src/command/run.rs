@@ -119,6 +119,7 @@ impl Run {
             setup: Setup {
                 provider,
                 model: model.clone(),
+                model_name: model_ref.to_string(),
                 limits: config.limits,
                 system: system_prompt(&workspace, &today()),
                 can_ask,

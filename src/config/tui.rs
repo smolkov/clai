@@ -18,6 +18,20 @@ pub enum Symbols {
     Ascii,
 }
 
+/// `tui.activity`: the activity line while the session works (see
+/// `spec/tui.md`, "Activity line").
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ActivityLine {
+    /// A playful verb per turn, with a shimmer.
+    #[default]
+    Playful,
+    /// `Thinking…` and `Writing…`, no shimmer.
+    Plain,
+    /// No line.
+    Off,
+}
+
 /// TUI settings, with the defaults of `spec/config.md`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Tui {
@@ -31,6 +45,7 @@ pub struct Tui {
     pub timestamps: bool,
     pub scroll_lines: u16,
     pub max_fps: u16,
+    pub activity: ActivityLine,
 }
 
 impl Default for Tui {
@@ -45,6 +60,7 @@ impl Default for Tui {
             timestamps: false,
             scroll_lines: 3,
             max_fps: 30,
+            activity: ActivityLine::Playful,
         }
     }
 }
@@ -269,6 +285,7 @@ pub(crate) fn build_tui(
     tui.expand_tool_calls = file.expand_tool_calls.unwrap_or(tui.expand_tool_calls);
     tui.syntax_highlight = file.syntax_highlight.unwrap_or(tui.syntax_highlight);
     tui.timestamps = file.timestamps.unwrap_or(tui.timestamps);
+    tui.activity = file.activity.unwrap_or(tui.activity);
     let mut int = |value: &Option<Spanned<i64>>, key: &str, range: RangeInclusive<i64>| {
         let value = value.as_ref()?;
         let n = *value.get_ref();

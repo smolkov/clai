@@ -49,10 +49,22 @@ plain lines set off the prompt bar and the input. From top to bottom:
 | Area           | Content |
 |----------------|---------|
 | Conversation   | Scrollable history of the session: user messages, model text, tool calls. |
+| Activity line  | Shown only while the session works: what it does, for how long, and the tokens so far. See [Activity line](#activity-line). |
 | Prompt bar     | Shown only while a question (permission or limit) is open; replaces nothing else. |
 | Input          | Multi-line editor for the next user message, with a line above and below it. |
 | Status row     | Current state (idle, waiting for model, running tool, asking), turn counters, key hints. |
 | Session row    | Session name, workspace path, provider and model (`anthropic/sonnet`), position among all sessions (`1/3`), number of other sessions waiting for an answer (`●1`), context usage (tokens used / limit; only the tokens if the server does not list the model, nothing until the first count), tokens the session has used (`in 45.1k out 3.2k`). |
+
+While the session works and no question is open, the activity line takes the
+last row of the conversation area, with an empty row above it:
+
+```
+▸ read_file src/parse.rs                                          ✓ 120 lines
+
+✻ Prestidigitating… (14s · ↓ 1.2k tokens · Esc cancel)
+──────────────────────────────────────────────────────────────────────────────
+> _
+```
 
 The conversation area takes all remaining height. If the terminal is smaller
 than 40 × 10 cells, `clai` shows only a "terminal too small" message until it
@@ -276,7 +288,8 @@ Changing the model of a running session:
 | Error          | Red line with the error message; the session continues. |
 | Notice         | Dim line for events such as "turn cancelled" or "limit reached". |
 
-Tool call state is one of: running (spinner), done (`✓` plus a short result,
+Tool call state is one of: running (spinner, moved by the frame tick of
+[Performance](#performance)), done (`✓` plus a short result,
 e.g. line count or exit code), failed (`✗`), denied (`⊘`), waiting for
 permission (`?`).
 
@@ -284,6 +297,67 @@ Tool calls are collapsed (`▸`) by default and expanded (`▾`) while they wait
 for permission. Long outputs are cut to `tui.tool_output_lines` lines (default
 20) in the view, with a "… N more lines" marker; the full text stays
 available in the expanded entry. See [`config.md`](config.md), "TUI".
+
+## Activity line
+
+A line above the input while the session works, so that the user sees at
+once that something happens and for how long:
+
+```
+✻ Prestidigitating… (14s · ↓ 1.2k tokens · Esc cancel)
+```
+
+- **Place:** the last row of the conversation area, with an empty row above
+  it. The conversation is two rows shorter while it is shown and follows the
+  end as before. It is not part of the conversation: not saved, not
+  scrolled, not selected. When the user scrolled up, it stays at the bottom.
+- **Hidden** when the session is `idle` or `saved`, while a permission, limit
+  or question prompt is open (the prompt says what is needed), after the
+  session ended, below 14 rows of terminal, and with `tui.activity = "off"`.
+
+| Phase | When | Text |
+|-------|------|------|
+| Thinking | after the request is sent, before its text | the verb of the turn: `Prestidigitating…` |
+| Writing | text deltas arrive | the verb, as above |
+| Tool | a tool call is pending or runs | `Running cargo test…`, `Reading src/parse.rs…`, `Editing src/parse.rs…`; with several calls the first is named and `+2` follows |
+| Retry | after a `retry` event, until the next text or tool call | `Retrying (2/3): rate limited…` |
+| Cancelling | after `Esc` or `Ctrl-C` cancelled the turn, until it ends | `Cancelling…` |
+
+- **Verb:** one of about 50 playful gerunds (`Pondering`, `Untangling`,
+  `Percolating`, …), chosen at random when the turn starts and kept for the
+  turn. With `tui.activity = "plain"` the two phases say `Thinking…` and
+  `Writing…`.
+- **Tool text:** the tool as a verb (`run_command` Running, `read_file`
+  Reading, `edit_file` Editing, `write_file` Writing, `list_files` Listing,
+  `search_files` Searching; other tools `Running NAME`) and the main argument,
+  as on the call's summary line.
+- **In brackets:**
+  - The time since the turn started: `14s`, `2m 05s`, `1h 03m`. The TUI notes
+    it when it sees `working` after `idle`; after an attach to a session that
+    already works it asks `session_status` once for the start of the running
+    turn. Until the answer the time is left out.
+  - `↓ 1.2k tokens`: the output tokens of the turn. Between `usage` events
+    they are estimated from the text received (4 characters per token), and
+    the count of a `usage` event replaces the estimate. Left out while it is
+    0.
+  - `Esc cancel`, while the input is empty and has the focus, so that `Esc`
+    really cancels; not while cancelling.
+- **Room:** parts that do not fit are dropped from the right: the hint, then
+  the tokens, then the time. Then the text is cut with `…`. The glyph stays.
+- After the turn the line goes; no "done in 14s" entry is left, the
+  `turn_end` notice is enough.
+
+Animation:
+
+- **Glyph:** `· ✢ ✳ ✶ ✻ ✽ ✻ ✶ ✳ ✢`, one per frame, in the `accent` colour;
+  with ASCII symbols `| / - \`.
+- **Shimmer:** the verb is drawn `dim`, with a band of three characters in
+  the `text` colour that moves from left to right about once per two seconds.
+  Not with `plain`, and with `NO_COLOR` the verb is plain text and only the
+  glyph moves.
+- **Stalled:** while thinking, when no event has come for 30 s, the glyph
+  turns to the `warning` colour. The time stays. Nothing else changes: the
+  provider's own timeouts and retries decide whether the request failed.
 
 ## Permission prompts
 
@@ -414,6 +488,7 @@ the session row counts the question in `●`, as for other questions.
 | `/attach [NAME]` | Attach to another session; without a name, open the session list. A name that is not in the list stays in the input with a notice. |
 | `/rename NAME` | Rename the attached session. |
 | `/status [NAME]` | Open the status box: the full status of the attached session, or of session `NAME`, running or saved, and its statistics. See [Status box](#status-box). |
+| `/stats [RANGE]` | Open the status box on its Global tab: statistics over all sessions of the server, for `7d` (the default), `30d` or `all`. See [Global tab](#global-tab). |
 | `/settings` | Open the settings box: the `[tui]` settings, changed with a preview and saved into the user file. See [Settings](#settings). |
 | `/theme [NAME]` | Open the theme list; with a name, switch to that theme. Either way the theme is saved as the default. See [Theme list](#theme-list). |
 | `/kill`, `/delete` | Delete the attached session, after the confirmation of [Delete](#delete), and open the session list. |
@@ -471,9 +546,10 @@ cancels the turn or clears the input, which closes the list.
 Every box the user can open has a command in the table above. The prompt bar has
 none: it opens when the agent asks a question.
 
-After `/attach `, `/model ` and `/theme ` (typed, or completed with `Tab`), a
-list of values lies in the same place: `/attach` offers the other sessions,
-with their workspace and state, `/model` the server's models, with their id,
+After `/attach `, `/model `, `/stats `, `/status ` and `/theme ` (typed, or
+completed with `Tab`), a list of values lies in the same place: `/attach` offers
+the other sessions, with their workspace and state, `/model` the server's
+models, with their id, `/stats` the ranges, `/status` the sessions,
 `/theme` the themes, with where they come from. Typing searches them like
 commands, by name, and models also by id. `Up` / `Down` select, `Tab` completes
 the selected value, `Enter` runs the command with it, and with no match
@@ -575,6 +651,9 @@ Mouse wheel scrolls the conversation. Mouse capture can be turned off with
 
 ## Status box
 
+The status box has two tabs, named in its title: the session's name, and
+**Global**. `/status` opens it on the first, `/stats` on the second.
+
 `/status [NAME]` opens a box with the status of a session and statistics over
 its whole log, from the `session_status` request (see
 [`architecture.md`](architecture.md), "Protocol"). `NAME` is completed from the
@@ -584,7 +663,7 @@ resumed. The box opens at once ("asking the server…") and fills with the
 answer; a first answer that fails closes it with the error.
 
 ```
-┌ Status ─ project ────────────────────────────────────────────────────────────┐
+┌ Status ─ project │ Global ───────────────────────────────────────────────────┐
 │ Session                                                                      │
 │   name         project  (id 1)                                               │
 │   state        working                                                       │
@@ -625,7 +704,7 @@ answer; a first answer that fails closes it with the error.
 │                                                                              │
 │ Server         0.4.0 ─ pid 4242 ─ 3 sessions, 2 running ─ 3 clients          │
 │                                                                              │
-│ Up Down PgUp PgDn scroll ─ Esc close                                         │
+│ Tab global ─ Up Down PgUp PgDn scroll ─ Esc close                            │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -653,6 +732,86 @@ answer; a first answer that fails closes it with the error.
   and the end of the session it shows.
 - With ASCII symbols, the bar is `[####......]`, separators are `-` and the
   warning mark is `!`.
+- `Tab`, `Shift-Tab`, `Left` and `Right` switch the tab. Each tab keeps its
+  scroll position. The tab in use is bold in the title. A box opened by
+  `/stats` asks for the session's status when its tab is first shown.
+
+### Global tab
+
+`/stats [RANGE]` opens the status box on the Global tab: statistics over the
+logs of all saved sessions of the server, from the `global_stats` request (see
+[`architecture.md`](architecture.md), "Protocol"; how they are counted is in
+[`sessions.md`](sessions.md), "Statistics"). `RANGE` is `7d` (the default),
+`30d` or `all`; another word stays in the input with its usage. It works for
+all sessions, whichever is attached.
+
+```
+┌ Status ─ project │ Global ─────────────────────────── 7 days │ 30 days │ all ┐
+│ Totals         2026-11-04 – 2026-11-10                                       │
+│   sessions     12 active of 31 ─ 4 running                                   │
+│   turns        87: 80 done, 3 cancelled, 2 limit, 2 failed                   │
+│   requests     1.4k ─ 21 retries ─ 3 errors                                  │
+│   tokens       in 10.9M ─ out 340k                                           │
+│   working      6h 40m                                                        │
+│                                                                              │
+│ Models            sessions  requests      in     out   share                 │
+│   anthropic/sonnet       9      1.1k    9.9M    300k   ██████████░░  90%     │
+│   openai/gpt-old         4       300      1M     40k   █░░░░░░░░░░░   9%     │
+│   all                   12      1.4k   10.9M    340k                         │
+│                                                                              │
+│ Tokens per day  █ in  █ out                                                  │
+│    5M ┤                                                                      │
+│       │                                    ▅▅▅▅▅▅▅▅                          │
+│       │                                    ████████                          │
+│       │                                    ████████                          │
+│  2.5M ┤         ▆▆▆▆▆▆▆▆                   ████████ ▂▂▂▂▂▂▂▂                 │
+│       │         ████████                   ████████ ████████                 │
+│       │▇▇▇▇▇▇▇▇ ████████          ▄▄▄▄▄▄▄▄ ████████ ████████                 │
+│       │████████ ████████          ████████ ████████ ████████ ▇▇▇▇▇▇▇▇        │
+│     0 ┼───────────────────────────────────────────────────────────────       │
+│        Wed      Thu      Fri      Sat      Sun      Mon      Tue             │
+│        max 4.1M on Sun 11-08 ─ avg 1.6M                                      │
+│                                                                              │
+│ Tab session ─ 7 3 a range ─ R count again ─ Up Down scroll ─ Esc close       │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+- **Range:** the last 7 or 30 days, today included, or all time, in the
+  client's time zone. At the right of the title, the range in use is bold; a
+  box too narrow for them names only that one after the tabs. `7`, `3` and `a`
+  choose it, `r` goes to the next one. Each answer is kept while the box is
+  open, so a range shown before comes back at once.
+- **Totals:** the dates of the range; the sessions with an event in it, of all
+  saved sessions, and how many run now; turns, requests, retries, errors and
+  tokens as on the Session tab; the time in `working` in the range, with `≥`
+  when some stretch has no time. A log that cannot be read is left out and
+  counted in a warning row "skipped".
+- **Models:** one row per `provider/model`, most tokens first: the sessions
+  that used it in the range, its requests, input and output tokens, and its
+  share of all tokens with a bar in the `user` colour (`[###.....]` in ASCII).
+  A model that is no longer configured is dim; tokens that cannot be given to a
+  model are in a row `unknown`. With more than one model, a row `all` sums
+  them. No model used: `Models  none`.
+- **Tokens per day:** a bar chart, input (`user` colour) and output (`accent`
+  colour) stacked, 8 rows high, the top of a bar in eighth blocks; in ASCII
+  `#` and `+` in whole cells. The y axis is labelled at 0, the middle and the
+  top, which is 1, 2, 4, 5 or 8 times a power of ten. One column per day, as
+  wide as the box allows (at most 8 cells and a gap); days without tokens are
+  empty columns. Labels: the weekday for 7 days, `MM-DD` every 7th day for 30
+  days. For all time, a column is a day while they fit, then a week (from
+  Monday), then a month (`YYYY-MM`; the oldest are left out when even those do
+  not fit); the line under the chart says so. That line names the highest
+  column and the mean per day of the range. Tokens of events without a time
+  are not in the chart; a line says how many there are. A range without tokens
+  says `no tokens in this range`; a box narrower than 40 cells leaves the
+  chart out and says so.
+- **Asking:** the tab asks with `global_stats` when it is shown and the range
+  has no answer yet, and when the range changes ("counting the logs of all
+  sessions…" until it comes). It does not poll: `R` counts again, and the
+  title says how old an answer is once it is older than a minute
+  (`Global ─ 2m 30s old`). A refresh that fails keeps what is shown; a first
+  answer that fails shows the error in the tab, or closes the box with it when
+  nothing else is shown.
 
 ## Settings
 
@@ -670,7 +829,7 @@ answer; a first answer that fails closes it with the error.
 │   timestamps         off       Time of each entry                            │
 │   scroll_lines       3         Lines per mouse-wheel step                    │
 │   max_fps            30        Redraw limit                                  │
-│                                                                              │
+│   activity           playful   Line while the session works                  │
 │ mouse: off keeps the terminal's text selection; on scrolls with the wheel    │
 │ Enter change ─ Left/Right value ─ d default ─ s save ─ Esc close             │
 └──────────────────────────────────────────────────────────────────────────────┘
@@ -768,8 +927,12 @@ picker.
 
 ## Performance
 
-- Redraw at most 30 times per second; streaming text is batched between
-  frames.
+- Redraw at most 30 times per second (`tui.max_fps`); streaming text is
+  batched between frames.
+- An idle TUI wakes once per second. While the session works and the
+  activity line or a tool call spinner is on the screen, a frame tick runs
+  every 120 ms: it moves the glyph, the shimmer and the spinners, and only
+  the activity line and the running calls are built again.
 - Input never waits for the network or a tool: the UI runs on its own task and
   receives events from the server over the client connection.
 - Switching to a session with a long history shows its latest page within

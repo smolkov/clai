@@ -271,6 +271,18 @@ impl Store {
         Ok(stats)
     }
 
+    /// The saved log, as it is on disk.
+    pub fn stamped(&self) -> Result<Vec<Stamped>, String> {
+        read_lines(&self.dir.join(EVENTS))
+    }
+
+    /// The size and the time of the last change of `events.jsonl`, to see
+    /// whether the log changed; `None` when it is missing.
+    pub fn log_mark(&self) -> Option<(u64, std::time::SystemTime)> {
+        let meta = fs::metadata(self.dir.join(EVENTS)).ok()?;
+        Some((meta.len(), meta.modified().ok()?))
+    }
+
     /// The size of the session's files in bytes.
     pub fn size(&self) -> u64 {
         [META, HISTORY, EVENTS]
@@ -727,6 +739,7 @@ mod tests {
                     input_tokens: 5,
                     output_tokens: 1,
                     context_tokens: 6,
+                    model: String::new(),
                 },
             })
             .unwrap();

@@ -1,0 +1,44 @@
+---
+source: src/tui/tests.rs
+expression: "screen(&mut app, 42, 40)"
+---
+                                          
+                                          
+                                          
+                                          
+                                          
+                                          
+                                          
+                                          
+                                          
+                                          
+                                          
+┌ Status ─ project │ Global ─ 7 days ────┐
+│ Totals         2026-11-04 – 2026-11-10 │
+│   sessions     12 active of 31 ─ 4 ru… │
+│   turns        87: 80 done, 3 cancell… │
+│   requests     1.4k ─ 21 retries ─ 3 … │
+│   tokens       in 10.9M ─ out 340k     │
+│   working      6h 40m                  │
+│                                        │
+│ Models            sessions  requests   │
+│   anthropic/sonnet       9      1.1k   │
+│   openai/gpt-old         4       300   │
+│   all                   12      1.4k   │
+│                                        │
+│ Tokens per day  █ in  █ out            │
+│   the box is too narrow for the chart  │
+│                                        │
+│ Tab session ─ 7 3 a range ─ R count aga│
+└────────────────────────────────────────┘
+                                          
+                                          
+                                          
+                                          
+                                          
+                                          
+──────────────────────────────────────────
+>                                         
+──────────────────────────────────────────
+  idle · /help · Ctrl-D detach            
+  project · ~/ws/project · anthropic/sonn…

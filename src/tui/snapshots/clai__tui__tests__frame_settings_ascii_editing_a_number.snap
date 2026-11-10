@@ -6,7 +6,6 @@ expression: text
                                                                                 
                                                                                 
                                                                                 
-                                                                                
 + Settings - /home/u/.config/clai/config.toml ---------------------------------+
 |   theme              terminal  Colour theme                                  |
 |   symbols            auto      Unicode or ASCII symbols                      |
@@ -17,6 +16,7 @@ expression: text
 |   timestamps         off       Time of each entry                            |
 |   scroll_lines       3         Lines per mouse-wheel step                    |
 | > max_fps            30        Redraw limit                                  |
+|   activity           playful   Line while the session works                  |
 |                                                                              |
 | max_fps: Frames per second, 1 to 120                                         |
 | Enter take - Esc back                                                        |

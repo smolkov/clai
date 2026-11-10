@@ -3,9 +3,11 @@
 //! and the input, and two footer rows hold the status and the session (see
 //! `spec/tui.md`, "Layout").
 
+mod activity;
 mod ask;
 mod commands;
 mod conversation;
+mod day_chart;
 mod info;
 mod input;
 mod picker;
@@ -23,7 +25,7 @@ use ratatui::layout::{Alignment, Rect};
 use ratatui::style::Color;
 use ratatui::widgets::{Paragraph, Wrap};
 
-use super::app::App;
+use super::app::{ACTIVITY_MIN_HEIGHT, App};
 use super::style::Look;
 use super::wrap::fit;
 
@@ -40,6 +42,8 @@ const FOOTER_INDENT: u16 = 2;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Areas {
     pub conversation: Rect,
+    /// The activity line, with an empty row above it.
+    pub activity: Option<Rect>,
     pub prompt: Option<Rect>,
     pub input: Rect,
     pub status: Rect,
@@ -88,9 +92,15 @@ pub fn areas(app: &App, size: Rect) -> Option<Areas> {
         end -= height + 1;
         Rect::new(x, end + 1, width, height)
     });
+    // The last row of the conversation's place, with an empty row above.
+    let activity = (app.activity_on() && size.height >= ACTIVITY_MIN_HEIGHT).then(|| {
+        end -= 2;
+        Rect::new(x, end + 1, width, 1)
+    });
     let conversation = Rect::new(x, size.y, width, end.saturating_sub(size.y));
     Some(Areas {
         conversation,
+        activity,
         prompt,
         input,
         status,
@@ -108,6 +118,9 @@ pub fn draw(app: &App, frame: &mut Frame<'_>) {
     let look = &app.settings.look;
     let buffer = frame.buffer_mut();
     conversation::draw(app, buffer, areas.conversation);
+    if let Some(area) = areas.activity {
+        activity::draw(app, buffer, area);
+    }
     if let (Some(area), Some(p)) = (areas.prompt, &app.prompt) {
         rule(buffer, size, area.y - 1, look);
         for (i, line) in prompt::lines(p, usize::from(area.width), look)

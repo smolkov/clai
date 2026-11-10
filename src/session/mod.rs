@@ -3,6 +3,7 @@
 //! through a [`SessionHandle`]; it publishes events to every attached
 //! client.
 
+pub mod global;
 mod outbox;
 mod questions;
 pub mod store;
@@ -413,7 +414,7 @@ impl Actor {
                 config,
             } => {
                 // The same name may come with a reloaded configuration.
-                self.model_handle.set(provider, config);
+                self.model_handle.set(provider, config, model.clone());
                 if model != self.meta.model {
                     let from = std::mem::replace(&mut self.meta.model, model.clone());
                     self.save_meta();
