@@ -19,6 +19,7 @@ done
 
 version=$(crate_version)
 list=target/crate-files.txt
+mkdir -p target
 # shellcheck disable=SC2086 # package_args is one word or empty.
 cargo package --locked --list $package_args >"$list"
 
