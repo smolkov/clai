@@ -1,7 +1,8 @@
 # Language server tools
 
 - RFC: 0019
-- Status: draft
+- Status: accepted
+- Progress: step 1 of 6 done (transport and one server)
 - Milestone: none; it adds a tool, a configuration table and a question
 - Spec: [`spec/tools.md`](../spec/tools.md);
   [`spec/config.md`](../spec/config.md), "Permissions", "Project files";
@@ -67,8 +68,8 @@ In:
 Out:
 
 - Rename, code actions, formatting and other operations that change
-  files (open question 2). They would need `edit_file`'s diff question
-  for many files at once.
+  files; rename comes in a later RFC. They would need `edit_file`'s
+  diff question for many files at once.
 - Completion and signature help: made for a cursor in an editor, not for
   a model that writes whole edits.
 - Installing language servers. `clai` uses what is on `PATH` or
@@ -82,7 +83,7 @@ Out:
 ### The tool
 
 One tool with an `operation`, so the model sees one tool in the list,
-not nine. **(proposal)**
+not nine.
 
 ```json
 {
@@ -108,7 +109,6 @@ The model names a symbol, not a column: models count characters badly,
 and the name is in the line it just read. `clai` finds the symbol as a
 whole word on the line and converts the position to the server's
 encoding (UTF-16 by default, UTF-8 when the server offers it).
-**(proposal)**
 
 | Operation | Position | Asks the server for | Result |
 |-----------|----------|---------------------|--------|
@@ -147,7 +147,7 @@ tests/parse.rs:8:5:  parse("a\nb");
   source, the standard library) shows the path and line, not the text:
   `~/.cargo/registry/src/…/serde-1.0.229/src/de/mod.rs:540:5 (outside the workspace)`.
   The model can learn where it is, but not read it this way, as with
-  `read_file`. **(proposal)**
+  `read_file`.
 - A location in a file that the `read_file` rules deny or that asks is
   left out and counted, as in `search_files`:
   `(2 locations skipped by permission rules)`.
@@ -155,7 +155,7 @@ tests/parse.rs:8:5:  parse("a\nb");
 
 `hover`: the server's text, Markdown kept, cut to 4 000 characters.
 Hover on a symbol whose definition is in a denied file still shows the
-text, since it comes from the file asked about. **(open question 5)**
+text, since it comes from the file asked about.
 
 `document_symbols`: an indented outline with kinds and line ranges:
 
@@ -195,13 +195,13 @@ whole project; it reports what the server has for this file.
 
 A crashed server is started again once on the next call; after a second
 crash in 5 minutes it stays failed until `/lsp restart` or a config
-reload. **(proposal)**
+reload.
 
 ### Configuration
 
 In the user file only. A project file may set `enabled = false` and
 `start = "deny"` and nothing else, because a server is a command that
-runs. **(proposal)**
+runs.
 
 ```toml
 [lsp]
@@ -233,7 +233,7 @@ roots      = ["pyproject.toml", "ruff.toml"]
 | `settings` | A table, sent as `initializationOptions` and returned for `workspace/configuration`. |
 | `env` | Extra environment variables. |
 
-Built-in servers **(proposal)**, used when `builtin = true` and the
+Built-in servers, used when `builtin = true` and the
 program is on `PATH`, and when no server of the user serves the
 extension:
 
@@ -261,7 +261,7 @@ of the project: rust-analyzer runs build scripts and procedural macros,
 gopls runs `go list`, the TypeScript server loads plugins from
 `tsconfig.json`. For a cloned repository this is the same as
 `cargo build`, which asks. So the first call that needs a server in a
-session asks **(proposal)**:
+session asks:
 
 ```
 Start language server rust-analyzer in ~/ws/clai?
@@ -297,7 +297,7 @@ name, command, root and environment. Protocol `8`.
 
 - **Pool.** The clai server (or the `clai run` process) owns a pool of
   servers, keyed by server name and root. Sessions with the same root
-  share one process. **(proposal)**
+  share one process.
 - **Start.** On the first call that needs it, after the start question.
   `initialize` with the root, the client capabilities `clai` handles,
   and `settings`; then `initialized`. The process gets its own process
@@ -319,7 +319,8 @@ name, command, root and environment. Protocol `8`.
   acknowledged; `window/showMessageRequest` gets no choice; anything else
   gets "method not found". `clai` never applies a `workspace/applyEdit`.
 - **Malformed messages** fail the server, never the session (`agent.md`,
-  "Never crash").
+  "Never crash"). A header without `Content-Length`, a header line over
+  1 KiB, a body over 64 MiB or a body that is not JSON-RPC is malformed.
 
 ### Files in sync
 
@@ -337,7 +338,7 @@ editor.
 - Other files: the client capabilities do not offer file watching
   (`didChangeWatchedFiles`), so servers watch the root themselves, as
   rust-analyzer, gopls and pyright do without a client watcher.
-  **(proposal)**
+
 - Files outside the workspace and `extra_dirs` are never opened.
 
 ### Diagnostics after an edit
@@ -359,7 +360,7 @@ src/parse.rs:13:9: error[E0425]: cannot find value `lnes` in this scope
   up to 3 s; then it adds what it has, or nothing.
 - Errors only, at most 10; warnings counted.
 - An edit never starts a server and never asks; the question would come
-  in the middle of a change. **(proposal; open question 4)**
+  in the middle of a change.
 - The edit result stays a success; diagnostics are information.
 
 ### Display
@@ -413,7 +414,6 @@ A new bullet, only when the tool is offered:
   when built. The framing and JSON-RPC are written in `src/lsp/transport.rs`
   on `tokio`, about 200 lines, instead of `tower-lsp` or `async-lsp`,
   which are made for writing servers and bring their own runtime layers.
-  **(proposal; open question 6)**
 
 No new `tokio` features: `process` and `io-util` are on.
 
@@ -466,12 +466,23 @@ No new `tokio` features: `process` and `io-util` are on.
 ## Implementation plan
 
 1. **Transport and one server**
-   - Status: todo
+   - Status: done
    - Files: `src/lsp/transport.rs`, `src/lsp/server.rs`,
      `src/lsp/docs.rs`, `Cargo.toml`, tests with the fake server
    - Result: a server can be started, initialized, asked, synced and
      stopped from a test.
    - Tests: transport, server life, sync, position encoding.
+   - Built: `src/lsp/` with `mod.rs` (`lsp::Error`), `transport.rs`,
+     `server.rs`, `docs.rs` and `tests.rs` (a fake server over a duplex
+     stream, and real processes for a missing program and one that
+     exits). Choices made while building it:
+     - `workspace/applyEdit` is answered with `applied: false`, not
+       "method not found", so the server knows the edit was refused.
+     - `workspace/configuration`: a section named in `settings` gets that
+       part, any other section the whole table.
+     - A failed start or a closed connection reports the last stderr
+       line of the server.
+     - Not used yet outside the tests; the tool comes in step 3.
 
 2. **Configuration and pool**
    - Status: todo
@@ -532,19 +543,16 @@ No new `tokio` features: `process` and `io-util` are on.
 - **`tower-lsp` / `async-lsp`.** Built for the server side, or bring a
   `tower` stack; the client side needs only framing and a few requests.
 
-## Open questions
+## Decisions
 
-1. One tool with `operation` (proposal), or one tool per operation?
-2. Should `rename` be in this RFC, as an edit with one diff question for
-   all files, or a later one?
-3. Built-in servers on by default when found on `PATH` (proposal), or
-   only servers the user names?
-4. Diagnostics after an edit only from a running server (proposal), or
-   start one (with its question) on the first edit of a file it serves?
-5. Hover and symbol names for symbols defined in a file that the
-   `read_file` rules deny: shown (proposal) or left out?
-6. `lsp-types` for the types (proposal), or our own small serde types
-   for the dozen messages used, to keep the dependency out?
-7. Should "always" for starting a server be kept beyond the session, for
-   example per root in the user file, so a trusted repository never
-   asks again?
+Answered by the user when the RFC was accepted:
+
+1. One tool with `operation`, not one tool per operation.
+2. `rename` comes in a later RFC.
+3. Built-in servers are on by default when found on `PATH`.
+4. Diagnostics after an edit come only from a running server; an edit
+   never starts one.
+5. Hover and symbol names are shown for symbols defined in a file that
+   the `read_file` rules deny.
+6. `lsp-types` for the message types.
+7. "Always" for starting a server lasts for the session only.

@@ -211,6 +211,18 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [ ] `clai chat` and `clai run`: highlighted diffs and code blocks.
 - [ ] Look at the colours in a real terminal, each bundled theme.
 
+## Language server tools (RFC 0019)
+
+- [x] Transport and one server: framing, JSON-RPC, a server process with
+      initialize, progress, diagnostics, server requests, stop; open files
+      in sync; positions in UTF-8 and UTF-16.
+- [ ] Configuration and pool: `[lsp]`, built-in servers, roots, shared
+      servers, idle stop, crash restart.
+- [ ] The `lsp` tool, the start question, protocol `8`.
+- [ ] Diagnostics after `edit_file` and `write_file`.
+- [ ] Clients: tool lines, the start prompt, `/lsp`.
+- [ ] Spec, readme and a live test with rust-analyzer.
+
 ## Copy text and see tool details (RFC 0016)
 
 - [x] Clipboard: OSC 52 and `wl-copy` / `xclip` / `xsel` / `pbcopy`,
@@ -316,7 +328,7 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [ ] Context management (history trimming of old tool results: RFC 0008,
       draft; the rest needs `spec/context.md`)
 - [ ] Language server tools: `lsp` tool, `[lsp]`, diagnostics after edits
-      (RFC 0019, draft)
+      (RFC 0019, accepted; see its section)
 - [ ] Release (RFC 0020): scripts, pipelines, Debian packages and crate
       metadata are built; left to do on the forges:
   - [ ] First push: `ci.yml` and `.gitlab-ci.yml` green.

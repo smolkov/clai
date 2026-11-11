@@ -10,6 +10,7 @@ pub mod config;
 pub mod error;
 pub mod files;
 pub mod log;
+pub mod lsp;
 pub mod output;
 pub mod permissions;
 pub mod protocol;

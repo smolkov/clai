@@ -29,6 +29,7 @@ futures-util = { version = "0.3.34", default-features = false, features = ["std"
 globset = "0.4.21"
 ignore = "0.4.34"
 indexmap = { version = "2.14.2", features = ["serde"] }
+lsp-types = "0.97.0"
 nix = { version = "0.31.3", default-features = false, features = ["signal", "process", "fs", "user", "term"] }
 pulldown-cmark = { version = "0.13.6", default-features = false }
 ratatui = "0.30.2"
