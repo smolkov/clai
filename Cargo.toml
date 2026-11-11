@@ -2,6 +2,24 @@
 name = "clai"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.88"
+description = "AI coding agent for the terminal, with tools behind permission rules"
+authors = ["Aleksandr Smolkov <sascha.smolkov@gmail.com>"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/smolkov/clai"
+homepage = "https://github.com/smolkov/clai"
+readme = "readme.md"
+keywords = ["ai", "agent", "llm", "cli", "tui"]
+categories = ["command-line-utilities", "development-tools"]
+include = [
+  "/src/**",
+  "/themes/**",
+  "/tests/**",
+  "/readme.md",
+  "/CHANGELOG.md",
+  "/LICENSE-MIT",
+  "/LICENSE-APACHE",
+]
 
 [dependencies]
 clap = { version = "4.6.7", features = ["derive"] }
@@ -52,3 +70,30 @@ panic = "unwind"
 insta = "1.49.0"
 tempfile = "3.27.0"
 tokio = { version = "1.54.1", features = ["io-util"] }
+
+# Debian package (`ci/deb.sh`, RFC 0020). Built from the static musl binary;
+# the files in target/deb-assets/ are written by `ci/deb.sh` first.
+[package.metadata.deb]
+maintainer = "Aleksandr Smolkov <sascha.smolkov@gmail.com>"
+copyright = "2026, Aleksandr Smolkov"
+extended-description = """\
+clai is an AI coding agent for the terminal. You describe a task in plain \
+language; clai sends it to a large language model, runs the tool calls the \
+model asks for (read and edit files, run commands) behind permission rules, \
+and shows every change and command."""
+section = "devel"
+priority = "optional"
+recommends = "git"
+suggests = "wl-clipboard | xclip | xsel"
+revision = "1"
+assets = [
+  ["target/release/clai", "usr/bin/", "755"],
+  ["target/deb-assets/clai.bash", "usr/share/bash-completion/completions/clai", "644"],
+  ["target/deb-assets/_clai", "usr/share/zsh/vendor-completions/_clai", "644"],
+  ["target/deb-assets/clai.fish", "usr/share/fish/vendor_completions.d/clai.fish", "644"],
+  ["readme.md", "usr/share/doc/clai/README.md", "644"],
+  ["target/deb-assets/changelog.Debian.gz", "usr/share/doc/clai/changelog.Debian.gz", "644"],
+  ["target/deb-assets/changelog.gz", "usr/share/doc/clai/changelog.gz", "644"],
+  ["debian/clai.lintian-overrides", "usr/share/lintian/overrides/clai", "644"],
+]
+

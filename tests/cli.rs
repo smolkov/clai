@@ -40,7 +40,9 @@ fn stderr(output: &Output) -> String {
 fn version_exits_0() {
     let (out, _) = clai("version", &["--version"]);
     assert_eq!(out.status.code(), Some(0));
-    assert!(String::from_utf8_lossy(&out.stdout).starts_with("clai "));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let version = concat!("clai ", env!("CARGO_PKG_VERSION"));
+    assert!(stdout.starts_with(version), "{stdout}");
 }
 
 #[test]

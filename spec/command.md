@@ -55,7 +55,7 @@ Accepted by every command, before or after the command name.
 | Option | Meaning |
 |--------|---------|
 | `-h`, `--help` | Show help for `clai` or the given command, exit `0`. |
-| `-V`, `--version` | Show the version, exit `0`. |
+| `-V`, `--version` | Show the version, exit `0`: `clai 0.2.0`, or `clai 0.2.0 (abc1234 2026-11-11)` with the commit and its date for a build of the pipelines (`CLAI_BUILD_COMMIT`, `CLAI_BUILD_DATE` at build time). |
 | `--config FILE` | Use `FILE` instead of the user config file. **(assumption)** |
 
 ## Exit codes

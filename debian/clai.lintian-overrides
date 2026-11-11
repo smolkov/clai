@@ -1,0 +1,15 @@
+# lintian tags that do not apply to clai (RFC 0020); one comment each.
+
+# The binary is static (musl): it needs no other package, so Depends is empty.
+empty-field Depends
+
+# No man page: `clai --help` and the readme are the documentation (RFC 0020,
+# open question 9).
+no-manual-page [usr/bin/clai]
+
+# A static-pie executable looks like a shared library without dependencies;
+# `ldd` saying "statically linked" is what is wanted.
+shared-library-lacks-prerequisites [usr/bin/clai]
+
+# The package is not uploaded to Debian, so its changelog closes no bugs.
+initial-upload-closes-no-bugs [usr/share/doc/clai/changelog.Debian.gz:1]

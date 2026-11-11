@@ -141,4 +141,5 @@ Sections that do not apply may be left out.
 | [0017](0017-syntax-highlighting.md) | Syntax highlighting | done |
 | [0018](0018-question-box-shows-everything.md) | Question box shows everything | draft |
 | [0019](0019-language-server-tools.md) | Language server tools | draft |
+| [0020](0020-ci-pipelines.md) | Pipelines for test, build and release | accepted |
 | [0021](0021-default-model-from-the-picker.md) | Default model from the model picker | draft |

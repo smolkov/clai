@@ -11,7 +11,7 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [x] Logging to `$XDG_STATE_HOME/clai/clai.log`, level from `CLAI_LOG`.
 - [x] Unit tests for parsing, integration tests for exit codes and output.
 - [x] `readme.md`, `todo.md`.
-- [ ] Static musl build check (moved to Release; target not installed).
+- [x] Static musl build check (RFC 0020, `ci/build.sh`).
 
 ## Configuration
 
@@ -42,7 +42,7 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [x] Retries with backoff before the first event, timeouts, cancellation.
 - [x] `fake` provider for agent-loop tests.
 - [x] Live tests (`cargo test --test live -- --ignored`).
-- [ ] Static musl build check (moved to Release; target not installed).
+- [x] Static musl build check (RFC 0020, `ci/build.sh`).
 
 ## Tools and permissions
 
@@ -317,4 +317,10 @@ Milestones and their order: [`implementation.md`](implementation.md).
       draft; the rest needs `spec/context.md`)
 - [ ] Language server tools: `lsp` tool, `[lsp]`, diagnostics after edits
       (RFC 0019, draft)
-- [ ] Release
+- [ ] Release (RFC 0020): scripts, pipelines, Debian packages and crate
+      metadata are built; left to do on the forges:
+  - [ ] First push: `ci.yml` and `.gitlab-ci.yml` green.
+  - [ ] Pre-release tag `v0.1.0-rc.1`: release on both forges, aarch64 and
+        macOS files tried on real machines; then delete it.
+  - [ ] First crates.io publish by hand, then trusted publishing and the
+        `crates-io` environment.

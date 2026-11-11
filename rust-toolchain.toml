@@ -1,0 +1,9 @@
+# The toolchain of local builds and both pipelines (RFC 0020). A new Rust
+# version comes in by changing this line in its own commit; `.gitlab-ci.yml`
+# uses the image of the same version (`ci/version.sh toolchain` checks it).
+# Release targets are added by `ci/build.sh`, not here, so a local build
+# does not download them.
+[toolchain]
+channel = "1.99.1"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

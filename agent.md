@@ -37,6 +37,9 @@ cargo clippy --all-targets -- -D warnings
 cargo test
 ```
 
+`ci/check.sh` (format check and `clippy`) and `ci/test.sh` (tests, also of
+the `ci/` scripts) run the same as the pipelines do.
+
 ## Commits
 
 - Commit or push only when asked.

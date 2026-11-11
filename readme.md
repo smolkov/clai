@@ -11,14 +11,62 @@ permission rules, and shows every change and command.
 > `clai models`, `clai commit` and `clai completion` work. The TUI `/commit`
 > dialog and context management come next. See [`todo.md`](todo.md).
 
+## Install
+
+Releases are on the
+[GitHub releases page](https://github.com/smolkov/clai/releases): static
+Linux binaries (x86_64, aarch64), macOS binaries, Debian packages, and
+`SHA256SUMS`. The archives hold `clai`, the readme, the licences and the
+shell completions in `completions/`.
+
+```sh
+v=0.1.0 t=x86_64-unknown-linux-musl
+curl -LO https://github.com/smolkov/clai/releases/download/v$v/clai-$v-$t.tar.gz
+curl -LO https://github.com/smolkov/clai/releases/download/v$v/SHA256SUMS
+sha256sum -c --ignore-missing SHA256SUMS
+tar xf clai-$v-$t.tar.gz
+install clai-$v-$t/clai ~/.local/bin/
+```
+
+The build provenance of each file can be checked with
+`gh attestation verify FILE --repo smolkov/clai`.
+
+On Debian and Ubuntu (the package needs no other package and installs the
+shell completions):
+
+```sh
+sudo apt install ./clai_0.1.0-1_amd64.deb
+```
+
+From crates.io, built from source (needs Rust 1.88 or newer and a C
+compiler, for the crypto library):
+
+```sh
+cargo install clai --locked
+```
+
 ## Build
 
-Needs a Rust toolchain with edition 2024 support.
+The toolchain is pinned in `rust-toolchain.toml`; `rustup` installs it on
+the first build.
 
 ```sh
 cargo build --release
 ./target/release/clai --help
 ```
+
+`ci/` holds the scripts the GitHub and GitLab pipelines run; they run
+locally too:
+
+| Script | Does |
+|--------|------|
+| `ci/check.sh` | `cargo fmt --check`, `clippy -D warnings`. |
+| `ci/test.sh` | `cargo test`, and the tests of the scripts. |
+| `ci/crate.sh [--allow-dirty]` | Packs the crate as crates.io gets it; builds and tests it. |
+| `ci/build.sh TARGET` | Release build; Linux targets are musl and checked static. Needs `musl-tools`, or `cargo-zigbuild` for another architecture. |
+| `ci/package.sh TARGET` | `dist/clai-VERSION-TARGET.tar.gz`. |
+| `ci/deb.sh TARGET` | `dist/clai_VERSION-1_ARCH.deb` with `cargo-deb`; `lintian` if installed. |
+| `ci/deb-test.sh DEB` | Installs, checks and removes the package; only in a throw-away container. |
 
 ## Shell completion
 
@@ -295,6 +343,35 @@ A project file may only lower these values. Details:
 
 `clai` logs to `~/.local/state/clai/clai.log` (or `$XDG_STATE_HOME/clai/clai.log`).
 Set `CLAI_LOG=debug` for more detail.
+
+## Release
+
+A tag `vX.Y.Z` releases; the pipelines do the rest (RFC 0020):
+
+1. Move the entries under `Unreleased` in `CHANGELOG.md` into a new section
+   `## X.Y.Z - YYYY-MM-DD`.
+2. Set `version = "X.Y.Z"` in `Cargo.toml`, run `cargo build` (updates
+   `Cargo.lock`), and commit.
+3. `git tag -a vX.Y.Z -m vX.Y.Z`, then push the commit and the tag, to
+   GitHub and to the GitLab mirror.
+4. GitHub checks, builds all targets, packs, tests the Debian packages,
+   and publishes the release with the notes, `SHA256SUMS` and provenance;
+   then `cargo publish`. GitLab builds the Linux files, uploads them to its
+   package registry and creates its release.
+
+A version with `-` (`0.2.0-rc.1`) is a pre-release: released on GitHub as
+such, not published to crates.io.
+
+crates.io, once:
+
+- The first version is published by hand: `ci/crate.sh`, then
+  `cargo publish --locked` with your crates.io token. Publishing cannot be
+  undone; a version can only be yanked.
+- Then, in the crate's settings on crates.io, add a trusted publisher:
+  repository `smolkov/clai`, workflow `release.yml`, environment
+  `crates-io`. Create the `crates-io` environment in the GitHub repository
+  (with yourself as required reviewer, if each publish should wait for
+  you). Later releases publish without a stored token.
 
 ## Specification
 

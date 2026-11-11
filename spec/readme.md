@@ -155,6 +155,8 @@ coding agent working on this repository).
    first?
 3. **Permissions:** should "always allow" answers from the TUI be saveable
    to the user configuration?
-4. **Platforms:** Linux only, or also macOS and Windows?
+4. **Platforms:** decided in RFC 0020: Linux (static musl builds for x86_64
+   and aarch64) and macOS (x86_64, aarch64). Not Windows: `clai` uses Unix
+   sockets, process groups and signals.
 5. **Sandbox:** should commands run in a sandbox, or only behind the
    permission prompt?

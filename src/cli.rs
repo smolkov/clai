@@ -2,6 +2,7 @@
 
 use std::ffi::OsString;
 use std::path::PathBuf;
+use std::sync::LazyLock;
 
 use clap::error::ErrorKind;
 use clap::{Args, CommandFactory, Parser, Subcommand, ValueHint};
@@ -23,9 +24,34 @@ use crate::command::send::Send;
 use crate::command::server::Server;
 use crate::complete;
 
+/// The text of `--version`: the crate version, and the commit and date of
+/// the build when `ci/build.sh` set them (RFC 0020).
+static VERSION: LazyLock<String> = LazyLock::new(|| {
+    version_text(
+        env!("CARGO_PKG_VERSION"),
+        option_env!("CLAI_BUILD_COMMIT"),
+        option_env!("CLAI_BUILD_DATE"),
+    )
+});
+
+/// `0.2.0`, `0.2.0 (abc1234)` or `0.2.0 (abc1234 2026-11-11)`.
+fn version_text(version: &str, commit: Option<&str>, date: Option<&str>) -> String {
+    let built: Vec<&str> = [commit, date]
+        .into_iter()
+        .flatten()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .collect();
+    if built.is_empty() {
+        version.to_owned()
+    } else {
+        format!("{version} ({})", built.join(" "))
+    }
+}
+
 /// AI coding agent for the terminal.
 #[derive(Debug, Parser)]
-#[command(name = "clai", version, disable_help_subcommand = true)]
+#[command(name = "clai", version = VERSION.as_str(), disable_help_subcommand = true)]
 pub struct Cli {
     /// Use FILE instead of the user config file.
     #[arg(long, global = true, value_name = "FILE", value_hint = ValueHint::FilePath)]
@@ -184,6 +210,20 @@ mod tests {
     #[test]
     fn definition_is_valid() {
         Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn version_text_with_and_without_build_info() {
+        assert_eq!(version_text("0.2.0", None, None), "0.2.0");
+        assert_eq!(version_text("0.2.0", Some(""), Some(" ")), "0.2.0");
+        assert_eq!(
+            version_text("0.2.0", Some("abc1234"), None),
+            "0.2.0 (abc1234)"
+        );
+        assert_eq!(
+            version_text("0.2.0", Some("abc1234"), Some("2026-11-11")),
+            "0.2.0 (abc1234 2026-11-11)"
+        );
     }
 
     #[test]

@@ -1,0 +1,238 @@
+# The GitLab pipeline (RFC 0020): the same checks and release as
+# .github/workflows/, through the same ci/*.sh scripts. GitLab builds the
+# Linux targets only; aarch64 is cross-built with cargo-zigbuild.
+#
+# Project settings it expects:
+# - Tags v* protected, so only maintainers can release.
+# - Optional: CLAI_ARM_RUNNER, the tag of an arm64 runner, to run the aarch64
+#   binary; ANTHROPIC_API_KEY (masked, protected) for the manual live job.
+
+variables:
+  # The same version as rust-toolchain.toml; `ci/version.sh toolchain`
+  # checks it.
+  RUST_VERSION: "1.99.1"
+  ZIG_VERSION: "0.17.1"
+  ZIG_SHA256: "3581863e3cbcfd0fce0efc682ce7e9e93da96668a977791d356a26d2a7e9b17a"
+  CARGO_ZIGBUILD_VERSION: "0.24.1"
+  CARGO_DEB_VERSION: "3.8.0"
+  CARGO_DENY_VERSION: "0.20.2"
+  CARGO_HOME: "$CI_PROJECT_DIR/.cargo-home"
+  CARGO_TERM_COLOR: always
+  PACKAGES: "$CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/clai"
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    # A branch with an open merge request runs as the merge request only.
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+      when: never
+    - if: $CI_COMMIT_BRANCH
+    - if: $CI_COMMIT_TAG =~ /^v/
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+    - if: $CI_PIPELINE_SOURCE == "web"
+  auto_cancel:
+    on_new_commit: interruptible
+
+stages: [check, test, build, package, release]
+
+default:
+  image: rust:$RUST_VERSION
+  interruptible: true
+  before_script:
+    - export PATH="$CARGO_HOME/bin:$PATH"
+  cache:
+    key:
+      prefix: $CI_JOB_NAME_SLUG
+      files: [Cargo.lock, rust-toolchain.toml]
+    paths:
+      - .cargo-home/registry/index/
+      - .cargo-home/registry/cache/
+      - target/
+
+.on_tags: &on_tags
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v/
+
+.musl_tools: &musl_tools
+  - apt-get update -qq
+  - apt-get install -y -qq --no-install-recommends musl-tools file
+
+version:
+  stage: check
+  <<: *on_tags
+  cache: []
+  script:
+    - VERSION=$(sh ci/version.sh tag "$CI_COMMIT_TAG")
+    - echo "VERSION=$VERSION" >version.env
+    - echo "DEB_VERSION=$(sh ci/version.sh deb "$VERSION")-1" >>version.env
+    - sh ci/notes.sh "$VERSION" >notes.md
+  artifacts:
+    reports:
+      dotenv: version.env
+    paths: [notes.md]
+
+check:
+  stage: check
+  script:
+    - sh ci/check.sh
+    - sh ci/version.sh toolchain
+
+test:
+  stage: test
+  script:
+    - sh ci/test.sh
+
+crate:
+  stage: test
+  script:
+    - sh ci/crate.sh
+
+audit:
+  stage: test
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" || $CI_PIPELINE_SOURCE == "web"
+    - changes: [Cargo.lock, deny.toml]
+  script:
+    - cargo install --locked "cargo-deny@$CARGO_DENY_VERSION"
+    - cargo deny --locked check advisories bans licenses sources
+
+stable:
+  stage: test
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+  script:
+    - rustup toolchain install stable --profile minimal
+    - cargo +stable test --locked
+
+build:x86_64:
+  stage: build
+  script:
+    - *musl_tools
+    - sh ci/build.sh x86_64-unknown-linux-musl
+    - sh ci/package.sh x86_64-unknown-linux-musl "${VERSION:-}"
+  artifacts:
+    paths:
+      - dist/
+      - target/x86_64-unknown-linux-musl/release/clai
+    expire_in: 7 days
+
+build:aarch64:
+  stage: build
+  <<: *on_tags
+  script:
+    - *musl_tools
+    - apt-get install -y -qq --no-install-recommends xz-utils
+    - curl -fsSL -o zig.tar.xz "https://ziglang.org/download/$ZIG_VERSION/zig-x86_64-linux-$ZIG_VERSION.tar.xz"
+    - echo "$ZIG_SHA256  zig.tar.xz" | sha256sum -c -
+    - mkdir -p /opt/zig && tar -xJf zig.tar.xz -C /opt/zig --strip-components=1
+    - export PATH="/opt/zig:$PATH"
+    - cargo install --locked "cargo-zigbuild@$CARGO_ZIGBUILD_VERSION"
+    - sh ci/build.sh aarch64-unknown-linux-musl
+    - sh ci/package.sh aarch64-unknown-linux-musl "$VERSION"
+  artifacts:
+    paths:
+      - dist/
+      - target/aarch64-unknown-linux-musl/release/clai
+    expire_in: 7 days
+
+smoke:aarch64:
+  stage: package
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v/ && $CLAI_ARM_RUNNER
+  tags: [$CLAI_ARM_RUNNER]
+  image: debian:stable-slim
+  needs: [build:aarch64]
+  cache: []
+  before_script: []
+  script:
+    - target/aarch64-unknown-linux-musl/release/clai --version
+    - target/aarch64-unknown-linux-musl/release/clai completion bash >/dev/null
+
+deb:
+  stage: package
+  <<: *on_tags
+  needs: [version, build:x86_64, build:aarch64]
+  # No cache: it would put an old target/ over the binaries of the build jobs.
+  cache: []
+  script:
+    - apt-get update -qq
+    - apt-get install -y -qq --no-install-recommends lintian file
+    - cargo install --locked "cargo-deb@$CARGO_DEB_VERSION"
+    - export CLAI_REQUIRE_LINTIAN=1
+    - export CLAI_HOST_BIN=target/x86_64-unknown-linux-musl/release/clai
+    - sh ci/deb.sh x86_64-unknown-linux-musl "$VERSION"
+    - sh ci/deb.sh aarch64-unknown-linux-musl "$VERSION"
+  artifacts:
+    paths: [dist/*.deb]
+    expire_in: 7 days
+
+.deb_test: &deb_test
+  stage: package
+  <<: *on_tags
+  needs: [deb]
+  cache: []
+  before_script: []
+  script:
+    - sh ci/deb-test.sh dist/clai_*_amd64.deb
+
+deb-test:debian:
+  <<: *deb_test
+  image: debian:stable-slim
+
+deb-test:ubuntu:
+  <<: *deb_test
+  image: ubuntu:24.04
+
+upload:
+  stage: release
+  <<: *on_tags
+  needs: [version, build:x86_64, build:aarch64, deb, deb-test:debian, deb-test:ubuntu]
+  cache: []
+  script:
+    - sh ci/checksums.sh dist
+    - |
+      for f in dist/*.tar.gz dist/*.deb dist/SHA256SUMS; do
+        curl --fail-with-body --silent --show-error \
+          --header "JOB-TOKEN: $CI_JOB_TOKEN" \
+          --upload-file "$f" "$PACKAGES/$VERSION/$(basename "$f")"
+      done
+
+release:
+  stage: release
+  <<: *on_tags
+  needs: [version, upload]
+  image: registry.gitlab.com/gitlab-org/release-cli:v0.24.0
+  cache: []
+  before_script: []
+  script:
+    - echo "release clai $VERSION"
+  release:
+    tag_name: $CI_COMMIT_TAG
+    name: clai $VERSION
+    description: ./notes.md
+    assets:
+      links:
+        - name: clai-$VERSION-x86_64-unknown-linux-musl.tar.gz
+          url: $PACKAGES/$VERSION/clai-$VERSION-x86_64-unknown-linux-musl.tar.gz
+          link_type: package
+        - name: clai-$VERSION-aarch64-unknown-linux-musl.tar.gz
+          url: $PACKAGES/$VERSION/clai-$VERSION-aarch64-unknown-linux-musl.tar.gz
+          link_type: package
+        - name: clai_${DEB_VERSION}_amd64.deb
+          url: $PACKAGES/$VERSION/clai_${DEB_VERSION}_amd64.deb
+          link_type: package
+        - name: clai_${DEB_VERSION}_arm64.deb
+          url: $PACKAGES/$VERSION/clai_${DEB_VERSION}_arm64.deb
+          link_type: package
+        - name: SHA256SUMS
+          url: $PACKAGES/$VERSION/SHA256SUMS
+          link_type: other
+
+live:
+  stage: test
+  rules:
+    - if: $CI_COMMIT_REF_PROTECTED == "true" && $CI_PIPELINE_SOURCE == "web"
+      when: manual
+  allow_failure: true
+  script:
+    - cargo test --locked --test live -- --ignored
