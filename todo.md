@@ -149,6 +149,8 @@ Milestones and their order: [`implementation.md`](implementation.md).
       sessions logged, no notice for the same model.
 - [x] `models` request, protocol 3; the TUI takes context windows from it.
 - [x] Model picker: `Ctrl-O`, `/model`, filter, marks.
+- [ ] Make a model the default from the picker (`Space` tick), `/model NAME
+      --default`, `clai models --set-default` (RFC 0021, draft).
 - [ ] The TUI asks for the server's models only on opening the picker and after a
       reload, as RFC 0003 says, so a TUI with another `--config` has its own
       windows until then. Decide whether to ask at start and after a reconnect.
@@ -253,6 +255,8 @@ Milestones and their order: [`implementation.md`](implementation.md).
       script form) and `clai run` on a terminal.
 - [x] TUI question box: options, ticks, typed text, review page, skip.
 - [ ] Keep what was chosen in the box when switching sessions and back.
+- [ ] The box hides context, options, keys and typed text on small or long
+      questions: RFC 0018 (draft).
 
 ## Session list: delete, marks and filter (RFC 0011)
 
@@ -311,4 +315,6 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [ ] Commit: the TUI `/commit` dialog (`clai commit` is built, RFC 0013)
 - [ ] Context management (history trimming of old tool results: RFC 0008,
       draft; the rest needs `spec/context.md`)
+- [ ] Language server tools: `lsp` tool, `[lsp]`, diagnostics after edits
+      (RFC 0019, draft)
 - [ ] Release
