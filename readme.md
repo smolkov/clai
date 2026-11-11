@@ -123,7 +123,7 @@ widens the rule, `Enter` confirms), `n` no, `e` no with a message to the model,
 `Esc` no and cancel the turn. A turn at its limit asks `y` continue, `n` stop.
 
 Commands: `/help`, `/model [PROVIDER/MODEL]` (without one, choose it as with
-`Ctrl-O`), `/sessions`, `/new [NAME]` (a session in the same workspace; the model
+`Ctrl-O`; with `--default` also make it the default of new sessions), `/sessions`, `/new [NAME]` (a session in the same workspace; the model
 picker starts on `default_model`, so `Enter` takes it), `/attach [NAME]`,
 `/rename NAME`, `/status [NAME]`, `/stats [7d|30d|all]`, `/settings`, `/theme [NAME]`, `/kill`, `/copy [N|code]`
 (the last answer, the one N back, or its last code block), `/diff` (the changes of the last turn), `/detach`, `/quit`. `/` in the empty input lists them:
@@ -278,6 +278,12 @@ context_window = 200000
 
 Check it with `clai models`, which lists every configured model and marks
 the default and providers whose key variable is not set.
+
+To change the default model of new sessions, tick `Space` "Also make it the
+default" in the model picker (`Ctrl-O`) before `Enter`, use
+`/model NAME --default`, or run `clai models --set-default NAME`. All three
+write `default_model` into the user file, comments kept; the next `clai` start
+uses it.
 
 A project can add `.clai/config.toml` to set `default_model`, `[commit]`, lower `[limits]` and
 stricter `[permissions]`. `CLAI_MODEL` overrides `default_model` and

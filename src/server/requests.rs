@@ -45,6 +45,7 @@ impl Shared {
     /// The configuration for a workspace: the kept user file and the
     /// workspace's project file.
     fn config(&self, workspace: &Path) -> std::result::Result<Config, ErrorReply> {
+        super::refresh(self);
         let (path, text) = {
             let user = lock(&self.config);
             (user.path.clone(), user.text.clone())
@@ -243,10 +244,13 @@ impl Shared {
         }))
     }
 
-    /// The models of the current configuration, as the requests will use them.
-    fn models(&self) -> Reply {
-        // Models come only from the user file; any workspace will do.
-        let config = self.config(&std::env::temp_dir())?;
+    /// The models of the current configuration, as the requests will use
+    /// them; the default is the one of `workspace` when it is given.
+    fn models(&self, workspace: Option<&Path>) -> Reply {
+        // Models come only from the user file; without a workspace any will
+        // do, and the default is the user file's or `CLAI_MODEL`.
+        let temp = std::env::temp_dir();
+        let config = self.config(workspace.unwrap_or(&temp))?;
         let mut models = Vec::new();
         for provider in config.providers.values() {
             for model in provider.models.values() {
@@ -257,6 +261,7 @@ impl Shared {
         Ok(Payload::Models {
             models,
             config: path,
+            default_from: config.default_from.into(),
         })
     }
 
@@ -532,7 +537,7 @@ impl Conn {
             Request::Status => Ok(Payload::Status(shared.server_status().await)),
             Request::SessionStatus { session } => shared.session_status(&session).await,
             Request::GlobalStats { range, offset } => Ok(shared.global_stats(range, offset)),
-            Request::Models => shared.models(),
+            Request::Models { workspace } => shared.models(workspace.as_deref()),
             Request::Stop => {
                 tracing::info!(client = %self.outbox.name, "stop requested");
                 shared.stop.cancel();

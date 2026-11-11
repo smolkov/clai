@@ -1,8 +1,8 @@
 ---
 source: src/tui/tests.rs
+assertion_line: 2235
 expression: "screen(&mut app, 80, 24)"
 ---
-                                                                                
                                                                                 
                                                                                 
                                                                                 
@@ -15,10 +15,11 @@ expression: "screen(&mut app, 80, 24)"
 │                                                                              │
 │ no model                                                                     │
 │                                                                              │
-│ Enter select ─ Esc cancel                                                    │
+│ [ ] Also make it the default for new sessions                                │
+│                                                                              │
+│                                                                              │
+│ Enter select ─ Space default ─ Esc cancel                                    │
 └──────────────────────────────────────────────────────────────────────────────┘
-                                                                                
-                                                                                
                                                                                 
                                                                                 
 ────────────────────────────────────────────────────────────────────────────────

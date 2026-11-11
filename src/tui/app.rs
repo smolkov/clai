@@ -10,9 +10,10 @@ use ratatui::layout::Rect;
 
 use crate::agent::{Closed, QuestionKind, SessionEvent, State, now_secs};
 use crate::config::edit::{Setting, Stamp};
-use crate::config::{ActivityLine, Symbols, Theme, ThemeWarning, Tui};
+use crate::config::{ActivityLine, SavedDefault, Symbols, Theme, ThemeWarning, Tui};
 use crate::protocol::{
-    ModelInfo, Notice, Payload, Range, Request, ServerMessage, SessionInfo, TokenTotals,
+    DefaultFrom, ModelInfo, Notice, Payload, Range, Request, ServerMessage, SessionInfo,
+    TokenTotals,
 };
 use indexmap::IndexMap;
 
@@ -175,6 +176,8 @@ pub enum Input {
     Reloaded(Box<Result<Reloaded, String>>),
     /// A save: the file's new stamp, or why it was not written.
     Saved(Result<Option<Stamp>, String>),
+    /// `default_model` saved in the user file (RFC 0021), or why not.
+    DefaultSaved(Result<SavedDefault, String>),
     /// A switch to another session failed; the current one stays.
     SwitchFailed(String),
     /// Copied text did not reach the clipboard: why.
@@ -204,6 +207,13 @@ pub enum Effect {
         path: PathBuf,
         stamp: Option<Stamp>,
         changes: Vec<(&'static str, Option<Setting>)>,
+    },
+    /// Write `default_model = MODEL` into the user file at `path`, checked
+    /// with the project file of `workspace` (RFC 0021).
+    SaveDefault {
+        path: PathBuf,
+        model: String,
+        workspace: PathBuf,
     },
     Exit(Exit),
 }
@@ -280,6 +290,8 @@ pub struct App {
     pub sessions: Vec<SessionInfo>,
     /// The models of the last `models` answer.
     pub models: Vec<ModelInfo>,
+    /// The user file the server reads, from the last `models` answer.
+    models_config: Option<PathBuf>,
     /// A switch to this session is on its way.
     pub switching: Option<String>,
     /// The view of each session shown before, by id.
@@ -376,6 +388,7 @@ impl App {
             list_wanted: false,
             sessions: Vec::new(),
             models: Vec::new(),
+            models_config: None,
             switching: None,
             views: HashMap::new(),
             greeting: None,
@@ -476,7 +489,7 @@ impl App {
                 if self.argument_list.is_some() && self.models.is_empty() && !self.models_asked =>
             {
                 self.models_asked = true;
-                effects.push(Effect::Request(Request::Models));
+                effects.push(Effect::Request(self.models_request()));
             }
             Some(_) => {}
         }
@@ -766,6 +779,7 @@ impl App {
                 self.saved(result);
                 vec![Effect::Redraw]
             }
+            Input::DefaultSaved(result) => self.default_saved(result),
             Input::Highlighting => {
                 let look = self.settings.look;
                 self.conversation.reconfigure(
@@ -971,7 +985,7 @@ impl App {
                         self.conversation.notice("configuration reloaded");
                         return vec![
                             Effect::Redraw,
-                            Effect::Request(Request::Models),
+                            Effect::Request(self.models_request()),
                             Effect::ReloadConfig,
                         ];
                     }
@@ -1221,11 +1235,18 @@ impl App {
                 self.list_wanted = false;
                 return Vec::new();
             }
-            (Request::Models, Ok(Payload::Models { models, config })) => {
+            (
+                Request::Models { .. },
+                Ok(Payload::Models {
+                    models,
+                    config,
+                    default_from,
+                }),
+            ) => {
                 self.models_asked = false;
-                self.models(models, config);
+                self.models(models, config, default_from);
             }
-            (Request::Models, Err(message)) => {
+            (Request::Models { .. }, Err(message)) => {
                 self.models_asked = false;
                 // A refresh after a reload fails quietly; the old list stays.
                 if self.picker_wanted.take().is_none() || lost {
@@ -1274,26 +1295,80 @@ impl App {
 
     /// The server's models: its context windows count from now on, and the
     /// picker opens if it was asked for.
-    fn models(&mut self, models: Vec<ModelInfo>, config: PathBuf) {
+    fn models(&mut self, models: Vec<ModelInfo>, config: PathBuf, from: DefaultFrom) {
         self.settings.windows = models
             .iter()
             .map(|m| (m.model.clone(), m.context_window))
             .collect();
         self.models.clone_from(&models);
+        self.models_config = Some(config.clone());
         let wanted = self.picker_wanted.take();
         if let Some(picker) = &mut self.picker {
-            picker.set_models(models, config);
+            picker.set_models(models, config, from);
         } else if let Some(purpose) = wanted
             && self.dialog.is_none()
             && self.session_list.is_none()
         {
-            self.picker = Some(Picker::new(models, config, &self.session.model, purpose));
+            self.picker = Some(Picker::new(
+                models,
+                config,
+                from,
+                &self.session.model,
+                purpose,
+            ));
+        }
+    }
+
+    /// `models` for the attached session's workspace, so the default it
+    /// marks is the one new sessions there get.
+    fn models_request(&self) -> Request {
+        Request::Models {
+            workspace: Some(self.session.path.clone()),
         }
     }
 
     fn open_picker(&mut self, purpose: Purpose) -> Vec<Effect> {
+        let workspace = match &purpose {
+            Purpose::New { workspace, .. } => workspace.clone(),
+            Purpose::Change => self.session.path.clone(),
+        };
         self.picker_wanted = Some(purpose);
-        vec![Effect::Request(Request::Models)]
+        vec![Effect::Request(Request::Models {
+            workspace: Some(workspace),
+        })]
+    }
+
+    /// The effect that saves `model` as `default_model` for new sessions in
+    /// `workspace`, in the user file the server reads.
+    fn save_default(&self, model: String, workspace: PathBuf) -> Effect {
+        let path = self
+            .models_config
+            .clone()
+            .unwrap_or_else(|| self.settings.theming.user_file.clone());
+        Effect::SaveDefault {
+            path,
+            model,
+            workspace,
+        }
+    }
+
+    /// What a save of `default_model` says in the conversation.
+    fn default_saved(&mut self, result: Result<SavedDefault, String>) -> Vec<Effect> {
+        match result {
+            Ok(saved) => {
+                for note in saved.notes(self.settings.look.symbols.warning) {
+                    self.conversation.notice(note);
+                }
+                // The marks move with the new answer; the server reads the
+                // changed file before it answers.
+                vec![Effect::Redraw, Effect::Request(self.models_request())]
+            }
+            Err(e) => {
+                self.conversation
+                    .error(format!("default model not saved: {e}"));
+                vec![Effect::Redraw]
+            }
+        }
     }
 
     /// The model picker for a new session in the attached session's
@@ -1710,12 +1785,24 @@ impl App {
             KeyCode::Esc => self.picker = None,
             KeyCode::Up => picker.up(),
             KeyCode::Down => picker.down(),
+            // Model names and ids have no spaces: `Space` ticks the default.
+            KeyCode::Char(' ') if key.modifiers.difference(KeyModifiers::SHIFT).is_empty() => {
+                picker.toggle_default();
+            }
             KeyCode::Enter => {
                 let Some(model) = picker.chosen().map(|m| m.model.clone()) else {
                     return effects;
                 };
                 let purpose = picker.purpose.clone();
+                let save = picker.default_to_save();
                 self.picker = None;
+                if let Some(default) = save {
+                    let workspace = match &purpose {
+                        Purpose::New { workspace, .. } => workspace.clone(),
+                        Purpose::Change => self.session.path.clone(),
+                    };
+                    effects.push(self.save_default(default, workspace));
+                }
                 match purpose {
                     Purpose::Change if model != self.session.model => {
                         effects.push(Effect::Request(Request::SetModel {
@@ -2162,11 +2249,25 @@ impl App {
                 self.editor.clear();
                 return vec![self.detach()];
             }
-            ("model", "") => self.open_picker(Purpose::Change),
-            ("model", model) => vec![Effect::Request(Request::SetModel {
-                session,
-                model: model.to_owned(),
-            })],
+            ("model", argument) => {
+                let (model, make_default) = commands::model_argument(argument);
+                let workspace = self.session.path.clone();
+                match (model, make_default) {
+                    (None, false) => self.open_picker(Purpose::Change),
+                    // `/model --default`: the session's model.
+                    (None, true) => vec![self.save_default(self.session.model.clone(), workspace)],
+                    (Some(model), make_default) => {
+                        let mut effects = vec![Effect::Request(Request::SetModel {
+                            session,
+                            model: model.clone(),
+                        })];
+                        if make_default {
+                            effects.push(self.save_default(model, workspace));
+                        }
+                        effects
+                    }
+                }
+            }
             ("rename", "") => {
                 self.conversation.notice("usage: /rename NAME");
                 return Vec::new();

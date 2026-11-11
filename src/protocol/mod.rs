@@ -137,8 +137,12 @@ pub enum Request {
         #[serde(default)]
         offset: i64,
     },
-    /// The models of the server's configuration.
-    Models,
+    /// The models of the server's configuration. With `workspace`, the
+    /// default is the one new sessions there get: its project file counts.
+    Models {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        workspace: Option<PathBuf>,
+    },
     /// Stops the server; running sessions stop and stay saved.
     Stop,
 }
@@ -225,7 +229,31 @@ pub enum Payload {
         models: Vec<ModelInfo>,
         /// The user config file the server reads.
         config: PathBuf,
+        /// What sets the default: the user file, the project file of the
+        /// workspace asked about, or `CLAI_MODEL`.
+        #[serde(default)]
+        default_from: DefaultFrom,
     },
+}
+
+/// Where the default model comes from; see `config::DefaultFrom`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DefaultFrom {
+    #[default]
+    User,
+    Project,
+    Env,
+}
+
+impl From<crate::config::DefaultFrom> for DefaultFrom {
+    fn from(from: crate::config::DefaultFrom) -> DefaultFrom {
+        match from {
+            crate::config::DefaultFrom::User => DefaultFrom::User,
+            crate::config::DefaultFrom::Project => DefaultFrom::Project,
+            crate::config::DefaultFrom::Env => DefaultFrom::Env,
+        }
+    }
 }
 
 /// A configured model, in config order.

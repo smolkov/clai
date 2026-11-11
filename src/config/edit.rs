@@ -1,6 +1,8 @@
-//! Writing `[tui]` keys into the user file, for the TUI's `/settings` and
-//! `/theme` (see `spec/config.md`, "TUI"). Everything else in the file stays
-//! as it is, comments and order included.
+//! Writing the user file: `[tui]` keys for the TUI's `/settings` and
+//! `/theme`, and `default_model` for the model picker, `/model --default` and
+//! `clai models --set-default` (see `spec/config.md`, "Writing the user
+//! file"). Everything else in the file stays as it is, comments and order
+//! included.
 
 use std::fs;
 use std::io::Write;
@@ -83,17 +85,50 @@ pub fn set_tui(text: &str, changes: &[(&str, Option<Setting>)]) -> Result<String
     Ok(doc.to_string())
 }
 
-/// Writes `changes` into the user file at `path`.
-///
-/// - `expected` is the stamp of the file when its values were read: if the
-///   file changed since, nothing is written, so no change is lost silently.
-/// - `check` gets the new text and must accept it, as loading would.
-/// - The file is replaced atomically (a temporary file next to it, then a
-///   rename) with its mode kept; a link is written through, to its target.
+/// Sets a text key at the top level of a TOML text, e.g. `default_model`.
+/// An existing key keeps its place and the comment after it; a new one goes
+/// before the first table, where TOML wants top-level keys.
+pub fn set_top(text: &str, key: &str, value: &str) -> Result<String, String> {
+    let mut doc: DocumentMut = text
+        .parse()
+        .map_err(|e: toml_edit::TomlError| format!("cannot read the file: {}", e.message()))?;
+    let mut new = Value::from(value);
+    match doc.get_mut(key) {
+        Some(Item::Value(old)) => {
+            *new.decor_mut() = old.decor().clone();
+            *old = new;
+        }
+        Some(_) => return Err(format!("{key} is not a value")),
+        None => {
+            doc.insert(key, Item::Value(new));
+        }
+    }
+    Ok(doc.to_string())
+}
+
+/// Writes `changes` into `[tui]` of the user file at `path`; see
+/// [`save_with`].
 pub fn save(
     path: &Path,
     expected: Option<Stamp>,
     changes: &[(&str, Option<Setting>)],
+    check: impl FnOnce(&str) -> Result<(), String>,
+) -> Result<(), String> {
+    save_with(path, expected, |text| set_tui(text, changes), check)
+}
+
+/// Writes the text `change` makes of the user file at `path`.
+///
+/// - `expected` is the stamp of the file when its values were read: if the
+///   file changed since, nothing is written, so no change is lost silently.
+///   `None` skips this, for a change made from the text as it is now.
+/// - `check` gets the new text and must accept it, as loading would.
+/// - The file is replaced atomically (a temporary file next to it, then a
+///   rename) with its mode kept; a link is written through, to its target.
+pub fn save_with(
+    path: &Path,
+    expected: Option<Stamp>,
+    change: impl FnOnce(&str) -> Result<String, String>,
     check: impl FnOnce(&str) -> Result<(), String>,
 ) -> Result<(), String> {
     let target = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
@@ -101,7 +136,7 @@ pub fn save(
         return Err("the file changed since it was read; open it again".to_owned());
     }
     let text = fs::read_to_string(&target).map_err(|e| format!("cannot read: {e}"))?;
-    let new = set_tui(&text, changes)?;
+    let new = change(&text)?;
     if new == text {
         return Ok(());
     }
@@ -198,6 +233,57 @@ api = "openai-compatible"
         assert_eq!(new, "tui = {}\n");
         assert!(set_tui("tui = 1\n", &[("mouse", None)]).is_err());
         assert!(set_tui("[tui\n", &[]).is_err());
+    }
+
+    #[test]
+    fn a_top_level_key_changes_in_place() {
+        let file =
+            "# mine\ndefault_model = \"local/qwen\"   # the small one\n\n[tui]\ntheme = \"dark\"\n";
+        let new = set_top(file, "default_model", "anthropic/opus").unwrap();
+        assert_eq!(
+            new,
+            "# mine\ndefault_model = \"anthropic/opus\"   # the small one\n\n[tui]\ntheme = \"dark\"\n"
+        );
+    }
+
+    #[test]
+    fn a_new_top_level_key_goes_before_the_tables() {
+        let file =
+            "# mine\n\n[tui]\ntheme = \"dark\"\n\n[providers.local]\napi = \"openai-compatible\"\n";
+        let new = set_top(file, "default_model", "local/qwen").unwrap();
+        let key = new.find("default_model").unwrap();
+        assert!(key < new.find("[tui]").unwrap(), "{new}");
+        // It is a top-level key, not one of [tui].
+        let doc: DocumentMut = new.parse().unwrap();
+        assert_eq!(doc["default_model"].as_str(), Some("local/qwen"));
+        assert!(doc["tui"].get("default_model").is_none());
+        assert_eq!(doc["tui"]["theme"].as_str(), Some("dark"));
+        assert_eq!(
+            set_top("", "default_model", "a/b").unwrap(),
+            "default_model = \"a/b\"\n"
+        );
+        assert!(set_top("[default_model]\nx = 1\n", "default_model", "a/b").is_err());
+        assert!(set_top("[tui\n", "default_model", "a/b").is_err());
+    }
+
+    #[test]
+    fn save_with_skips_the_stamp_check_without_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        fs::write(&path, FILE).unwrap();
+        save_with(
+            &path,
+            None,
+            |text| set_top(text, "default_model", "local/other"),
+            |_| Ok(()),
+        )
+        .unwrap();
+        let written = fs::read_to_string(&path).unwrap();
+        assert!(
+            written.contains("default_model = \"local/other\""),
+            "{written}"
+        );
+        assert!(written.contains("# dark at night"), "{written}");
     }
 
     #[test]

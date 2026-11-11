@@ -333,6 +333,113 @@ fn env_overrides() {
 }
 
 #[test]
+fn where_the_default_comes_from() {
+    assert_eq!(ok(BASE).default_from, DefaultFrom::User);
+    let project = load_with(
+        BASE,
+        Some("default_model = \"opus\"\n"),
+        &Environment::default(),
+    )
+    .unwrap();
+    assert_eq!(project.default_from, DefaultFrom::Project);
+    assert_eq!(project.default_model.to_string(), "anthropic/opus");
+    // A project file without the key leaves it to the user file.
+    let other = load_with(
+        BASE,
+        Some("[limits]\nmax_requests = 5\n"),
+        &Environment::default(),
+    )
+    .unwrap();
+    assert_eq!(other.default_from, DefaultFrom::User);
+    let env = Environment {
+        model: Some("qwen".into()),
+        ..Environment::default()
+    };
+    let config = load_with(BASE, Some("default_model = \"opus\"\n"), &env).unwrap();
+    assert_eq!(config.default_from, DefaultFrom::Env);
+}
+
+fn save_options(dir: &Path, env: Environment) -> LoadOptions {
+    LoadOptions {
+        config_file: Some(dir.join("config.toml")),
+        workspace: dir.join("ws"),
+        env,
+    }
+}
+
+#[test]
+fn saving_the_default_model() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    fs::write(&path, format!("# keep me\n{BASE}")).unwrap();
+    let options = save_options(dir.path(), Environment::default());
+    // The short form is saved as the full reference.
+    let saved = save_default_model(&options, &path, "qwen").unwrap();
+    assert_eq!(saved.model.to_string(), "local/qwen");
+    assert_eq!(saved.from, DefaultFrom::User);
+    assert_eq!(saved.effective.to_string(), "local/qwen");
+    let text = fs::read_to_string(&path).unwrap();
+    assert!(text.starts_with("# keep me\n"), "{text}");
+    assert!(text.contains("default_model = \"local/qwen\""), "{text}");
+    assert_eq!(
+        load(&options).unwrap().default_model.to_string(),
+        "local/qwen"
+    );
+    // Saving it again changes nothing.
+    save_default_model(&options, &path, "local/qwen").unwrap();
+    assert_eq!(fs::read_to_string(&path).unwrap(), text);
+    // An unknown model writes nothing and lists the models.
+    let e = save_default_model(&options, &path, "gpt").unwrap_err();
+    assert!(
+        e.contains("unknown model `gpt`") && e.contains("local/qwen"),
+        "{e}"
+    );
+    assert_eq!(fs::read_to_string(&path).unwrap(), text);
+}
+
+#[test]
+fn saving_the_default_says_what_overrides_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    fs::write(&path, BASE).unwrap();
+    let env = Environment {
+        model: Some("qwen".into()),
+        ..Environment::default()
+    };
+    let saved = save_default_model(&save_options(dir.path(), env), &path, "opus").unwrap();
+    assert_eq!(saved.from, DefaultFrom::Env);
+    assert_eq!(saved.effective.to_string(), "local/qwen");
+    assert!(
+        fs::read_to_string(&path)
+            .unwrap()
+            .contains("default_model = \"anthropic/opus\"")
+    );
+
+    fs::create_dir_all(dir.path().join("ws/.clai")).unwrap();
+    fs::write(
+        dir.path().join("ws/.clai/config.toml"),
+        "default_model = \"sonnet\"\n",
+    )
+    .unwrap();
+    let options = save_options(dir.path(), Environment::default());
+    let saved = save_default_model(&options, &path, "qwen").unwrap();
+    assert_eq!(saved.from, DefaultFrom::Project);
+    assert_eq!(saved.effective.to_string(), "anthropic/sonnet");
+}
+
+#[test]
+fn saving_the_default_without_a_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    let options = save_options(dir.path(), Environment::default());
+    let e = save_default_model(&options, &path, "qwen").unwrap_err();
+    assert!(
+        e.starts_with("no user config file to save the default in"),
+        "{e}"
+    );
+}
+
+#[test]
 fn env_errors() {
     let env = Environment {
         model: Some("nope".into()),

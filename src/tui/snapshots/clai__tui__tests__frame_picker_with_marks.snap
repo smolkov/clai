@@ -1,8 +1,8 @@
 ---
 source: src/tui/tests.rs
+assertion_line: 2214
 expression: "screen(&mut app, 80, 24)"
 ---
-                                                                                
                                                                                 
                                                                                 
                                                                                 
@@ -17,10 +17,11 @@ expression: "screen(&mut app, 80, 24)"
 │ local                                                                        │
 │   qwen    qwen3-coder:30b     32k  ⚠ no key, ⚠ history 41k > 32k             │
 │                                                                              │
-│ Enter select ─ Esc cancel                                                    │
+│     already the default for new sessions                                     │
+│                                                                              │
+│                                                                              │
+│ Enter select ─ Space default ─ Esc cancel                                    │
 └──────────────────────────────────────────────────────────────────────────────┘
-                                                                                
-                                                                                
 ────────────────────────────────────────────────────────────────────────────────
 >                                                                               
 ────────────────────────────────────────────────────────────────────────────────

@@ -1,0 +1,29 @@
+---
+source: src/tui/tests.rs
+assertion_line: 2307
+expression: "screen(&mut app, 80, 24)"
+---
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+┌ Model for "project" ─────────────────────────────────────────────────────────┐
+│ Filter:                                                                      │
+│                                                                              │
+│ anthropic                                                                    │
+│ ▶ sonnet  claude-sonnet-5-5  200k  ✓ current                                 │
+│   opus    claude-opus-5-5    200k  default                                   │
+│ local                                                                        │
+│   qwen    qwen3-coder:30b     32k  ⚠ no key                                  │
+│                                                                              │
+│ [x] Also make it the default for new sessions                                │
+│     ⚠ CLAI_MODEL=anthropic/opus overrides the saved default                  │
+│                                                                              │
+│ Enter select ─ Space default ─ Esc cancel                                    │
+└──────────────────────────────────────────────────────────────────────────────┘
+────────────────────────────────────────────────────────────────────────────────
+>                                                                               
+────────────────────────────────────────────────────────────────────────────────
+  idle · /help · Ctrl-D detach                                                  
+  project · ~/ws/project · anthropic/sonnet · 1/1 · 0/200k

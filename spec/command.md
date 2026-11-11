@@ -352,7 +352,8 @@ The test passes now.
   accept is shown as `not accepted: …` and asked again. A question answered
   elsewhere closes with `answered in tui pts/3: allow`.
 - Commands: `/cancel` cancels the running turn, `/model [PROVIDER/MODEL]`
-  shows or changes the model, `/usage` prints the tokens used
+  shows or changes the model (`--default` also saves it, or with no model the
+  current one, as `default_model`, as in the TUI), `/usage` prints the tokens used
   (`tokens: in 45.1k, out 3.2k; context 12.3k`), `/status [NAME]` prints the
   status and statistics of the attached session or of session `NAME` as the
   TUI's status box shows them (see [`tui.md`](tui.md), "Status box"), as text,
@@ -464,12 +465,13 @@ for `--id` without `NAME CHOICE`.
 ## clai models
 
 ```sh
-clai models [--json]
+clai models [--json | --set-default PROVIDER/MODEL]
 ```
 
 Lists all configured providers and models, one model per line, in config
 order: `PROVIDER/MODEL`, model id, context window (rounded down, `32k`,
-`1M`), and the marks `default` for `default_model` and `no key` for a
+`1M`), and the marks `default` for `default_model` (`default (CLAI_MODEL)` or
+`default (project)` when one of those sets it) and `no key` for a
 provider whose `api_key_env` variable is not set. `api_key_cmd` is not run,
 so such providers are never marked. Fails with `2` if the configuration is
 invalid.
@@ -480,12 +482,21 @@ local/qwen        qwen3-coder:30b     32k
 ```
 
 `--json` prints an array of objects with `model`, `provider`, `name`, `id`,
-`context_window`, `max_output_tokens` (or `null`), `default` and `key`
-(`config`, `env`, `missing`, `command` or `none`). **(assumption)**
+`context_window`, `max_output_tokens` (or `null`), `default`, `default_from`
+(`user`, `project` or `env` for the default model, `null` for the others) and
+`key` (`config`, `env`, `missing`, `command` or `none`). **(assumption)**
+
+`--set-default MODEL` saves `MODEL` (also the short form) as `default_model`
+in the user file, as `config.md`, "Writing the user file", says, and prints
+`default model: local/qwen (saved in ~/.config/clai/config.toml)`. When
+`CLAI_MODEL` or the project file of the current directory still sets another
+default, a note on standard error says so. An unknown model fails with `2`
+and lists the models; the file is not changed. It needs no server.
 
 | Option | Meaning |
 |--------|---------|
 | `--json` | Print a JSON array instead of the table. **(assumption)** |
+| `--set-default MODEL` | Save `MODEL` as `default_model` in the user file. |
 
 ## clai commit
 

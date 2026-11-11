@@ -295,8 +295,16 @@ Session events, in the order they happen:
 
 The `models` request answers with the models of the server's configuration, in
 config order (`model`, `provider`, `name`, `id`, `context_window`, `default`,
-`key` as in `clai models --json`, without running `api_key_cmd`), and the path of
-the user config file.
+`key` as in `clai models --json`, without running `api_key_cmd`), the path of
+the user config file, and `default_from` (`user`, `project`, `env`): what sets
+the default. It may name a `workspace`; then the default is the one new
+sessions there get, with that workspace's project file. Both fields are
+optional on the wire, so the protocol version stays the same.
+
+Before a request uses the configuration, the server compares the user file's
+stamp with the one it read and reloads it if it changed (with
+`config_reloaded`), as the 2 s poll does; so a file saved just now counts at
+once.
 
 On `attach`, the session first sends its event log, then live events, so a
 client that attaches late shows the same conversation as one that was there

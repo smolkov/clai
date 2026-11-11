@@ -149,8 +149,8 @@ Milestones and their order: [`implementation.md`](implementation.md).
       sessions logged, no notice for the same model.
 - [x] `models` request, protocol 3; the TUI takes context windows from it.
 - [x] Model picker: `Ctrl-O`, `/model`, filter, marks.
-- [ ] Make a model the default from the picker (`Space` tick), `/model NAME
-      --default`, `clai models --set-default` (RFC 0021, draft).
+- [x] Make a model the default from the picker (`Space` tick), `/model NAME
+      --default`, `clai models --set-default` (RFC 0021).
 - [ ] The TUI asks for the server's models only on opening the picker and after a
       reload, as RFC 0003 says, so a TUI with another `--config` has its own
       windows until then. Decide whether to ask at start and after a reconnect.

@@ -1,7 +1,7 @@
 # Default model from the model picker
 
 - RFC: 0021
-- Status: draft
+- Status: done
 - Milestone: none; it extends the model picker of RFC 0003
 - Spec: [`spec/tui.md`](../spec/tui.md), "Model picker";
   [`spec/config.md`](../spec/config.md), "Providers and models",
@@ -250,13 +250,13 @@ both share the stamp check, validation and atomic write.
 ## Implementation plan
 
 1. **Writing `default_model`**
-   - Status: todo
+   - Status: done
    - Files: `src/config/edit.rs`, `src/config/tests.rs`
    - Result: `set_top` and the shared `save`; `/settings` unchanged.
    - Tests: the edit tests.
 
 2. **Where the default comes from**
-   - Status: todo
+   - Status: done
    - Files: `src/config/mod.rs`, `src/protocol/mod.rs`,
      `src/server/requests.rs`, `src/server/mod.rs`,
      `src/protocol/tests.rs`, `src/server/tests.rs`
@@ -265,14 +265,14 @@ both share the stamp check, validation and atomic write.
    - Tests: config and protocol tests.
 
 3. **The picker**
-   - Status: todo
+   - Status: done
    - Files: `src/tui/picker.rs`, `src/tui/view/picker.rs`,
      `src/tui/app.rs`, `src/tui/tests.rs`, snapshots
    - Result: the tick, `Space`, saving on `Enter`, warnings, status line.
    - Tests: the TUI tests and snapshots.
 
 4. **Commands**
-   - Status: todo
+   - Status: done
    - Files: `src/tui/commands.rs`, `src/command/chat/`,
      `src/command/models.rs`, `tests/models.rs`
    - Result: `/model NAME --default`, `/model --default`,
@@ -280,7 +280,7 @@ both share the stamp check, validation and atomic write.
    - Tests: command tests, `tests/models.rs`.
 
 5. **Spec and readme**
-   - Status: todo
+   - Status: done
    - Files: the spec files above, `readme.md`, `todo.md`
    - Result: the spec and readme describe the default choice.
    - Tests: `ci/check.sh`, `ci/test.sh`.
@@ -318,3 +318,55 @@ both share the stamp check, validation and atomic write.
    repository.)
 5. Should a saved default also be offered for `[commit] model` (a second
    tick, or a choice of which default)?
+
+## Answers
+
+1. `Space`, chosen by the user.
+2. to 5. The user asked to build it, so the proposals hold: the tick
+   starts unticked each time; `clai models --set-default`, no general
+   `clai config set`; the project file is never written; no tick for
+   `[commit] model`.
+
+## Notes from building
+
+- **No protocol version change.** `models` takes `workspace` as an
+  optional field, and the answer's `default_from` has a serde default
+  (`user`), so old and new clients and servers read each other's messages.
+  `Request::Models` became `Models { workspace }`; on the wire it is still
+  `{"command": "models"}` without a workspace.
+- **The refresh** is one function, `server::refresh`, used by the 2 s poll
+  and at the start of `Shared::config`, which every request that needs the
+  configuration calls (`new`, `models`, `set_model`, resume). It compares
+  the stamp, and only one caller applies a reload, so a race gives one
+  notice. A test with an hour-long poll checks that a `new` right after the
+  save gets the new default; without the call it fails.
+- **Saving** is `config::save_default_model(options, path, model)`, used by
+  the TUI (the `SaveDefault` effect), `clai chat` and `clai models`. It
+  resolves the short form against the file, writes with
+  `config::edit::set_top` through `edit::save_with` (the `[tui]` `save` now
+  calls that too), checks the new text with the workspace's project file,
+  and returns `SavedDefault` with what decides the default afterwards.
+  `SavedDefault::notes` gives the same texts to all three clients.
+- **No stamp check for `default_model`.** The change is made from the
+  file's text as it is at the moment of saving, and touches one key, so no
+  edit made meanwhile can be lost; `save_with` takes `None` for this.
+- **Where the result shows:** the TUI's conversation (`notice`, `error`),
+  as for other config messages, rather than the status line. After a save
+  the TUI asks for `models` again, so the `default` mark moves at once.
+- **The file path** is shown in full, not with `~`: the view has no home
+  directory at hand, and the snapshots stay the same on every machine.
+- **The command list** keeps `/model [PROVIDER/MODEL]`; the description
+  is now "Change or choose the model; --default saves it". The longer
+  usage made the column wide enough to cut other descriptions.
+- `/model` parsing is `tui::model_argument`, shared with `clai chat`;
+  `--default` may come before or after the model.
+- `clai chat` asks the server for `models` to learn the file it reads, then
+  saves with `CLAI_MODEL` from its own environment; its `/model --default`
+  has no test of its own (the shared save and texts are tested).
+- `clai models --json` gained `default_from`.
+- Tests: 22 new (843 in all): `set_top` and `save_with`, `default_from`, saving (short
+  form, unchanged, unknown model, no file, overrides), the protocol fields,
+  the server's refresh and `default_from` per workspace, the picker keys,
+  effects and notes, `/model --default`, two snapshots, `clai models
+  --set-default` as a process.
+

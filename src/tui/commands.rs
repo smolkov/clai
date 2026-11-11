@@ -55,7 +55,7 @@ pub const COMMANDS: &[Command] = &[
     command("help", "Show keys and commands"),
     later(command("clear", "Start a new conversation in this session")),
     optional(
-        command("model", "Change the model; without one, choose it"),
+        command("model", "Change or choose the model; --default saves it"),
         "[PROVIDER/MODEL]",
     ),
     later(command(
@@ -187,6 +187,21 @@ pub fn search(text: &str) -> Vec<&'static Command> {
         .collect()
 }
 
+/// The argument of `/model` (TUI and `clai chat`): the model, if any, and
+/// whether `--default` is given, before or after it (RFC 0021).
+pub fn model_argument(argument: &str) -> (Option<String>, bool) {
+    let mut model = None;
+    let mut make_default = false;
+    for word in argument.split_whitespace() {
+        if word == "--default" {
+            make_default = true;
+        } else if model.is_none() {
+            model = Some(word.to_owned());
+        }
+    }
+    (model, make_default)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -305,5 +320,23 @@ mod tests {
         assert_eq!(find("model").completed(), "/model ");
         assert!(find("rename").needs_argument);
         assert!(!find("model").needs_argument);
+    }
+
+    #[test]
+    fn the_model_argument() {
+        assert_eq!(model_argument(""), (None, false));
+        assert_eq!(
+            model_argument("local/qwen"),
+            (Some("local/qwen".into()), false)
+        );
+        assert_eq!(
+            model_argument("qwen --default"),
+            (Some("qwen".into()), true)
+        );
+        assert_eq!(
+            model_argument("--default qwen"),
+            (Some("qwen".into()), true)
+        );
+        assert_eq!(model_argument("--default"), (None, true));
     }
 }

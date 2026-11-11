@@ -57,6 +57,7 @@ pub use app::Exit;
 use app::{
     App, Attachment, Effect, FRAME_EVERY, FileTui, Input, LOST, Reloaded, Settings, Theming,
 };
+pub use commands::model_argument;
 
 /// How long to wait between two tries to connect again.
 const RECONNECT_EVERY: Duration = Duration::from_millis(500);
@@ -457,6 +458,18 @@ async fn event_loop(
                 } => {
                     let result = save(&options, &path, stamp, &changes);
                     let _ = reports.send(Report::Input(Input::Saved(result)));
+                }
+                Effect::SaveDefault {
+                    path,
+                    model,
+                    workspace,
+                } => {
+                    let options = config::LoadOptions {
+                        workspace,
+                        ..options.clone()
+                    };
+                    let result = config::save_default_model(&options, &path, &model);
+                    let _ = reports.send(Report::Input(Input::DefaultSaved(result)));
                 }
                 Effect::ReloadConfig => {
                     let reloaded = reload(&options);

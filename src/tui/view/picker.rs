@@ -6,7 +6,7 @@ use ratatui::text::Line;
 use ratatui::widgets::Paragraph;
 use unicode_width::UnicodeWidthStr;
 
-use crate::protocol::ModelInfo;
+use crate::protocol::{DefaultFrom, ModelInfo};
 use crate::text::short_tokens;
 use crate::tui::app::App;
 use crate::tui::picker::{Picker, Purpose};
@@ -17,8 +17,9 @@ use super::popup;
 
 /// The box's width, if the screen has room for it.
 const WIDTH: u16 = 76;
-/// The rows of the box that are not models: filter, two blank lines, keys.
-const CHROME: usize = 4;
+/// The rows of the box that are not models: filter, a blank line; then a
+/// blank line, the default tick and its note, a blank line and the keys.
+const CHROME: usize = 7;
 const FILTER: &str = "Filter: ";
 
 const NO_MODELS: &str = r#"[providers.local]
@@ -101,8 +102,61 @@ fn list(app: &App, picker: &Picker, width: usize) -> (Vec<Line<'static>>, usize)
 }
 
 fn keys(look: &Look) -> Line<'static> {
-    let text = format!("Enter select {} Esc cancel", look.symbols.rule);
+    let rule = look.symbols.rule;
+    let text = format!("Enter select {rule} Space default {rule} Esc cancel");
     Line::styled(text, look.styles.dim)
+}
+
+/// The tick "Also make it the default for new sessions" and the line under
+/// it: where it is saved, or what decides the default instead (RFC 0021).
+fn default_lines(picker: &Picker, width: usize, look: &Look) -> [Line<'static>; 2] {
+    let more = look.symbols.more;
+    let tick = if picker.already_default() {
+        Line::styled(
+            fit("    already the default for new sessions", width, more),
+            look.styles.dim,
+        )
+    } else {
+        let mark = if picker.make_default { "[x]" } else { "[ ]" };
+        let style = if picker.make_default {
+            look.styles.accent
+        } else {
+            look.styles.text
+        };
+        Line::styled(
+            fit(
+                &format!("{mark} Also make it the default for new sessions"),
+                width,
+                more,
+            ),
+            style,
+        )
+    };
+    let effective = picker.default_model().map_or("?", |m| m.model.as_str());
+    let warning = look.symbols.warning;
+    let note = match picker.default_from {
+        DefaultFrom::Env => Line::styled(
+            format!("    {warning} CLAI_MODEL={effective} overrides the saved default"),
+            look.styles.warning,
+        ),
+        DefaultFrom::Project => Line::styled(
+            format!(
+                "    {warning} .clai/config.toml of this workspace sets default_model = {effective}"
+            ),
+            look.styles.warning,
+        ),
+        DefaultFrom::User if picker.make_default && !picker.already_default() => Line::styled(
+            format!("    saved as default_model in {}", picker.config.display()),
+            look.styles.dim,
+        ),
+        DefaultFrom::User => Line::raw(""),
+    };
+    let fitted = |line: Line<'static>| {
+        let style = line.style;
+        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        Line::styled(fit(&text, width, more), style)
+    };
+    [tick, fitted(note)]
 }
 
 fn no_models(picker: &Picker, look: &Look) -> Vec<Line<'static>> {
@@ -150,7 +204,12 @@ pub fn draw(app: &App, frame: &mut Frame<'_>, size: Rect) {
         lines.push(Line::styled("no model", look.styles.dim));
     }
     lines.extend(rows.into_iter().skip(first).take(room));
-    lines.resize(area.height.saturating_sub(1).into(), Line::raw(""));
+    // Under the list: a blank line, the tick and its note, a blank line,
+    // the keys.
+    lines.resize(area.height.saturating_sub(5).into(), Line::raw(""));
+    lines.push(Line::raw(""));
+    lines.extend(default_lines(picker, width, look));
+    lines.push(Line::raw(""));
     lines.push(keys(look));
     frame.render_widget(Paragraph::new(lines), area);
     if let Ok(cell) = u16::try_from(FILTER.len() + cursor_cell) {

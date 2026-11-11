@@ -4,7 +4,7 @@
 
 use std::path::PathBuf;
 
-use crate::protocol::ModelInfo;
+use crate::protocol::{DefaultFrom, ModelInfo};
 
 use super::editor::{Edit, Editor};
 
@@ -29,11 +29,21 @@ pub struct Picker {
     pub filter: Editor,
     /// Among the visible models.
     selected: usize,
+    /// What sets the default the `default` mark shows (RFC 0021).
+    pub default_from: DefaultFrom,
+    /// "Also make it the default for new sessions", ticked with `Space`.
+    pub make_default: bool,
 }
 
 impl Picker {
     /// Starts on the current model; for a new session on `default_model`.
-    pub fn new(models: Vec<ModelInfo>, config: PathBuf, current: &str, purpose: Purpose) -> Picker {
+    pub fn new(
+        models: Vec<ModelInfo>,
+        config: PathBuf,
+        default_from: DefaultFrom,
+        current: &str,
+        purpose: Purpose,
+    ) -> Picker {
         let start = |m: &ModelInfo| match purpose {
             Purpose::Change => m.model == current,
             Purpose::New { .. } => m.default,
@@ -45,14 +55,17 @@ impl Picker {
             config,
             filter: Editor::default(),
             selected,
+            default_from,
+            make_default: false,
         }
     }
 
     /// A newer list, after a reload: the same model stays selected if it can.
-    pub fn set_models(&mut self, models: Vec<ModelInfo>, config: PathBuf) {
+    pub fn set_models(&mut self, models: Vec<ModelInfo>, config: PathBuf, from: DefaultFrom) {
         let chosen = self.chosen().map(|m| m.model.clone());
         self.models = models;
         self.config = config;
+        self.default_from = from;
         let visible = self.visible();
         let selected = chosen.and_then(|c| visible.iter().position(|m| m.model == c));
         self.selected = selected.unwrap_or(0);
@@ -82,6 +95,33 @@ impl Picker {
     /// The selected model; `None` if the filter matches nothing.
     pub fn chosen(&self) -> Option<&ModelInfo> {
         self.visible().get(self.selected).copied()
+    }
+
+    /// The default new sessions get now, as the `default` mark shows it.
+    pub fn default_model(&self) -> Option<&ModelInfo> {
+        self.models.iter().find(|m| m.default)
+    }
+
+    /// The selected model is the user file's default already: there is
+    /// nothing to save.
+    pub fn already_default(&self) -> bool {
+        self.default_from == DefaultFrom::User && self.chosen().is_some_and(|m| m.default)
+    }
+
+    /// `Space`: tick or untick "Also make it the default".
+    pub fn toggle_default(&mut self) {
+        if !self.already_default() {
+            self.make_default = !self.make_default;
+        }
+    }
+
+    /// The model to save as `default_model` when `Enter` takes the selected
+    /// one: only with the tick, and only if it is not the default already.
+    pub fn default_to_save(&self) -> Option<String> {
+        if !self.make_default || self.already_default() {
+            return None;
+        }
+        self.chosen().map(|m| m.model.clone())
     }
 
     pub fn up(&mut self) {

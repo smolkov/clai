@@ -27,11 +27,11 @@ use crate::agent::{
     PERMISSION_CHOICES, Permission, Question, QuestionKind, SessionEvent, SessionRef, State,
     ToolCallEvent, TurnEnd, TurnInfo,
 };
-use crate::config::Tool;
+use crate::config::{ModelRef, SavedDefault, Tool};
 use crate::error::Error;
 use crate::permissions::Reason;
 use crate::protocol::{
-    ModelInfo, Notice, Payload, Request, ServerMessage, SessionInfo, TokenTotals,
+    DefaultFrom, ModelInfo, Notice, Payload, Request, ServerMessage, SessionInfo, TokenTotals,
 };
 use crate::tools::{Details, PathDetails, Text};
 
@@ -1949,12 +1949,24 @@ fn model_list() -> Vec<ModelInfo> {
     ]
 }
 
+/// `models` for the test session's workspace.
+fn models_request() -> Request {
+    Request::Models {
+        workspace: Some("/ws/project".into()),
+    }
+}
+
 fn models_answer(models: Vec<ModelInfo>) -> Input {
+    models_answer_from(models, DefaultFrom::User)
+}
+
+fn models_answer_from(models: Vec<ModelInfo>, default_from: DefaultFrom) -> Input {
     Input::Response {
-        request: Request::Models,
+        request: models_request(),
         result: Ok(Payload::Models {
             models,
             config: "/home/u/.config/clai/config.toml".into(),
+            default_from,
         }),
     }
 }
@@ -1962,7 +1974,7 @@ fn models_answer(models: Vec<ModelInfo>) -> Input {
 /// An app with the picker open on the usual list.
 fn picking() -> App {
     let mut app = app();
-    assert_eq!(requests(&app.update(ctrl('o'))), [Request::Models]);
+    assert_eq!(requests(&app.update(ctrl('o'))), [models_request()]);
     assert!(app.picker.is_none(), "it opens with the answer");
     app.update(models_answer(model_list()));
     assert!(app.picker.is_some());
@@ -1978,7 +1990,7 @@ fn chosen(app: &App) -> String {
 fn slash_model_opens_the_picker() {
     let mut app = app();
     let effects = command(&mut app, "/model");
-    assert_eq!(requests(&effects), [Request::Models]);
+    assert_eq!(requests(&effects), [models_request()]);
     assert!(app.editor.is_empty());
     app.update(models_answer(model_list()));
     assert!(app.picker.is_some());
@@ -1989,7 +2001,7 @@ fn ctrl_o_works_in_the_conversation_too() {
     let mut app = app();
     app.update(key(KeyCode::Tab));
     assert_eq!(app.focus, Focus::Conversation);
-    assert_eq!(requests(&app.update(ctrl('o'))), [Request::Models]);
+    assert_eq!(requests(&app.update(ctrl('o'))), [models_request()]);
 }
 
 #[test]
@@ -2015,7 +2027,7 @@ fn a_reload_asks_for_the_models() {
     let effects = app.update(Input::Server(ServerMessage::Notice {
         notice: Notice::ConfigReloaded,
     }));
-    assert_eq!(requests(&effects), [Request::Models]);
+    assert_eq!(requests(&effects), [models_request()]);
 }
 
 #[test]
@@ -2036,7 +2048,7 @@ fn a_failed_models_request_goes_to_the_conversation() {
     let mut app = app();
     app.update(ctrl('o'));
     app.update(Input::Response {
-        request: Request::Models,
+        request: models_request(),
         result: Err("bad config".to_owned()),
     });
     assert!(app.picker.is_none());
@@ -2045,13 +2057,13 @@ fn a_failed_models_request_goes_to_the_conversation() {
     let mut app = self::app();
     app.update(ctrl('o'));
     app.update(Input::Response {
-        request: Request::Models,
+        request: models_request(),
         result: Err(LOST.to_owned()),
     });
     assert!(kinds(&app).is_empty());
     let mut app = self::app();
     app.update(Input::Response {
-        request: Request::Models,
+        request: models_request(),
         result: Err("bad config".to_owned()),
     });
     assert!(kinds(&app).is_empty());
@@ -2109,6 +2121,204 @@ fn paste_goes_to_the_filter() {
     assert!(app.editor.is_empty());
     let picker = app.picker.as_ref().unwrap();
     assert_eq!(picker.filter.text(), "qwen ");
+}
+
+/// The `default_model` saves among `effects`: path, model, workspace.
+fn default_saves(effects: &[Effect]) -> Vec<(String, String, String)> {
+    effects
+        .iter()
+        .filter_map(|e| match e {
+            Effect::SaveDefault {
+                path,
+                model,
+                workspace,
+            } => Some((
+                path.display().to_string(),
+                model.clone(),
+                workspace.display().to_string(),
+            )),
+            _ => None,
+        })
+        .collect()
+}
+
+const USER_FILE: &str = "/home/u/.config/clai/config.toml";
+
+#[test]
+fn space_ticks_the_default_and_leaves_the_filter() {
+    let mut app = picking();
+    app.update(key(KeyCode::Down));
+    app.update(ch(' '));
+    let picker = app.picker.as_ref().unwrap();
+    assert!(picker.make_default);
+    assert_eq!(picker.filter.text(), "");
+    assert_eq!(chosen(&app), "anthropic/opus");
+    app.update(ch(' '));
+    assert!(!app.picker.as_ref().unwrap().make_default);
+    // A pasted space still reaches the filter.
+    app.update(Input::Paste("op us".to_owned()));
+    assert_eq!(app.picker.as_ref().unwrap().filter.text(), "op us");
+}
+
+#[test]
+fn space_on_the_default_does_nothing() {
+    let mut app = picking();
+    assert_eq!(chosen(&app), "anthropic/sonnet");
+    app.update(ch(' '));
+    let picker = app.picker.as_ref().unwrap();
+    assert!(picker.already_default());
+    assert!(!picker.make_default);
+}
+
+#[test]
+fn enter_with_the_tick_switches_and_saves_the_default() {
+    let mut app = picking();
+    app.update(key(KeyCode::Down));
+    app.update(ch(' '));
+    let effects = app.update(key(KeyCode::Enter));
+    assert!(app.picker.is_none());
+    assert_eq!(
+        requests(&effects),
+        [Request::SetModel {
+            session: "project".into(),
+            model: "anthropic/opus".into(),
+        }]
+    );
+    assert_eq!(
+        default_saves(&effects),
+        [(
+            USER_FILE.into(),
+            "anthropic/opus".into(),
+            "/ws/project".into()
+        )]
+    );
+}
+
+#[test]
+fn the_tick_on_the_current_model_only_saves() {
+    let mut app = app();
+    app.update(ctrl('o'));
+    // The default is opus; the session has sonnet.
+    app.update(models_answer(default_opus()));
+    assert_eq!(chosen(&app), "anthropic/sonnet");
+    app.update(ch(' '));
+    let effects = app.update(key(KeyCode::Enter));
+    assert!(requests(&effects).is_empty());
+    assert_eq!(
+        default_saves(&effects),
+        [(
+            USER_FILE.into(),
+            "anthropic/sonnet".into(),
+            "/ws/project".into()
+        )]
+    );
+}
+
+#[test]
+fn without_the_tick_or_with_esc_nothing_is_saved() {
+    let mut app = picking();
+    app.update(key(KeyCode::Down));
+    assert!(default_saves(&app.update(key(KeyCode::Enter))).is_empty());
+    let mut app = picking();
+    app.update(key(KeyCode::Down));
+    app.update(ch(' '));
+    assert!(default_saves(&app.update(key(KeyCode::Esc))).is_empty());
+    assert!(app.picker.is_none());
+    // The tick starts unticked when the picker opens again.
+    app.update(ctrl('o'));
+    app.update(models_answer(model_list()));
+    assert!(!app.picker.as_ref().unwrap().make_default);
+}
+
+#[test]
+fn a_saved_default_is_reported_and_the_marks_asked_again() {
+    let mut app = app();
+    let saved = SavedDefault {
+        model: ModelRef {
+            provider: "local".into(),
+            model: "qwen".into(),
+        },
+        path: USER_FILE.into(),
+        from: crate::config::DefaultFrom::User,
+        effective: ModelRef {
+            provider: "local".into(),
+            model: "qwen".into(),
+        },
+    };
+    let effects = app.update(Input::DefaultSaved(Ok(saved.clone())));
+    assert_eq!(requests(&effects), [models_request()]);
+    assert_eq!(
+        notices(&app),
+        [format!("default model: local/qwen (saved in {USER_FILE})")]
+    );
+    let mut app = self::app();
+    app.update(Input::DefaultSaved(Ok(SavedDefault {
+        from: crate::config::DefaultFrom::Env,
+        effective: ModelRef {
+            provider: "anthropic".into(),
+            model: "sonnet".into(),
+        },
+        ..saved
+    })));
+    assert_eq!(
+        notices(&app)[1],
+        "⚠ CLAI_MODEL=anthropic/sonnet still sets the default of new sessions"
+    );
+    let mut app = self::app();
+    app.update(Input::DefaultSaved(Err("cannot write x".into())));
+    assert_eq!(
+        kinds(&app),
+        [Kind::Error(
+            "default model not saved: cannot write x".into()
+        )]
+    );
+}
+
+#[test]
+fn slash_model_with_default() {
+    let mut app = app();
+    let effects = command(&mut app, "/model qwen --default");
+    assert_eq!(
+        requests(&effects),
+        [Request::SetModel {
+            session: "project".into(),
+            model: "qwen".into(),
+        }]
+    );
+    // Without a models answer yet, the TUI's own user file.
+    let saves = default_saves(&effects);
+    assert_eq!(saves.len(), 1);
+    assert_eq!(saves[0].1, "qwen");
+    // `/model --default`: the session's model, without a switch.
+    let mut app = picking();
+    app.update(key(KeyCode::Esc));
+    let effects = command(&mut app, "/model --default");
+    assert!(requests(&effects).is_empty());
+    assert_eq!(
+        default_saves(&effects),
+        [(
+            USER_FILE.into(),
+            "anthropic/sonnet".into(),
+            "/ws/project".into()
+        )]
+    );
+}
+
+#[test]
+fn frame_picker_with_the_default_ticked() {
+    let mut app = picking();
+    app.update(key(KeyCode::Down));
+    app.update(ch(' '));
+    insta::assert_snapshot!(screen(&mut app, 80, 24));
+}
+
+#[test]
+fn frame_picker_when_clai_model_sets_the_default() {
+    let mut app = app();
+    app.update(ctrl('o'));
+    app.update(models_answer_from(default_opus(), DefaultFrom::Env));
+    app.update(ch(' '));
+    insta::assert_snapshot!(screen(&mut app, 80, 24));
 }
 
 #[test]
@@ -2503,7 +2713,7 @@ fn every_box_opens_from_the_command_list() {
         assert_eq!(app.dialog, Some(dialog));
     }
     let mut app = app();
-    assert_eq!(requests(&command(&mut app, "/model")), [Request::Models]);
+    assert_eq!(requests(&command(&mut app, "/model")), [models_request()]);
     app.update(models_answer(model_list()));
     assert!(app.picker.is_some());
     assert!(app.editor.is_empty());
@@ -2513,7 +2723,7 @@ fn every_box_opens_from_the_command_list() {
 fn ctrl_o_closes_the_command_list_and_keeps_the_text() {
     let mut app = app();
     typed(&mut app, "/m");
-    assert_eq!(requests(&app.update(ctrl('o'))), [Request::Models]);
+    assert_eq!(requests(&app.update(ctrl('o'))), [models_request()]);
     assert!(app.command_list.is_none());
     assert_eq!(app.editor.text(), "/m");
 }
@@ -2832,7 +3042,7 @@ fn default_opus() -> Vec<ModelInfo> {
 #[test]
 fn new_starts_on_the_default_model() {
     let mut app = among_three();
-    assert_eq!(requests(&command(&mut app, "/new")), [Request::Models]);
+    assert_eq!(requests(&command(&mut app, "/new")), [models_request()]);
     app.update(models_answer(default_opus()));
     let picker = app.picker.as_ref().expect("picker");
     assert_eq!(picker.chosen().unwrap().model, "anthropic/opus");
@@ -2896,7 +3106,13 @@ fn n_in_the_list_asks_workspace_and_name_then_the_model() {
     app.update(key(KeyCode::Enter));
     typed(&mut app, "side");
     let effects = app.update(key(KeyCode::Enter));
-    assert_eq!(requests(&effects), [Request::Models]);
+    assert!(
+        matches!(
+            requests(&effects).as_slice(),
+            [Request::Models { workspace: Some(_) }]
+        ),
+        "{effects:?}"
+    );
     assert!(app.session_list.is_none());
     app.update(models_answer(default_opus()));
     let effects = app.update(key(KeyCode::Enter));
@@ -3196,7 +3412,7 @@ fn model_offers_the_models_from_the_server() {
     typed(&mut app, "/model");
     let effects = app.update(ch(' '));
     // Not known yet: asked for once, without opening the picker.
-    assert_eq!(requests(&effects), [Request::Models]);
+    assert_eq!(requests(&effects), [models_request()]);
     assert!(requests(&app.update(ch('q'))).is_empty());
     app.update(models_answer(model_list()));
     assert!(app.picker.is_none());

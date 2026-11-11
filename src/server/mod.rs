@@ -293,44 +293,55 @@ async fn reload_watch(shared: Arc<Shared>, every: Duration) {
             () = shared.stop.cancelled() => return,
             () = tokio::time::sleep(every) => {}
         }
-        let (path, old) = {
-            let user = lock(&shared.config);
-            (user.path.clone(), user.stamp)
-        };
-        let now = stamp(&path);
-        if now == old {
-            continue;
-        }
-        let checked = match std::fs::read_to_string(&path) {
-            Ok(text) => {
-                let options = LoadOptions {
-                    workspace: path.parent().map(Path::to_path_buf).unwrap_or_default(),
-                    ..shared.load.clone()
-                };
-                match config::load_with_user_text(&path, &text, &options) {
-                    Ok(_) => Ok(text),
-                    Err(e) => Err(error_lines(&e)),
-                }
-            }
-            Err(e) => Err(vec![format!("{}: cannot read: {e}", path.display())]),
-        };
-        let notice = {
-            let mut user = lock(&shared.config);
-            user.stamp = now;
-            match checked {
-                Ok(text) => {
-                    user.text = text;
-                    tracing::info!("configuration reloaded");
-                    Notice::ConfigReloaded
-                }
-                Err(errors) => {
-                    tracing::warn!(?errors, "configuration rejected");
-                    Notice::ConfigRejected { errors }
-                }
-            }
-        };
-        broadcast(&shared, notice);
+        refresh(&shared);
     }
+}
+
+/// Reads the user file again if it changed since it was read, and tells the
+/// clients. Called by the poll and before a request uses the configuration,
+/// so a file saved just now counts at once (RFC 0021).
+fn refresh(shared: &Shared) {
+    let (path, old) = {
+        let user = lock(&shared.config);
+        (user.path.clone(), user.stamp)
+    };
+    let now = stamp(&path);
+    if now == old {
+        return;
+    }
+    let checked = match std::fs::read_to_string(&path) {
+        Ok(text) => {
+            let options = LoadOptions {
+                workspace: path.parent().map(Path::to_path_buf).unwrap_or_default(),
+                ..shared.load.clone()
+            };
+            match config::load_with_user_text(&path, &text, &options) {
+                Ok(_) => Ok(text),
+                Err(e) => Err(error_lines(&e)),
+            }
+        }
+        Err(e) => Err(vec![format!("{}: cannot read: {e}", path.display())]),
+    };
+    let notice = {
+        let mut user = lock(&shared.config);
+        // Another caller read it meanwhile: its result stands.
+        if user.stamp != old {
+            return;
+        }
+        user.stamp = now;
+        match checked {
+            Ok(text) => {
+                user.text = text;
+                tracing::info!("configuration reloaded");
+                Notice::ConfigReloaded
+            }
+            Err(errors) => {
+                tracing::warn!(?errors, "configuration rejected");
+                Notice::ConfigRejected { errors }
+            }
+        }
+    };
+    broadcast(shared, notice);
 }
 
 /// One client connection: handshake, then requests until it closes.

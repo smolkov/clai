@@ -108,12 +108,14 @@ fn json() {
             {
                 "model": "anthropic/sonnet", "provider": "anthropic", "name": "sonnet",
                 "id": "claude-sonnet-5-5", "context_window": 200000,
-                "max_output_tokens": 64000, "default": true, "key": "missing"
+                "max_output_tokens": 64000, "default": true, "default_from": "user",
+                "key": "missing"
             },
             {
                 "model": "local/qwen", "provider": "local", "name": "qwen",
                 "id": "qwen3-coder:30b", "context_window": 32768,
-                "max_output_tokens": null, "default": false, "key": "none"
+                "max_output_tokens": null, "default": false, "default_from": null,
+                "key": "none"
             }
         ])
     );
@@ -123,7 +125,11 @@ fn json() {
 fn env_model_overrides_default() {
     let env = Env::new("env-model", Some(CONFIG));
     let out = env.run(&["models"], &[("CLAI_MODEL", "qwen")]);
-    assert!(stdout(&out).contains("32k  default"), "{}", stdout(&out));
+    assert!(
+        stdout(&out).contains("32k  default (CLAI_MODEL)"),
+        "{}",
+        stdout(&out)
+    );
 }
 
 #[test]
@@ -136,7 +142,57 @@ fn project_file_is_merged() {
     )
     .unwrap();
     let out = env.run(&["models"], &[]);
-    assert!(stdout(&out).contains("32k  default"), "{}", stdout(&out));
+    assert!(
+        stdout(&out).contains("32k  default (project)"),
+        "{}",
+        stdout(&out)
+    );
+}
+
+#[test]
+fn set_default_saves_the_model_for_the_next_start() {
+    let env = Env::new("set-default", Some(&format!("# my models\n{CONFIG}")));
+    let out = env.run(&["models", "--set-default", "qwen"], &[]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let file = env.root.join("config/clai/config.toml");
+    assert_eq!(
+        stdout(&out),
+        format!("default model: local/qwen (saved in {})\n", file.display())
+    );
+    let text = fs::read_to_string(&file).unwrap();
+    assert!(text.starts_with("# my models\n"), "{text}");
+    assert!(text.contains("default_model = \"local/qwen\""), "{text}");
+    // The next start uses it.
+    let out = env.run(&["models"], &[]);
+    assert!(stdout(&out).contains("32k  default\n"), "{}", stdout(&out));
+}
+
+#[test]
+fn set_default_refuses_an_unknown_model() {
+    let env = Env::new("set-default-unknown", Some(CONFIG));
+    let out = env.run(&["models", "--set-default", "gpt"], &[]);
+    assert_eq!(out.status.code(), Some(2));
+    let err = stderr(&out);
+    assert!(
+        err.contains("unknown model `gpt`") && err.contains("local/qwen"),
+        "{err}"
+    );
+    let text = fs::read_to_string(env.root.join("config/clai/config.toml")).unwrap();
+    assert_eq!(text, CONFIG);
+}
+
+#[test]
+fn set_default_warns_when_clai_model_wins() {
+    let env = Env::new("set-default-env", Some(CONFIG));
+    let out = env.run(
+        &["models", "--set-default", "qwen"],
+        &[("CLAI_MODEL", "sonnet")],
+    );
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert_eq!(
+        stderr(&out),
+        "clai: CLAI_MODEL=anthropic/sonnet still sets the default of new sessions\n"
+    );
 }
 
 #[test]

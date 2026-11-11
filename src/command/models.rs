@@ -3,16 +3,21 @@
 use clap::Args;
 
 use super::{Context, Execute};
-use crate::config::{Config, KeyStatus};
+use crate::config::{self, Config, DefaultFrom, KeyStatus};
 use crate::error::{Error, Result};
-use crate::output::{Align, columns, write_stdout};
+use crate::output::{Align, columns, note, write_stdout};
 use crate::text::short_tokens;
 
 #[derive(Debug, Args)]
 pub struct Models {
     /// Print a JSON array instead of the table.
-    #[arg(long)]
+    #[arg(long, conflicts_with = "set_default")]
     pub json: bool,
+
+    /// Save MODEL as default_model in the user config file, the model of
+    /// new sessions from now on.
+    #[arg(long, value_name = "MODEL")]
+    pub set_default: Option<String>,
 }
 
 impl Execute for Models {
@@ -22,7 +27,20 @@ impl Execute for Models {
 
     fn run(&self, ctx: &Context) -> Result<()> {
         let workspace = std::env::current_dir().map_err(Error::io("current directory"))?;
-        let config = ctx.load(workspace)?;
+        let config = ctx.load(workspace.clone())?;
+        if let Some(model) = &self.set_default {
+            let options = ctx.load_options(workspace);
+            let saved = config::save_default_model(&options, &config.user_file, model)
+                .map_err(Error::Usage)?;
+            let mut notes = saved.notes("warning:").into_iter();
+            if let Some(first) = notes.next() {
+                write_stdout(&format!("{first}\n"))?;
+            }
+            for line in notes {
+                note(line.trim_start_matches("warning: "));
+            }
+            return Ok(());
+        }
         let getenv = |name: &str| std::env::var(name).ok();
         let text = if self.json {
             render_json(&config, getenv)
@@ -40,6 +58,15 @@ struct Row {
     marks: Vec<&'static str>,
 }
 
+/// `default`, and where it comes from when it is not the user file.
+fn default_mark(from: DefaultFrom) -> &'static str {
+    match from {
+        DefaultFrom::User => "default",
+        DefaultFrom::Project => "default (project)",
+        DefaultFrom::Env => "default (CLAI_MODEL)",
+    }
+}
+
 /// One line per model: `PROVIDER/MODEL  ID  CONTEXT  MARKS`.
 pub fn render_table(config: &Config, getenv: impl Fn(&str) -> Option<String>) -> String {
     let mut rows = Vec::new();
@@ -50,7 +77,7 @@ pub fn render_table(config: &Config, getenv: impl Fn(&str) -> Option<String>) ->
             if config.default_model.provider == provider.name
                 && config.default_model.model == model.name
             {
-                marks.push("default");
+                marks.push(default_mark(config.default_from));
             }
             if missing {
                 marks.push("no key");
@@ -83,6 +110,8 @@ pub fn render_json(config: &Config, getenv: impl Fn(&str) -> Option<String>) -> 
         .flat_map(|provider| {
             let key = provider.key.status(&getenv).name();
             provider.models.values().map(move |model| {
+                let default = config.default_model.provider == provider.name
+                    && config.default_model.model == model.name;
                 serde_json::json!({
                     "model": format!("{}/{}", provider.name, model.name),
                     "provider": provider.name,
@@ -90,8 +119,8 @@ pub fn render_json(config: &Config, getenv: impl Fn(&str) -> Option<String>) -> 
                     "id": model.id,
                     "context_window": model.context_window,
                     "max_output_tokens": model.max_output_tokens,
-                    "default": config.default_model.provider == provider.name
-                        && config.default_model.model == model.name,
+                    "default": default,
+                    "default_from": default.then(|| config.default_from.name()),
                     "key": key,
                 })
             })

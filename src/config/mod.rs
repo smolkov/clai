@@ -177,6 +177,28 @@ pub struct Commit {
     pub trailer: Option<String>,
 }
 
+/// Which source set `default_model`; later ones win.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum DefaultFrom {
+    /// The user file.
+    #[default]
+    User,
+    /// The project file of the workspace.
+    Project,
+    /// `CLAI_MODEL`.
+    Env,
+}
+
+impl DefaultFrom {
+    pub fn name(self) -> &'static str {
+        match self {
+            DefaultFrom::User => "user",
+            DefaultFrom::Project => "project",
+            DefaultFrom::Env => "env",
+        }
+    }
+}
+
 /// The loaded and validated configuration.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Config {
@@ -184,6 +206,7 @@ pub struct Config {
     /// The project file, if the workspace has one.
     pub project_file: Option<PathBuf>,
     pub default_model: ModelRef,
+    pub default_from: DefaultFrom,
     /// In config order.
     pub providers: IndexMap<String, Provider>,
     pub limits: Limits,
@@ -327,6 +350,86 @@ pub fn read_user_file(options: &LoadOptions) -> Result<(PathBuf, String), Error>
         Err(e) => return Err(read_error(&user_path, &e)),
     };
     Ok((user_path, user_text))
+}
+
+/// What [`save_default_model`] did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SavedDefault {
+    /// The full reference written, `provider/model`.
+    pub model: ModelRef,
+    /// The file written.
+    pub path: PathBuf,
+    /// What decides the default for `options.workspace` now: not the user
+    /// file when `CLAI_MODEL` or the project file sets one.
+    pub from: DefaultFrom,
+    /// The default in force there, when it is not the saved one.
+    pub effective: ModelRef,
+}
+
+impl SavedDefault {
+    /// What the clients say about the save: the model and the file, and
+    /// what still decides the default, if not the user file. `warning` is
+    /// the warning symbol of the client.
+    pub fn notes(&self, warning: &str) -> Vec<String> {
+        let mut notes = vec![format!(
+            "default model: {} (saved in {})",
+            self.model,
+            self.path.display()
+        )];
+        match self.from {
+            DefaultFrom::User => {}
+            DefaultFrom::Env => notes.push(format!(
+                "{warning} {MODEL_ENV}={} still sets the default of new sessions",
+                self.effective
+            )),
+            DefaultFrom::Project => notes.push(format!(
+                "{warning} .clai/config.toml of this workspace sets default_model = {}, which wins here",
+                self.effective
+            )),
+        }
+        notes
+    }
+}
+
+/// Saves `model` (`provider/model`, or the short form) as `default_model`
+/// in the user file at `path`, the way `/settings` writes `[tui]` (see
+/// `spec/config.md`, "Writing the user file"): the full reference, the rest
+/// of the file kept, the new text checked as loading would, written
+/// atomically. `options` gives the environment and the workspace whose
+/// project file is checked with it.
+pub fn save_default_model(
+    options: &LoadOptions,
+    path: &Path,
+    model: &str,
+) -> Result<SavedDefault, String> {
+    let text = fs::read_to_string(path).map_err(|e| {
+        format!(
+            "no user config file to save the default in: {}: {e}",
+            path.display()
+        )
+    })?;
+    let current = load_with_user_text(path, &text, options).map_err(|e| e.to_string())?;
+    let model = current.resolve_model(model)?;
+    let reference = model.to_string();
+    let mut loaded = None;
+    edit::save_with(
+        path,
+        None,
+        |text| edit::set_top(text, "default_model", &reference),
+        |new| {
+            let config = load_with_user_text(path, new, options).map_err(|e| e.to_string())?;
+            loaded = Some(config);
+            Ok(())
+        },
+    )?;
+    // Unchanged files are not checked again: the current config holds.
+    let config = loaded.unwrap_or(current);
+    Ok(SavedDefault {
+        model,
+        path: path.to_owned(),
+        from: config.default_from,
+        effective: config.default_model,
+    })
 }
 
 /// Loads the configuration with the user file's text given, e.g. the last
@@ -476,6 +579,7 @@ fn build(
 
     let mut default_given = false;
     let mut default_model = None;
+    let mut default_from = DefaultFrom::User;
     if let Some(value) = &user_file.default_model {
         default_given = true;
         default_model = resolve_at(user, value, "default_model", &mut errors);
@@ -506,6 +610,7 @@ fn build(
             default_given = true;
             if let Some(model) = resolve_at(ctx, value, "default_model", &mut errors) {
                 default_model = Some(model);
+                default_from = DefaultFrom::Project;
             }
         }
         if let Some(limits_file) = &file.limits {
@@ -529,7 +634,10 @@ fn build(
     if let Some(text) = &env.model {
         default_given = true;
         match resolve(&declared, text) {
-            Ok(model) => default_model = Some(model),
+            Ok(model) => {
+                default_model = Some(model);
+                default_from = DefaultFrom::Env;
+            }
             Err(message) => errors.push(env_error(MODEL_ENV, message)),
         }
     }
@@ -549,6 +657,7 @@ fn build(
             user_file: user.path.to_owned(),
             project_file: project.map(|p| p.path.to_owned()),
             default_model,
+            default_from,
             providers,
             limits,
             permissions,

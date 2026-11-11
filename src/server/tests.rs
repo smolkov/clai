@@ -137,6 +137,11 @@ impl Fixture {
     }
 
     async fn start_with(scripts: Vec<Arc<Script>>, idle: Duration) -> Fixture {
+        Fixture::start_polling(scripts, idle, RELOAD).await
+    }
+
+    /// As [`Fixture::start_with`], polling the user file every `reload`.
+    async fn start_polling(scripts: Vec<Arc<Script>>, idle: Duration, reload: Duration) -> Fixture {
         let tmp = tempfile::tempdir().unwrap();
         let dir = tmp.path().join("run/clai");
         let config = tmp.path().join("config.toml");
@@ -144,7 +149,7 @@ impl Fixture {
         let ws = tmp.path().join("ws");
         fs::create_dir_all(&ws).unwrap();
         let scripts = Arc::new(Mutex::new(VecDeque::from(scripts)));
-        let (stop, server) = launch(&dir, &config, &scripts, idle).await;
+        let (stop, server) = launch_polling(&dir, &config, &scripts, idle, reload).await;
         Fixture {
             tmp,
             dir,
@@ -200,6 +205,9 @@ impl Fixture {
     }
 }
 
+/// How often test servers poll the user file.
+const RELOAD: Duration = Duration::from_millis(50);
+
 /// Starts a server and waits until it accepts connections.
 async fn launch(
     dir: &Path,
@@ -207,7 +215,18 @@ async fn launch(
     scripts: &Arc<Mutex<VecDeque<Arc<Script>>>>,
     idle: Duration,
 ) -> (CancellationToken, JoinHandle<Result<()>>) {
-    let options = options(dir, config, scripts, idle);
+    launch_polling(dir, config, scripts, idle, RELOAD).await
+}
+
+async fn launch_polling(
+    dir: &Path,
+    config: &Path,
+    scripts: &Arc<Mutex<VecDeque<Arc<Script>>>>,
+    idle: Duration,
+    reload: Duration,
+) -> (CancellationToken, JoinHandle<Result<()>>) {
+    let mut options = options(dir, config, scripts, idle);
+    options.reload_every = reload;
     let stop = options.stop.clone();
     let server = tokio::spawn(serve(options));
     let socket = socket_path(dir);
@@ -1410,8 +1429,12 @@ async fn resuming_on_the_same_model_logs_nothing() {
 }
 
 async fn models(client: &mut Client) -> (Vec<ModelInfo>, PathBuf) {
-    match client.request(Request::Models).await.unwrap() {
-        Payload::Models { models, config } => (models, config),
+    match client
+        .request(Request::Models { workspace: None })
+        .await
+        .unwrap()
+    {
+        Payload::Models { models, config, .. } => (models, config),
         other => panic!("{other:?}"),
     }
 }
@@ -1447,6 +1470,84 @@ async fn the_models_request_lists_the_servers_models() {
     let (list, _) = models(&mut c).await;
     let names: Vec<&str> = list.iter().map(|m| m.name.as_str()).collect();
     assert_eq!(names, ["one", "three"]);
+    fx.stop().await;
+}
+
+#[tokio::test]
+async fn a_saved_default_counts_before_the_next_poll() {
+    // The poll would come only in an hour: the requests read the file.
+    let fx = Fixture::start_polling(vec![], WAIT, Duration::from_secs(3600)).await;
+    let mut c = fx.client("tui", true).await;
+    let (list, _) = models(&mut c).await;
+    assert!(list[0].default);
+    let text = fs::read_to_string(&fx.config).unwrap();
+    fs::write(
+        &fx.config,
+        text.replace(
+            "default_model = \"fake/one\"",
+            "default_model = \"fake/two\"",
+        ),
+    )
+    .unwrap();
+    let created = c
+        .request(Request::New {
+            workspace: fx.ws.clone(),
+            name: Some("next".into()),
+            model: None,
+        })
+        .await
+        .unwrap();
+    assert!(
+        matches!(&created, Payload::Session { session } if session.model == "fake/two"),
+        "{created:?}"
+    );
+    assert_eq!(notice(&mut c).await, Notice::ConfigReloaded);
+    let (list, _) = models(&mut c).await;
+    assert!(list[1].default && !list[0].default, "{list:?}");
+    fx.stop().await;
+}
+
+#[tokio::test]
+async fn the_models_default_says_where_it_comes_from() {
+    let fx = Fixture::start(vec![]).await;
+    let mut c = fx.client("tui", true).await;
+    let ask = |workspace: Option<PathBuf>| Request::Models { workspace };
+    let from = |payload: Payload| match payload {
+        Payload::Models {
+            models,
+            default_from,
+            ..
+        } => (
+            models.into_iter().find(|m| m.default).map(|m| m.model),
+            default_from,
+        ),
+        other => panic!("{other:?}"),
+    };
+    let answer = c.request(ask(Some(fx.ws.clone()))).await.unwrap();
+    assert_eq!(
+        from(answer),
+        (Some("fake/one".into()), crate::protocol::DefaultFrom::User)
+    );
+    fs::create_dir_all(fx.ws.join(".clai")).unwrap();
+    fs::write(
+        fx.ws.join(".clai/config.toml"),
+        "default_model = \"fake/two\"\n",
+    )
+    .unwrap();
+    let answer = c.request(ask(Some(fx.ws.clone()))).await.unwrap();
+    assert_eq!(
+        from(answer),
+        (
+            Some("fake/two".into()),
+            crate::protocol::DefaultFrom::Project
+        )
+    );
+    // Without a workspace, project files do not count.
+    let answer = c.request(ask(None)).await.unwrap();
+    assert_eq!(
+        from(answer),
+        (Some("fake/one".into()), crate::protocol::DefaultFrom::User)
+    );
     fx.stop().await;
 }
 

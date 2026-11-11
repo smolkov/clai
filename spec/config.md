@@ -588,19 +588,28 @@ editing the configuration.
   does not fall back to a bundled theme of its name.
 - `clai` never writes into the directory.
 
-### Reading and writing `[tui]`
+### Writing the user file
 
 The TUI reads `[tui]`, `[themes]` and the theme files itself: when it starts,
 on `config_reloaded`, and when `/settings` or `/theme` opens. A change applies
 at once to the running TUI. An invalid change keeps the previous settings and
 shows the error in the status line.
 
-The TUI writes the user file only from `/settings` and `/theme` (see
-[`tui.md`](tui.md), "Settings"): it sets or removes keys of `[tui]` and keeps
-the rest of the file, comments and order included; it checks the new text as
-loading would and writes nothing if it fails or if the file changed since it
-was read; it replaces the file atomically with its mode kept, through a link to
-its target.
+`clai` writes the user file only from `/settings` and `/theme` (see
+[`tui.md`](tui.md), "Settings"), which set or remove keys of `[tui]`, and from
+the model picker's default tick, `/model … --default` (TUI and `clai chat`) and
+`clai models --set-default`, which set `default_model` (RFC 0021). It keeps the
+rest of the file, comments and order included; it checks the new text as
+loading would and writes nothing if that fails; for `[tui]` it also writes
+nothing if the file changed since it was read; it replaces the file atomically
+with its mode kept, through a link to its target.
+
+- `default_model` is written as the full `provider/model`, also when the
+  short form was given. An existing key keeps its place and the comment on
+  its line; a new one goes before the first table.
+- The project file is never written: it comes with the repository.
+- `CLAI_MODEL` and a project file's `default_model` still win over the saved
+  value; the clients say so after the save.
 
 ## Providers and models
 

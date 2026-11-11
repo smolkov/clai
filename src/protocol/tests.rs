@@ -304,11 +304,22 @@ async fn too_long() {
 fn models_round_trip() {
     let request = ClientMessage::Request {
         id: 1,
-        request: Request::Models,
+        request: Request::Models { workspace: None },
     };
     assert_eq!(
         serde_json::to_value(&request).unwrap(),
         json!({"type": "request", "id": 1, "request": {"command": "models"}})
+    );
+    assert_eq!(round_trip(&request), request);
+    let request = ClientMessage::Request {
+        id: 2,
+        request: Request::Models {
+            workspace: Some(PathBuf::from("/home/u/ws")),
+        },
+    };
+    assert_eq!(
+        serde_json::to_value(&request).unwrap(),
+        json!({"type": "request", "id": 2, "request": {"command": "models", "workspace": "/home/u/ws"}})
     );
     assert_eq!(round_trip(&request), request);
     let response = ServerMessage::Response {
@@ -324,9 +335,16 @@ fn models_round_trip() {
                 key: "missing".into(),
             }],
             config: PathBuf::from("/home/u/.config/clai/config.toml"),
+            default_from: DefaultFrom::Env,
         }),
     };
     assert_eq!(round_trip(&response), response);
+    // An answer of an older server has no `default_from`: the user file.
+    let old = json!({"kind": "models", "models": [], "config": "/c.toml"});
+    let Payload::Models { default_from, .. } = serde_json::from_value(old).unwrap() else {
+        panic!("not models");
+    };
+    assert_eq!(default_from, DefaultFrom::User);
 }
 
 #[test]

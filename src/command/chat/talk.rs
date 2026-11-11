@@ -31,6 +31,8 @@ const HELP: &str = "\
 commands:
   /cancel          cancel the running turn
   /model [MODEL]   show or change the model (PROVIDER/MODEL)
+  /model [MODEL] --default
+                   also save it (or the current one) as default_model
   /status [NAME]   status and statistics of this or another session
   /stats [RANGE]   statistics over all sessions: 7d (default), 30d or all
   /usage           show the tokens used so far
@@ -299,7 +301,13 @@ impl Talk {
                 }
                 Err(e) => Err(e),
             },
-            "models" => match self.client.request(Request::Models).await {
+            "models" => match self
+                .client
+                .request(Request::Models {
+                    workspace: Some(self.session.path.clone()),
+                })
+                .await
+            {
                 Ok(Payload::Models { models, .. }) => {
                     self.out(&models_text(&models));
                     Ok(())
@@ -616,15 +624,15 @@ impl Talk {
             "detach" | "quit" | "exit" => return Ok(Flow::Leave),
             "cancel" => Request::Cancel { session },
             "kill" => Request::Kill { session },
-            "model" if argument.is_empty() => {
-                let text = format!("model: {}", self.session.model);
-                self.note(&text);
-                self.prompt();
-                return Ok(Flow::Go);
-            }
-            "model" => Request::SetModel {
-                session,
-                model: argument.to_owned(),
+            "model" => match crate::tui::model_argument(argument) {
+                (model, true) => return self.model_default(model).await,
+                (None, false) => {
+                    let text = format!("model: {}", self.session.model);
+                    self.note(&text);
+                    self.prompt();
+                    return Ok(Flow::Go);
+                }
+                (Some(model), false) => Request::SetModel { session, model },
             },
             "usage" => {
                 let text = usage_line(self.usage, self.context_tokens);
@@ -647,6 +655,56 @@ impl Talk {
             }
             Ok(_) => {}
             Err(e) => self.note(&e.to_string()),
+        }
+        self.prompt();
+        Ok(Flow::Go)
+    }
+
+    /// `/model [MODEL] --default`: switches to `MODEL` if given, then saves
+    /// it (or the session's model) as `default_model` in the user file the
+    /// server reads (RFC 0021).
+    async fn model_default(&mut self, model: Option<String>) -> Result<Flow> {
+        if let Some(model) = &model {
+            let request = Request::SetModel {
+                session: self.session.name.clone(),
+                model: model.clone(),
+            };
+            if let Err(e) = self.client.request(request).await {
+                self.note(&e.to_string());
+                self.prompt();
+                return Ok(Flow::Go);
+            }
+        }
+        let workspace = self.session.path.clone();
+        let answer = self
+            .client
+            .request(Request::Models {
+                workspace: Some(workspace.clone()),
+            })
+            .await;
+        let path = match answer {
+            Ok(Payload::Models { config, .. }) => config,
+            Ok(other) => return Err(unexpected(&other)),
+            Err(e) => {
+                self.note(&e.to_string());
+                self.prompt();
+                return Ok(Flow::Go);
+            }
+        };
+        let options = crate::config::LoadOptions {
+            config_file: Some(path.clone()),
+            workspace,
+            env: crate::config::Environment::from_process(),
+        };
+        let target = model.unwrap_or_else(|| self.session.model.clone());
+        match crate::config::save_default_model(&options, &path, &target) {
+            Ok(saved) => {
+                let warning = if self.unicode { "⚠" } else { "!" };
+                for line in saved.notes(warning) {
+                    self.note(&line);
+                }
+            }
+            Err(e) => self.note(&format!("default model not saved: {e}")),
         }
         self.prompt();
         Ok(Flow::Go)

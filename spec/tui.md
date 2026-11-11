@@ -209,7 +209,10 @@ session; then its title is "Model for a new session", it starts on
 │ local                                                                     │
 │   qwen        qwen3-coder:30b            32k   ⚠ history 41k > 32k        │
 │                                                                           │
-│ Enter select ─ Esc cancel                                                 │
+│     already the default for new sessions                                  │
+│                                                                           │
+│                                                                           │
+│ Enter select ─ Space default ─ Esc cancel                                 │
 └───────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -228,8 +231,32 @@ session; then its title is "Model for a new session", it starts on
   windows from the same answer; it asks when the picker opens and when the
   configuration was reloaded.
 - `Enter` selects and closes; on the current model it only closes. `Esc` closes.
-  `Up` / `Down` select; other keys edit the filter. With no match the list says
-  `no model` and `Enter` does nothing.
+  `Up` / `Down` select; other keys edit the filter, except `Space` (below). With
+  no match the list says `no model` and `Enter` does nothing.
+- **Default for new sessions** (RFC 0021). Under the list, `[ ] Also make it the
+  default for new sessions`; `Space` ticks or unticks it (model names and ids
+  have no spaces, so `Space` does not edit the filter; pasted text still does).
+  With the tick, `Enter` also saves the selected model as `default_model` in
+  the user file the server reads (see [`config.md`](config.md), "Writing the
+  user file"); on the session's current model it only saves. `Esc` saves
+  nothing. The tick starts unticked each time the picker opens.
+  - On the row that already is the user file's default the line reads
+    `already the default for new sessions` and `Space` does nothing.
+  - With the tick, the line under it names the file:
+    `saved as default_model in ~/.config/clai/config.toml`.
+  - When the default does not come from the user file, that line warns,
+    ticked or not: `⚠ CLAI_MODEL=local/qwen overrides the saved default`, or
+    `⚠ .clai/config.toml of this workspace sets default_model = local/qwen`.
+    The save still happens: other workspaces and later starts use it.
+  - After the save the conversation shows
+    `default model: anthropic/opus (saved in …)`, and the warning again if
+    something else wins; a failed save shows
+    `default model not saved: …` and keeps the selection.
+  - The next start uses the saved model: `clai`, `clai new`, `/new` and the
+    session list's `n`, `clai run` and `clai commit` without a model, also
+    after a server restart. A running server reads the changed file before
+    it creates a session or answers `models`, so a start right after the save
+    gets it, not only after the next 2 s poll.
 - The picker does not open while a question is open, and a question that opens
   closes it: keys belong to the prompt bar then.
 - `/model <provider>/<model>` (or `/model <model>` when unambiguous) switches
@@ -250,7 +277,8 @@ Changing the model of a running session:
   has adds no notice. A log of an older `clai` has no old model; its notice is
   "model: local/qwen".
 - The change applies to this session only. Other sessions and
-  `default_model` are not affected.
+  `default_model` are not affected, unless the default tick is set (above) or
+  `/model … --default` is used.
 
 ## Switching sessions
 
@@ -519,7 +547,7 @@ the session row counts the question in `●`, as for other questions.
 |------------|--------|
 | `/help`    | Show keys and commands. |
 | `/clear`   | Start a new conversation in the same session. |
-| `/model [PROVIDER/MODEL]` | Change the session's provider and model; without an argument, open the model picker. |
+| `/model [PROVIDER/MODEL]` | Change the session's provider and model; without an argument, open the model picker. With `--default` (before or after the model), also save it as `default_model`; `/model --default` saves the session's model without changing it. |
 | `/permissions` | Show the permission rules in effect: configuration, project file and session rules, with their source. |
 | `/sessions` | Open the session list. |
 | `/new [NAME]` | Start a new session in the same workspace and attach to it; the model picker opens on `default_model` first. |

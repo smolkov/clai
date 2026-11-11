@@ -368,7 +368,10 @@ mod tests {
         ));
         assert!(matches!(
             parse(&["models"]).command,
-            Some(Command::Models(Models { json: false }))
+            Some(Command::Models(Models {
+                json: false,
+                set_default: None
+            }))
         ));
     }
 

@@ -1,5 +1,6 @@
 ---
 source: src/tui/tests.rs
+assertion_line: 2579
 expression: "screen(&mut app, 80, 24)"
 ---
 > fix the failing test                                                          
@@ -15,7 +16,7 @@ The test fails because parse drops the last line. Let me look.
 ────────────────────────────────────────────────────────────────────────────────
 ▶ /help                    Show keys and commands                               
   /clear                   later version                                        
-  /model [PROVIDER/MODEL]  Change the model; without one, choose it             
+  /model [PROVIDER/MODEL]  Change or choose the model; --default saves it       
   /permissions             later version                                        
   /sessions                Open the session list                                
   /new [NAME]              Start a new session, choose its model                
