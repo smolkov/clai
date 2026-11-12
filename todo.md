@@ -219,7 +219,7 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [x] Configuration and pool: `[lsp]`, built-in servers, roots, shared
       servers, idle stop, crash restart.
 - [x] The `lsp` tool, the start question, protocol `8`.
-- [ ] Diagnostics after `edit_file` and `write_file`.
+- [x] Diagnostics after `edit_file` and `write_file`.
 - [ ] Clients: tool lines, the start prompt, `/lsp`.
 - [ ] Spec, readme and a live test with rust-analyzer.
 

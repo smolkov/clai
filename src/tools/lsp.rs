@@ -635,7 +635,7 @@ impl Op {
                     pulled(&answer)
                 } else {
                     let version = server.version(&path.abs).await;
-                    wait_for_diagnostics(server, &path.abs, version, DIAGNOSTICS_WAIT)
+                    wait_for_diagnostics(server, &path.abs, version, 0, DIAGNOSTICS_WAIT)
                         .await
                         .map(|d| diagnostics_json(&d))
                         .unwrap_or_default()
@@ -646,18 +646,23 @@ impl Op {
     }
 }
 
-/// Waits up to `wait` for diagnostics of `version` (any version when the
-/// server does not say); `None` when none came.
+/// Waits up to `wait` for diagnostics published after the `after`-th
+/// publication for the file (see [`FileDiagnostics::count`]), and of
+/// `version` or later when both sides have one; `None` when none came.
 pub async fn wait_for_diagnostics(
     server: &Server,
     path: &Path,
     version: Option<i32>,
+    after: u64,
     wait: Duration,
 ) -> Option<FileDiagnostics> {
     let changed = server.diagnostics_changed();
-    let fits = |d: &FileDiagnostics| match (d.version, version) {
-        (Some(have), Some(want)) => have >= want,
-        _ => true,
+    let fits = |d: &FileDiagnostics| {
+        d.count > after
+            && match (d.version, version) {
+                (Some(have), Some(want)) => have >= want,
+                _ => true,
+            }
     };
     let until = tokio::time::Instant::now() + wait;
     loop {
@@ -669,6 +674,72 @@ pub async fn wait_for_diagnostics(
             return server.diagnostics(path).filter(fits);
         }
     }
+}
+
+/// Errors listed after an edit, at most.
+const MAX_EDIT_ERRORS: usize = 10;
+
+/// After `edit_file` or `write_file` wrote `path`: the errors that a
+/// server this session already uses reports for it, as text to add to
+/// the result. Never starts a server or asks; `None` when there is no
+/// such server, no answer within [`DIAGNOSTICS_WAIT`], or no error.
+pub async fn after_edit(env: &Env, path: &Resolved) -> Option<String> {
+    after_edit_within(env, path, DIAGNOSTICS_WAIT).await
+}
+
+async fn after_edit_within(env: &Env, path: &Resolved, wait: Duration) -> Option<String> {
+    let lsp = env.lsp.as_deref()?;
+    if !lsp.config.enabled || !lsp.config.diagnostics_after_edit {
+        return None;
+    }
+    let def = for_file(&lsp.servers, &path.abs)?;
+    let boundary = match &path.area {
+        Area::Extra { dir, .. } => dir.clone(),
+        Area::Workspace(_) => env.workspace.root().to_path_buf(),
+        Area::Outside => return None,
+    };
+    let root = find_root(def, &path.abs, &boundary);
+    let key = (def.name.clone(), root);
+    if !lsp.is_started(&key) {
+        return None;
+    }
+    let server = lsp.pool.running(&key.0, &key.1)?;
+    let before = server.diagnostics(&path.abs).map_or(0, |d| d.count);
+    let version = match server.saved(&path.abs).await.ok()? {
+        Some(version) => Some(version),
+        None => {
+            server.open(&path.abs).await.ok()?;
+            server.version(&path.abs).await
+        }
+    };
+    let diagnostics = if server.capabilities().diagnostic_provider.is_some() {
+        let document = json!({"textDocument": {"uri": path_to_uri(&path.abs)}});
+        let answer =
+            tokio::time::timeout(wait, server.request("textDocument/diagnostic", document))
+                .await
+                .ok()?
+                .ok()?;
+        pulled(&answer)
+    } else {
+        let found = wait_for_diagnostics(&server, &path.abs, version, before, wait).await?;
+        diagnostics_json(&found)
+    };
+    let errors = diagnostics.iter().filter(|d| severity(d) == 1).count();
+    if errors == 0 {
+        return None;
+    }
+    let s = if errors == 1 { "" } else { "s" };
+    Some(format!(
+        "{} reports {errors} error{s} in {}:\n{}",
+        def.name,
+        path.display(),
+        render_diagnostics(env, &path.abs, &diagnostics, MAX_EDIT_ERRORS, false)
+    ))
+}
+
+#[cfg(test)]
+pub async fn after_edit_for_test(env: &Env, path: &Resolved, wait: Duration) -> Option<String> {
+    after_edit_within(env, path, wait).await
 }
 
 /// The error text for the model.

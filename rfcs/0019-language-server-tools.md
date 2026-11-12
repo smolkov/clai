@@ -2,7 +2,7 @@
 
 - RFC: 0019
 - Status: accepted
-- Progress: step 3 of 6 done (transport and one server; configuration and pool; the tool)
+- Progress: step 4 of 6 done (transport and one server; configuration and pool; the tool; diagnostics after edits)
 - Milestone: none; it adds a tool, a configuration table and a question
 - Spec: [`spec/tools.md`](../spec/tools.md);
   [`spec/config.md`](../spec/config.md), "Permissions", "Project files";
@@ -571,11 +571,26 @@ No new `tokio` features: `process` and `io-util` are on.
        deleted session is not yet removed from the pool's list.
 
 4. **Diagnostics after edits**
-   - Status: todo
+   - Status: done
    - Files: `src/tools/edit_file.rs`, `src/tools/write_file.rs`,
      `src/lsp/`
    - Result: a broken edit shows its errors in the result.
    - Tests: the diagnostics tests.
+   - Built: `tools::lsp::after_edit`, called for a successful
+     `edit_file` and `write_file` in `PreparedCall::run`, with tests in
+     `src/tools/lsp_tests.rs`. Choices made while building it:
+     - Only a server this session started (or used) counts; a server
+       running for another session alone does not.
+     - A file the server does not have open yet is opened (`didOpen`),
+       so the server checks it; an open one gets `didChange` (and
+       `didSave` when the server wants it).
+     - Diagnostics count only when published after the edit: the server
+       keeps a publish count per file (`FileDiagnostics::count`), and a
+       version, when both sides have one, must be the edit's or later.
+       A server that offers pulling is asked with `textDocument/diagnostic`
+       instead, within the same 3 s.
+     - Nothing is added when there are only warnings; the text after
+       errors says `(and 2 warnings or notes; lsp diagnostics lists them)`.
 
 5. **Clients**
    - Status: todo

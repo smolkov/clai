@@ -3,6 +3,7 @@
 use std::fs;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
@@ -560,4 +561,157 @@ fn details_on_the_wire() {
     let wire = serde_json::to_value(&ask).unwrap();
     assert_eq!(wire["tool"], "lsp");
     assert_eq!(serde_json::from_value::<Details>(wire).unwrap(), ask);
+}
+
+// ----------------------------------------------------- after an edit
+
+impl Fixture {
+    /// Starts `fake-rs` for the session with a `references` call.
+    async fn start_rs(&self) {
+        self.answer("textDocument/references", json!([]));
+        self.ok(
+            json!({"operation": "references", "path": "src/main.rs", "line": 2, "symbol": "parse"}),
+        )
+        .await;
+    }
+
+    async fn edit(&self, old: &str, new: &str) -> ToolOutput {
+        let call = match prepare(
+            &self.env,
+            "edit_file",
+            &json!({"path": "src/main.rs", "old_text": old, "new_text": new}),
+        ) {
+            Prepared::Ready(call) => *call,
+            other => panic!("{other:?}"),
+        };
+        call.run(&self.env, CancellationToken::new()).await
+    }
+
+    /// The connection of the last fake, to publish from.
+    fn fake_conn(&self) -> crate::lsp::transport::Connection {
+        self.fakes
+            .fakes
+            .lock()
+            .unwrap()
+            .last()
+            .and_then(|f| f.as_ref().map(|f| f.conn.clone()))
+            .unwrap()
+    }
+}
+
+fn error_at(line: u32, message: &str) -> Value {
+    json!({"range": range(line, 4), "severity": 1, "code": "E0425", "message": message})
+}
+
+#[tokio::test]
+async fn an_edit_shows_the_errors_the_server_publishes() {
+    let f = Fixture::with_caps(
+        Action::Allow,
+        true,
+        json!({"textDocumentSync": {"openClose": true, "change": 1}, "referencesProvider": true}),
+    );
+    f.write("src/main.rs", MAIN);
+    f.start_rs().await;
+    let conn = f.fake_conn();
+    let uri = f.uri("src/main.rs");
+    // Old diagnostics, published before the edit, do not count.
+    conn.notify(
+        "textDocument/publishDiagnostics",
+        json!({"uri": uri, "version": 1, "diagnostics": [error_at(0, "old")]}),
+    )
+    .unwrap();
+    let fakes = f.fakes.clone();
+    let publisher = tokio::spawn(async move {
+        let fake_methods = || fakes.last_methods();
+        let until = std::time::Instant::now() + Duration::from_secs(2);
+        while !fake_methods().contains(&"textDocument/didChange".to_owned()) {
+            assert!(std::time::Instant::now() < until);
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        conn.notify(
+            "textDocument/publishDiagnostics",
+            json!({"uri": uri, "version": 2, "diagnostics": [
+                error_at(1, "cannot find value `lnes` in this scope"),
+                {"range": range(0, 3), "severity": 2, "message": "unused"},
+            ]}),
+        )
+        .unwrap();
+    });
+    let out = f.edit("lines", "lnes").await;
+    publisher.await.unwrap();
+    assert!(!out.is_error, "{}", out.text);
+    let (head, tail) = out.text.split_once("\n\n").unwrap();
+    assert_eq!(head, "edited src/main.rs: replaced 1 occurrence (line 2)");
+    assert_eq!(
+        tail,
+        "fake-rs reports 1 error in src/main.rs:\n\
+         src/main.rs:2:5: error[E0425]: cannot find value `lnes` in this scope\n\
+         (and 1 warning or note; lsp diagnostics lists them)"
+    );
+}
+
+#[tokio::test]
+async fn late_or_missing_diagnostics_add_nothing() {
+    let f = Fixture::with_caps(
+        Action::Allow,
+        true,
+        json!({"textDocumentSync": 1, "referencesProvider": true}),
+    );
+    f.write("src/main.rs", MAIN);
+    // No server started in this session: no question, nothing added.
+    let out = f.edit("lines", "rows").await;
+    assert!(!out.text.contains("reports"), "{}", out.text);
+    assert_eq!(f.fakes.starts(), 0);
+
+    f.start_rs().await;
+    let path = f.env.workspace.resolve("src/main.rs");
+    let found = super::lsp::after_edit_for_test(&f.env, &path, Duration::from_millis(50)).await;
+    assert_eq!(found, None);
+
+    // Only warnings: nothing added.
+    f.fake_conn()
+        .notify(
+            "textDocument/publishDiagnostics",
+            json!({"uri": f.uri("src/main.rs"), "diagnostics": [{"range": range(0, 0), "severity": 2, "message": "w"}]}),
+        )
+        .unwrap();
+    let found = super::lsp::after_edit_for_test(&f.env, &path, Duration::from_millis(200)).await;
+    assert_eq!(found, None);
+
+    // Turned off in the configuration.
+    let mut off = Fixture::with_caps(
+        Action::Allow,
+        true,
+        json!({"textDocumentSync": 1, "referencesProvider": true}),
+    );
+    let lsp = Arc::get_mut(off.env.lsp.as_mut().unwrap()).unwrap();
+    lsp.config.diagnostics_after_edit = false;
+    off.write("src/main.rs", MAIN);
+    off.start_rs().await;
+    let path = off.env.workspace.resolve("src/main.rs");
+    assert_eq!(
+        super::lsp::after_edit_for_test(&off.env, &path, Duration::from_millis(50)).await,
+        None
+    );
+}
+
+#[tokio::test]
+async fn a_pull_server_is_asked_after_an_edit() {
+    let f = Fixture::new(Action::Allow, true);
+    f.write("src/main.rs", MAIN);
+    f.start_rs().await;
+    f.answer(
+        "textDocument/diagnostic",
+        json!({"kind": "full", "items": [error_at(1, "a"), error_at(2, "b")]}),
+    );
+    let out = f.edit("lines", "lnes").await;
+    assert!(
+        out.text.ends_with(
+            "fake-rs reports 2 errors in src/main.rs:\n\
+             src/main.rs:2:5: error[E0425]: a\n\
+             src/main.rs:3:5: error[E0425]: b"
+        ),
+        "{}",
+        out.text
+    );
 }

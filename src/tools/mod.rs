@@ -127,8 +127,16 @@ impl PreparedCall {
                 let env = env.clone();
                 blocking(move || op.run(&env, &cancel)).await
             }
-            Op::Edit(op) => blocking(move || op.run()).await,
-            Op::Write(op) => blocking(move || op.run()).await,
+            Op::Edit(op) => {
+                let path = op.path.clone();
+                let output = blocking(move || op.run()).await;
+                with_diagnostics(env, &path, output).await
+            }
+            Op::Write(op) => {
+                let path = op.path.clone();
+                let output = blocking(move || op.run()).await;
+                with_diagnostics(env, &path, output).await
+            }
             Op::Run(op) => op.run(env, cancel, progress).await,
             Op::Lsp(op) => op.run(env, cancel).await,
         }
@@ -285,6 +293,22 @@ fn args<T: DeserializeOwned>(tool: Tool, arguments: &Value) -> Result<T, Failure
     }
     serde_json::from_value(arguments.clone())
         .map_err(|e| Failure::Error(format!("invalid arguments for {tool}: {e}")))
+}
+
+/// A successful edit or write gets the errors a running language server
+/// reports for the file (RFC 0019).
+async fn with_diagnostics(
+    env: &Env,
+    path: &crate::permissions::Resolved,
+    output: ToolOutput,
+) -> ToolOutput {
+    if output.is_error {
+        return output;
+    }
+    match lsp::after_edit(env, path).await {
+        Some(errors) => ToolOutput::ok(format!("{}\n\n{errors}", output.full)),
+        None => output,
+    }
 }
 
 /// Runs blocking file work off the async threads.

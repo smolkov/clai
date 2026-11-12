@@ -75,6 +75,9 @@ pub struct FileDiagnostics {
     /// The document version they are for, when the server says.
     pub version: Option<i32>,
     pub diagnostics: Vec<Diagnostic>,
+    /// How many times the server published diagnostics for the file, so a
+    /// caller can wait for the next ones when the server gives no version.
+    pub count: u64,
 }
 
 /// Shared between the server and its tasks.
@@ -527,13 +530,17 @@ fn notification(method: &str, params: Value, status: &Mutex<Status>, changed: &N
             let Some(path) = uri_to_path(params.uri.as_str()) else {
                 return;
             };
-            lock(status).diagnostics.insert(
+            let mut status = lock(status);
+            let count = status.diagnostics.get(&path).map_or(0, |d| d.count) + 1;
+            status.diagnostics.insert(
                 path,
                 FileDiagnostics {
                     version: params.version,
                     diagnostics: params.diagnostics,
+                    count,
                 },
             );
+            drop(status);
             changed.notify_waiters();
         }
         "window/logMessage" | "window/showMessage" => {
