@@ -1154,3 +1154,173 @@ fn the_theme_directory() {
     assert_eq!(names, ["a-b_c", "zed"]);
     assert_eq!(found[1].text.as_deref(), Ok("base = \"dark\""));
 }
+
+// ------------------------------------------------------------------- [lsp]
+
+#[test]
+fn lsp_defaults_without_a_table() {
+    let lsp = ok(BASE).lsp;
+    assert_eq!(lsp, Lsp::default());
+    assert!(lsp.enabled && lsp.builtin && lsp.diagnostics_after_edit);
+    assert_eq!(lsp.start, Action::Ask);
+    assert_eq!(lsp.start_timeout, Duration::from_secs(60));
+    assert_eq!(lsp.request_timeout, Duration::from_secs(20));
+}
+
+#[test]
+fn lsp_table_is_read() {
+    let lsp = ok(&with(
+        r#"
+[lsp]
+builtin = false
+start = "allow"
+diagnostics_after_edit = false
+start_timeout_s = 120
+request_timeout_s = 5
+
+[lsp.servers.ruff]
+command = ["ruff", "server"]
+extensions = ["py", "pyi"]
+roots = ["pyproject.toml", "ruff.toml"]
+env = { RUFF_CACHE_DIR = "/tmp/ruff" }
+
+[lsp.servers.rust-analyzer]
+settings = { checkOnSave = false, cargo = { features = ["all"] } }
+
+[lsp.servers.gopls]
+command = []
+"#,
+    ))
+    .lsp;
+    assert!(!lsp.builtin && !lsp.diagnostics_after_edit);
+    assert_eq!(lsp.start, Action::Allow);
+    assert_eq!(lsp.start_timeout, Duration::from_secs(120));
+    assert_eq!(lsp.request_timeout, Duration::from_secs(5));
+    assert_eq!(
+        lsp.servers.keys().collect::<Vec<_>>(),
+        ["ruff", "rust-analyzer", "gopls"]
+    );
+    let ruff = &lsp.servers["ruff"];
+    assert_eq!(
+        ruff.command.as_deref(),
+        Some(&["ruff".into(), "server".into()][..])
+    );
+    assert_eq!(
+        ruff.env,
+        [("RUFF_CACHE_DIR".to_owned(), "/tmp/ruff".to_owned())]
+    );
+    let ra = &lsp.servers["rust-analyzer"];
+    assert_eq!(ra.command, None);
+    assert_eq!(
+        ra.settings,
+        Some(serde_json::json!({"checkOnSave": false, "cargo": {"features": ["all"]}}))
+    );
+    assert!(lsp.servers["gopls"].is_off());
+}
+
+#[test]
+fn lsp_servers_are_checked() {
+    let e = errs(
+        &with(
+            r#"
+[lsp]
+start_timeout_s = 0
+
+[lsp.servers.mine]
+extensions = [".x"]
+
+[lsp.servers.other]
+command = []
+extensions = ["y"]
+
+[lsp.servers.third]
+command = ["third"]
+
+[lsp.servers.fourth]
+command = ["fourth"]
+extensions = ["z"]
+roots = ["../up", "/abs"]
+env = { "A=B" = "c" }
+
+[lsp.servers."bad name"]
+command = ["x"]
+extensions = ["w"]
+"#,
+        ),
+        None,
+    );
+    let text = e.join("\n");
+    for expected in [
+        "lsp.start_timeout_s: 0 is not in 1–3600",
+        "lsp.servers.mine: missing command",
+        "lsp.servers.mine.extensions: `.x`: write the extension without the dot",
+        "lsp.servers.other.command: must not be empty; `command = []` only turns off a built-in server",
+        "lsp.servers.third: missing extensions",
+        "lsp.servers.fourth.roots: `../up`",
+        "lsp.servers.fourth.roots: `/abs`",
+        "lsp.servers.fourth.env: `A=B` is not a variable name",
+        "lsp.servers.bad name: name `bad name` may only have",
+    ] {
+        assert!(text.contains(expected), "missing {expected:?} in:\n{text}");
+    }
+}
+
+#[test]
+fn lsp_one_server_per_extension() {
+    let e = errs(
+        &with(
+            r#"
+[lsp.servers.ruff]
+command = ["ruff", "server"]
+extensions = ["py"]
+
+[lsp.servers.pyright]
+"#,
+        ),
+        None,
+    );
+    assert_eq!(e.len(), 1, "{e:?}");
+    assert!(
+        e[0].contains("lsp.servers.pyright.extensions: `py` is already served by ruff"),
+        "{e:?}"
+    );
+    // A built-in server turned off claims nothing.
+    ok(&with(
+        r#"
+[lsp.servers.pyright]
+command = []
+
+[lsp.servers.ruff]
+command = ["ruff", "server"]
+extensions = ["py"]
+"#,
+    ));
+}
+
+#[test]
+fn lsp_project_file_may_only_turn_it_off_or_deny() {
+    let config = load_with(
+        BASE,
+        Some("[lsp]\nenabled = false\nstart = \"deny\"\n"),
+        &Environment::default(),
+    )
+    .unwrap();
+    assert!(!config.lsp.enabled);
+    assert_eq!(config.lsp.start, Action::Deny);
+
+    let e = errs(
+        BASE,
+        Some(
+            "[lsp]\nenabled = true\nstart = \"allow\"\nbuiltin = false\n[lsp.servers.x]\ncommand = [\"evil\"]\n",
+        ),
+    );
+    assert_eq!(e.len(), 4, "{e:?}");
+    for (err, key) in e.iter().zip(["enabled", "start", "builtin", "servers"]) {
+        assert!(
+            err.starts_with(&format!(
+                "project.toml:1: lsp.{key}: a project file may only set"
+            )),
+            "{err}"
+        );
+    }
+}

@@ -2,7 +2,7 @@
 
 - RFC: 0019
 - Status: accepted
-- Progress: step 1 of 6 done (transport and one server)
+- Progress: step 2 of 6 done (transport and one server; configuration and pool)
 - Milestone: none; it adds a tool, a configuration table and a question
 - Spec: [`spec/tools.md`](../spec/tools.md);
   [`spec/config.md`](../spec/config.md), "Permissions", "Project files";
@@ -485,12 +485,44 @@ No new `tokio` features: `process` and `io-util` are on.
      - Not used yet outside the tests; the tool comes in step 3.
 
 2. **Configuration and pool**
-   - Status: todo
+   - Status: done
    - Files: `src/lsp/config.rs`, `src/lsp/pool.rs`, `src/config/`,
      `src/config/tests.rs`
    - Result: `[lsp]` loads and is checked; built-ins found on `PATH`;
      roots found; servers shared, stopped when idle and on reload.
    - Tests: config tests, pool tests.
+   - Built: `src/config/lsp.rs` (`Lsp`, `LspServer`, the checks and the
+     project-file rule), `src/lsp/config.rs` (`BUILTINS`, `servers`,
+     `for_file`, `find_root`, `on_path`) and `src/lsp/pool.rs` (`Pool`),
+     with tests in `src/config/tests.rs`, `src/lsp/tests.rs` and the
+     config files of `tests/configs/`. Choices made while building it:
+     - A table named like a built-in server takes the keys it leaves out
+       from that server, so `[lsp.servers.rust-analyzer]` with only
+       `settings` is enough. Any other server needs `command` and
+       `extensions`; `command = []` is allowed only for built-in names.
+     - A built-in server gives up only the extensions a user server
+       takes: with `ruff` on `py`, `pyright` still serves `pyi`.
+     - User servers are not looked for on `PATH`; a missing program is
+       the start error. Built-in ones are, and only in absolute `PATH`
+       entries, as executable files.
+     - Server names: letters, digits, `.`, `_`, `-`. Roots: names
+       relative to the project root, no `..`, `/` or `~` at the start.
+       `start_timeout_s` is 1–3600, `request_timeout_s` 1–600.
+     - A project file's `[lsp]` is checked by hand: only
+       `enabled = false` and `start = "deny"`; any other key or value is
+       an error naming it.
+     - A failed start counts as a crash, so a broken server is not
+       started on every call: two in 5 minutes leave it failed. The error
+       then says `stays stopped until /lsp restart`.
+     - `Pool::restart` forgets the crashes and starts at once;
+       `Pool::stop` stops one server, which starts again on the next
+       call; `Pool::apply_config` stops and forgets all servers when
+       `[lsp]` differs from the last one it got.
+     - The pool takes a starter function, so the tests run it with the
+       in-process fake server; `spawn_reaper` checks every minute (a
+       tenth of the idle time when shorter).
+     - Not used yet outside the tests; the clai server and `clai run` own
+       a pool from step 3.
 
 3. **The tool**
    - Status: todo

@@ -22,6 +22,7 @@ pub struct UserFile {
     pub tui: Option<TuiFile>,
     #[serde(default)]
     pub themes: IndexMap<String, Spanned<ThemeFile>>,
+    pub lsp: Option<Spanned<LspFile>>,
 }
 
 /// A project file. Tables only allowed in the user file are accepted here
@@ -36,6 +37,8 @@ pub struct ProjectFile {
     pub providers: Option<Spanned<toml::Value>>,
     pub tui: Option<Spanned<toml::Value>>,
     pub themes: Option<Spanned<toml::Value>>,
+    /// Only `enabled = false` and `start = "deny"`; checked by hand.
+    pub lsp: Option<Spanned<toml::Value>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -148,4 +151,27 @@ pub struct ThemeFile {
     pub diff_add: Option<Spanned<toml::Value>>,
     pub diff_remove: Option<Spanned<toml::Value>>,
     pub code: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LspFile {
+    pub enabled: Option<bool>,
+    pub builtin: Option<bool>,
+    pub start: Option<Spanned<Action>>,
+    pub diagnostics_after_edit: Option<bool>,
+    pub start_timeout_s: Option<Spanned<i64>>,
+    pub request_timeout_s: Option<Spanned<i64>>,
+    #[serde(default)]
+    pub servers: IndexMap<String, Spanned<LspServerFile>>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LspServerFile {
+    pub command: Option<Spanned<Vec<Spanned<String>>>>,
+    pub extensions: Option<Spanned<Vec<Spanned<String>>>>,
+    pub roots: Option<Spanned<Vec<Spanned<String>>>>,
+    pub settings: Option<Spanned<toml::Table>>,
+    pub env: Option<Spanned<IndexMap<String, String>>>,
 }

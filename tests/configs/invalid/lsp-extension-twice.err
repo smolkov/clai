@@ -1,0 +1,1 @@
+clai: CONFIG:15: lsp.servers.pylsp.extensions: `py` is already served by ruff; one server per extension

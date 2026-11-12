@@ -790,3 +790,369 @@ async fn a_server_that_exits_fails_with_its_last_stderr_line() {
         other => panic!("{:?}", other.err()),
     }
 }
+
+// ------------------------------------------------------------ config
+
+mod servers {
+    use std::ffi::{OsStr, OsString};
+    use std::os::unix::fs::PermissionsExt;
+
+    use super::*;
+    use crate::config::{Lsp, LspServer};
+    use crate::lsp::config::*;
+
+    /// A directory with executable files of these names, as `PATH`.
+    fn bin(names: &[&str]) -> (tempfile::TempDir, OsString) {
+        let tmp = tempfile::tempdir().unwrap();
+        for name in names {
+            let path = tmp.path().join(name);
+            fs::write(&path, "#!/bin/sh\n").unwrap();
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let path = tmp.path().as_os_str().to_owned();
+        (tmp, path)
+    }
+
+    fn names(defs: &[ServerDef]) -> Vec<&str> {
+        defs.iter().map(|d| d.name.as_str()).collect()
+    }
+
+    fn server(command: &[&str], extensions: &[&str]) -> LspServer {
+        LspServer {
+            command: Some(command.iter().map(|s| s.to_string()).collect()),
+            extensions: Some(extensions.iter().map(|s| s.to_string()).collect()),
+            ..LspServer::default()
+        }
+    }
+
+    #[test]
+    fn builtins_are_used_when_on_path() {
+        let (_bin, path) = bin(&["rust-analyzer", "gopls"]);
+        let defs = servers(&Lsp::default(), Some(&path));
+        assert_eq!(names(&defs), ["rust-analyzer", "gopls"]);
+        assert!(defs[0].builtin);
+        assert_eq!(defs[0].roots, ["Cargo.toml"]);
+        assert!(servers(&Lsp::default(), None).is_empty());
+    }
+
+    #[test]
+    fn a_file_that_cannot_run_is_not_on_path() {
+        let (bin, path) = bin(&["gopls"]);
+        fs::set_permissions(bin.path().join("gopls"), fs::Permissions::from_mode(0o644)).unwrap();
+        fs::create_dir(bin.path().join("clangd")).unwrap();
+        assert!(servers(&Lsp::default(), Some(&path)).is_empty());
+        // Relative PATH entries are skipped.
+        assert!(!on_path("sh", Some(OsStr::new("bin:."))));
+        assert!(on_path("/bin/sh", None));
+    }
+
+    #[test]
+    fn user_servers_come_first_and_take_their_extensions() {
+        let (_bin, path) = bin(&["rust-analyzer", "pyright-langserver", "clangd"]);
+        let mut lsp = Lsp::default();
+        lsp.servers
+            .insert("ruff".into(), server(&["ruff", "server"], &["py"]));
+        lsp.servers.insert(
+            "clangd".into(),
+            LspServer {
+                command: Some(Vec::new()),
+                ..LspServer::default()
+            },
+        );
+        lsp.servers.insert(
+            "rust-analyzer".into(),
+            LspServer {
+                settings: Some(json!({"checkOnSave": false})),
+                env: vec![("RA_LOG".into(), "info".into())],
+                ..LspServer::default()
+            },
+        );
+        let defs = servers(&lsp, Some(&path));
+        // ruff is not looked for on PATH; clangd is off; pyright keeps pyi.
+        assert_eq!(names(&defs), ["ruff", "rust-analyzer", "pyright"]);
+        assert!(!defs[0].builtin);
+        let ra = &defs[1];
+        assert_eq!(ra.command, ["rust-analyzer"]);
+        assert_eq!(ra.extensions, ["rs"]);
+        assert_eq!(ra.settings, json!({"checkOnSave": false}));
+        assert_eq!(ra.env, [("RA_LOG".to_owned(), "info".to_owned())]);
+        assert_eq!(defs[2].extensions, ["pyi"]);
+        assert_eq!(defs[2].label(), "pyright (.pyi)");
+
+        assert_eq!(for_file(&defs, Path::new("a/b.py")).unwrap().name, "ruff");
+        assert_eq!(for_file(&defs, Path::new("b.pyi")).unwrap().name, "pyright");
+        assert!(for_file(&defs, Path::new("Makefile")).is_none());
+        assert!(for_file(&defs, Path::new("x.toml")).is_none());
+    }
+
+    #[test]
+    fn builtin_off_and_disabled() {
+        let (_bin, path) = bin(&["rust-analyzer"]);
+        let mut lsp = Lsp::default();
+        lsp.servers.insert("mine".into(), server(&["mine"], &["m"]));
+        lsp.builtin = false;
+        assert_eq!(names(&servers(&lsp, Some(&path))), ["mine"]);
+        lsp.enabled = false;
+        assert!(servers(&lsp, Some(&path)).is_empty());
+    }
+
+    #[test]
+    fn roots_are_found_upwards_and_not_above_the_boundary() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ws = tmp.path().join("ws");
+        fs::create_dir_all(ws.join("crates/a/src/deep")).unwrap();
+        fs::write(ws.join("Cargo.toml"), "").unwrap();
+        fs::write(ws.join("crates/a/Cargo.toml"), "").unwrap();
+        fs::write(tmp.path().join("Cargo.toml"), "").unwrap();
+        let mut lsp = Lsp::default();
+        lsp.servers.insert(
+            "rust-analyzer".into(),
+            LspServer {
+                command: Some(vec!["ra".into()]),
+                ..LspServer::default()
+            },
+        );
+        let defs = servers(&lsp, None);
+        let ra = &defs[0];
+        let file = ws.join("crates/a/src/deep/x.rs");
+        assert_eq!(find_root(ra, &file, &ws), ws.join("crates/a"));
+        assert_eq!(find_root(ra, &ws.join("build.rs"), &ws), ws);
+        // A marker above the workspace is not used.
+        let other = tmp.path().join("ws2");
+        fs::create_dir_all(other.join("src")).unwrap();
+        assert_eq!(find_root(ra, &other.join("src/x.rs"), &other), other);
+        // No root names: the boundary.
+        let plain = ServerDef {
+            roots: Vec::new(),
+            ..ra.clone()
+        };
+        assert_eq!(find_root(&plain, &file, &ws), ws);
+
+        let setup = ra.setup(&ws, &lsp);
+        assert_eq!(setup.name, "rust-analyzer");
+        assert_eq!(setup.command, ["ra"]);
+        assert_eq!(setup.root, ws);
+        assert_eq!(setup.start_timeout, Duration::from_secs(60));
+        assert_eq!(setup.settings, Value::Null);
+    }
+}
+
+// --------------------------------------------------------------- pool
+
+mod pool {
+    use super::*;
+    use crate::config::Lsp;
+    use crate::lsp::pool::*;
+
+    /// Starts fakes; keeps them so a test can drop one (a crash).
+    #[derive(Clone, Default)]
+    struct Fakes {
+        fakes: Arc<Mutex<Vec<Option<Fake>>>>,
+        /// Starts fail while set.
+        failing: Arc<Mutex<bool>>,
+    }
+
+    impl Fakes {
+        fn pool(&self, idle: Duration) -> Pool {
+            let fakes = self.clone();
+            let starter: Starter = Arc::new(move |setup: Setup| {
+                let fakes = fakes.clone();
+                Box::pin(async move {
+                    let handler = if *fakes.failing.lock().unwrap() {
+                        Arc::new(|method: &str, _: &Value| match method {
+                            "initialize" => Some(Err((-32603_i64, "broken".to_owned()))),
+                            _ => None,
+                        }) as Handler
+                    } else {
+                        standard()
+                    };
+                    let (fake, reader, writer) = Fake::start(handler);
+                    fakes.fakes.lock().unwrap().push(Some(fake));
+                    Server::over(&setup, reader, writer).await
+                })
+            });
+            Pool::with_starter(starter, idle)
+        }
+
+        fn starts(&self) -> usize {
+            self.fakes.lock().unwrap().len()
+        }
+
+        fn crash_last(&self) {
+            if let Some(slot) = self.fakes.lock().unwrap().last_mut() {
+                slot.take();
+            }
+        }
+
+        fn fail(&self, on: bool) {
+            *self.failing.lock().unwrap() = on;
+        }
+    }
+
+    fn named(root: &Path, name: &str) -> Setup {
+        Setup {
+            name: name.into(),
+            ..setup(root)
+        }
+    }
+
+    async fn failed(server: &Server) {
+        let until = Instant::now() + Duration::from_secs(2);
+        while !matches!(server.state(), State::Failed(_)) {
+            assert!(Instant::now() < until, "{:?}", server.state());
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn sessions_with_the_same_root_share_a_server() {
+        let tmp = tempfile::tempdir().unwrap();
+        let fakes = Fakes::default();
+        let pool = fakes.pool(IDLE);
+        let setup = setup(tmp.path());
+        let (a, b) = tokio::join!(pool.get(&setup, "one"), pool.get(&setup, "two"));
+        let (a, b) = (a.unwrap(), b.unwrap());
+        assert!(Arc::ptr_eq(&a, &b));
+        assert_eq!(fakes.starts(), 1);
+
+        // Another root, or another server, is another process.
+        let other = tmp.path().join("sub");
+        fs::create_dir(&other).unwrap();
+        pool.get(&named(&other, "fake"), "one").await.unwrap();
+        pool.get(&named(tmp.path(), "other"), "one").await.unwrap();
+        assert_eq!(fakes.starts(), 3);
+
+        let status = pool.status();
+        assert_eq!(status.len(), 3);
+        assert_eq!(status[0].name, "fake");
+        assert_eq!(status[0].root, tmp.path());
+        assert_eq!(status[0].sessions, ["one", "two"]);
+        assert_eq!(status[0].state, PoolState::Running(State::Ready));
+        pool.forget_session("two");
+        assert_eq!(pool.status()[0].sessions, ["one"]);
+
+        assert!(pool.running("fake", tmp.path()).is_some());
+        assert!(pool.running("fake", Path::new("/nowhere")).is_none());
+    }
+
+    #[tokio::test]
+    async fn a_crash_restarts_once_then_it_stays_failed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let fakes = Fakes::default();
+        let pool = fakes.pool(IDLE);
+        let setup = setup(tmp.path());
+        let first = pool.get(&setup, "s").await.unwrap();
+        fakes.crash_last();
+        failed(&first).await;
+        assert!(pool.running("fake", tmp.path()).is_none());
+
+        let second = pool.get(&setup, "s").await.unwrap();
+        assert!(!Arc::ptr_eq(&first, &second));
+        assert_eq!(fakes.starts(), 2);
+
+        fakes.crash_last();
+        failed(&second).await;
+        match pool.get(&setup, "s").await {
+            Err(Error::Closed(reason)) => {
+                assert!(
+                    reason.ends_with("stays stopped until /lsp restart"),
+                    "{reason}"
+                )
+            }
+            other => panic!("{:?}", other.err()),
+        }
+        assert_eq!(fakes.starts(), 2, "not started a third time");
+        assert!(matches!(pool.status()[0].state, PoolState::Failed(_)));
+
+        // A restart forgets the crashes.
+        pool.restart("fake", tmp.path()).await.unwrap();
+        assert_eq!(fakes.starts(), 3);
+        assert_eq!(pool.status()[0].state, PoolState::Running(State::Ready));
+        pool.get(&setup, "s").await.unwrap();
+        assert_eq!(fakes.starts(), 3);
+    }
+
+    #[tokio::test]
+    async fn two_failed_starts_leave_it_failed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let fakes = Fakes::default();
+        fakes.fail(true);
+        let pool = fakes.pool(IDLE);
+        let setup = setup(tmp.path());
+        assert!(matches!(
+            pool.get(&setup, "s").await,
+            Err(Error::Server { .. })
+        ));
+        assert!(pool.get(&setup, "s").await.is_err());
+        fakes.fail(false);
+        assert!(matches!(pool.get(&setup, "s").await, Err(Error::Closed(_))));
+        assert_eq!(fakes.starts(), 2);
+        // A changed [lsp] forgets the failure.
+        assert!(!pool.apply_config(&Lsp::default()).await, "first config");
+        let changed = Lsp {
+            builtin: false,
+            ..Lsp::default()
+        };
+        assert!(pool.apply_config(&changed).await);
+        assert!(!pool.apply_config(&changed).await, "same again");
+        pool.get(&setup, "s").await.unwrap();
+        assert_eq!(fakes.starts(), 3);
+    }
+
+    #[tokio::test]
+    async fn idle_servers_are_stopped_and_start_again() {
+        let tmp = tempfile::tempdir().unwrap();
+        let fakes = Fakes::default();
+        let pool = fakes.pool(Duration::from_millis(50));
+        let setup = setup(tmp.path());
+        pool.get(&setup, "s").await.unwrap();
+        assert!(pool.reap().await.is_empty(), "just used");
+        tokio::time::sleep(Duration::from_millis(80)).await;
+        assert_eq!(
+            pool.reap().await,
+            [("fake".to_owned(), tmp.path().to_owned())]
+        );
+        assert_eq!(pool.status()[0].state, PoolState::Stopped);
+        assert!(pool.running("fake", tmp.path()).is_none());
+        let fake_methods = fakes.fakes.lock().unwrap()[0].as_ref().unwrap().methods();
+        assert!(
+            fake_methods.contains(&"shutdown".to_owned()),
+            "{fake_methods:?}"
+        );
+        pool.get(&setup, "s").await.unwrap();
+        assert_eq!(fakes.starts(), 2);
+    }
+
+    #[tokio::test]
+    async fn the_reaper_stops_idle_servers_by_itself() {
+        let tmp = tempfile::tempdir().unwrap();
+        let fakes = Fakes::default();
+        let pool = fakes.pool(Duration::from_millis(30));
+        pool.get(&setup(tmp.path()), "s").await.unwrap();
+        let reaper = pool.spawn_reaper();
+        let until = Instant::now() + Duration::from_secs(2);
+        while pool.status()[0].state != PoolState::Stopped {
+            assert!(Instant::now() < until, "{:?}", pool.status());
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        reaper.abort();
+    }
+
+    #[tokio::test]
+    async fn stop_all_stops_and_forgets_every_server() {
+        let tmp = tempfile::tempdir().unwrap();
+        let fakes = Fakes::default();
+        let pool = fakes.pool(IDLE);
+        pool.get(&setup(tmp.path()), "s").await.unwrap();
+        pool.get(&named(tmp.path(), "two"), "s").await.unwrap();
+        pool.stop("two", tmp.path()).await;
+        assert_eq!(pool.status()[1].state, PoolState::Stopped);
+        pool.stop_all().await;
+        assert!(pool.status().is_empty());
+        let fakes: Vec<Fake> = fakes.fakes.lock().unwrap().drain(..).flatten().collect();
+        for fake in &fakes {
+            fake.wait_for("exit").await;
+        }
+        assert!(pool.restart("fake", tmp.path()).await.is_err());
+    }
+}

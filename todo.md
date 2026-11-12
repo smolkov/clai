@@ -216,7 +216,7 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [x] Transport and one server: framing, JSON-RPC, a server process with
       initialize, progress, diagnostics, server requests, stop; open files
       in sync; positions in UTF-8 and UTF-16.
-- [ ] Configuration and pool: `[lsp]`, built-in servers, roots, shared
+- [x] Configuration and pool: `[lsp]`, built-in servers, roots, shared
       servers, idle stop, crash restart.
 - [ ] The `lsp` tool, the start question, protocol `8`.
 - [ ] Diagnostics after `edit_file` and `write_file`.

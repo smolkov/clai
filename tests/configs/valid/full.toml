@@ -107,3 +107,23 @@ accent      = "#e5a50a"
 diff_add    = "#26a269"
 diff_remove = "#c01c28"
 code        = "Solarized (dark)"
+
+[lsp]
+enabled                = true
+builtin                = true
+start                  = "ask"
+diagnostics_after_edit = true
+start_timeout_s        = 60
+request_timeout_s      = 20
+
+[lsp.servers.rust-analyzer]
+settings = { checkOnSave = false }
+
+[lsp.servers.ruff]
+command    = ["ruff", "server"]
+extensions = ["py", "pyi"]
+roots      = ["pyproject.toml", "ruff.toml"]
+env        = { RUFF_CACHE_DIR = "/tmp/ruff" }
+
+[lsp.servers.pyright]
+command = []

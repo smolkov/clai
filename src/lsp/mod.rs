@@ -6,8 +6,12 @@
 //!   diagnostics, server requests, stop.
 //! - [`docs`]: open files and their sync, and positions in the server's
 //!   encoding.
+//! - [`config`]: the built-in servers, the servers in use, project roots.
+//! - [`pool`]: the running servers, shared by sessions, stopped when idle.
 
+pub mod config;
 pub mod docs;
+pub mod pool;
 pub mod server;
 pub mod transport;
 

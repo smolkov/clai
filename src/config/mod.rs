@@ -7,6 +7,7 @@
 pub mod edit;
 mod errors;
 mod file;
+pub mod lsp;
 pub mod permissions;
 mod secret;
 pub mod themes;
@@ -28,6 +29,7 @@ use errors::FileCtx;
 use file::{LimitsFile, ModelFile, ProjectFile, ProviderFile, UserFile};
 
 pub use errors::{ConfigError, ConfigErrors, Origin};
+pub use lsp::{Lsp, LspServer};
 pub use permissions::{
     Access, Action, ExtraDir, Pattern, Permissions, Rule, Source, Tool, builtin_rules,
 };
@@ -218,6 +220,8 @@ pub struct Config {
     /// Theme files that are broken but not in use: left out, and shown by the
     /// TUI.
     pub theme_warnings: Vec<ThemeWarning>,
+    /// `[lsp]`: language servers (RFC 0019).
+    pub lsp: Lsp,
 }
 
 /// A theme file left out, and why: `themes/x.toml:3: base: …`.
@@ -572,6 +576,8 @@ fn build(
         &mut errors,
     );
 
+    let mut lsp = lsp::build(user, user_file.lsp, &mut errors);
+
     let mut limits = Limits::default();
     if let Some(file) = &user_file.limits {
         limits.apply(user, file, false, &mut errors);
@@ -605,6 +611,9 @@ fn build(
                     format!("only allowed in the user file ({})", user.path.display()),
                 ));
             }
+        }
+        if let Some(value) = &file.lsp {
+            lsp::apply_project(ctx, value, &mut lsp, &mut errors);
         }
         if let Some(value) = &file.default_model {
             default_given = true;
@@ -665,13 +674,14 @@ fn build(
             tui,
             themes,
             theme_warnings,
+            lsp,
         }),
         _ => Err(ConfigErrors(errors)),
     }
 }
 
 /// Checks an integer key and returns it, or `default` when it is not set.
-fn int_key(
+pub(crate) fn int_key(
     ctx: FileCtx<'_>,
     value: &Option<Spanned<i64>>,
     key: String,
