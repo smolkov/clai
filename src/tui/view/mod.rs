@@ -11,6 +11,7 @@ mod day_chart;
 mod details;
 mod info;
 mod input;
+mod lsp;
 mod picker;
 mod popup;
 pub mod prompt;
@@ -151,6 +152,7 @@ pub fn draw(app: &App, frame: &mut Frame<'_>) {
                 && app.session_list.is_none()
                 && app.settings_box.is_none()
                 && app.status_box.is_none()
+                && app.lsp_box.is_none()
                 && app.details.is_none()
                 && app.theme_list.is_none() =>
         {
@@ -167,6 +169,7 @@ pub fn draw(app: &App, frame: &mut Frame<'_>) {
     settings::draw(app, frame, size);
     themes::draw(app, frame, size);
     status_box::draw(app, frame, size);
+    lsp::draw(app, frame, size);
     details::draw(app, frame, size);
     paint(frame.buffer_mut(), look);
 }

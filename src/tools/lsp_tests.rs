@@ -104,7 +104,7 @@ impl Fixture {
             start,
             ..Lsp::default()
         };
-        let mut lsp = LspEnv::new(pool, &config, None, can_ask, false);
+        let mut lsp = LspEnv::new(pool, &config, None, "1".into(), can_ask, false);
         lsp.servers = vec![def("fake-rs", "rs"), def("fake-go", "go")];
         let env = Env {
             permissions: Arc::new(parse_for_test(CONFIG, None)),

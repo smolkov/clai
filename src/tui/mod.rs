@@ -13,6 +13,7 @@ mod details;
 mod editor;
 mod highlight;
 mod keys;
+mod lsp;
 mod markdown;
 mod picker;
 mod prompt;

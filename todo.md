@@ -220,7 +220,7 @@ Milestones and their order: [`implementation.md`](implementation.md).
       servers, idle stop, crash restart.
 - [x] The `lsp` tool, the start question, protocol `8`.
 - [x] Diagnostics after `edit_file` and `write_file`.
-- [ ] Clients: tool lines, the start prompt, `/lsp`.
+- [x] Clients: tool lines, the start prompt, `/lsp`.
 - [ ] Spec, readme and a live test with rust-analyzer.
 
 ## Copy text and see tool details (RFC 0016)

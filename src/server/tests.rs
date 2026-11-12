@@ -1880,3 +1880,34 @@ async fn global_stats_count_all_saved_sessions() {
     assert_eq!(broken.sessions.saved, 2);
     fx.stop().await;
 }
+
+// ---------------------------------------------------------- lsp (RFC 0019)
+
+#[tokio::test]
+async fn lsp_requests_answer_with_the_servers() {
+    let fx = Fixture::start(vec![]).await;
+    let mut c = fx.client("tui", true).await;
+    match c.request(Request::LspStatus).await.unwrap() {
+        Payload::Lsp { servers } => assert!(servers.is_empty()),
+        other => panic!("{other:?}"),
+    }
+    // Stopping one that never ran is no error; restarting it is.
+    let stop = Request::LspStop {
+        name: "rust-analyzer".into(),
+        root: fx.ws.clone(),
+    };
+    assert!(matches!(
+        c.request(stop).await.unwrap(),
+        Payload::Lsp { .. }
+    ));
+    let restart = Request::LspRestart {
+        name: "rust-analyzer".into(),
+        root: fx.ws.clone(),
+    };
+    let e = c.request(restart).await.unwrap_err();
+    assert!(
+        e.to_string()
+            .contains("rust-analyzer: rust-analyzer has not run"),
+        "{e}"
+    );
+}

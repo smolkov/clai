@@ -43,6 +43,47 @@ struct Built {
 }
 
 impl Shared {
+    /// The language servers, with the names of the sessions that use them.
+    fn lsp_status(&self) -> Payload {
+        use crate::lsp::pool::PoolState;
+        use crate::lsp::server::State;
+        let sessions = lock(&self.sessions);
+        let servers = self
+            .lsp
+            .status()
+            .into_iter()
+            .map(|s| {
+                let (state, percent, reason) = match s.state {
+                    PoolState::Starting | PoolState::Running(State::Starting) => {
+                        ("starting", None, None)
+                    }
+                    PoolState::Running(State::Indexing { percent }) => ("indexing", percent, None),
+                    PoolState::Running(State::Ready) => ("ready", None, None),
+                    PoolState::Running(State::Failed(why)) | PoolState::Failed(why) => {
+                        ("failed", None, Some(why))
+                    }
+                    PoolState::Stopped => ("stopped", None, None),
+                };
+                let names = s
+                    .sessions
+                    .iter()
+                    .filter_map(|id| id.parse::<u64>().ok())
+                    .filter_map(|id| sessions.get(id).map(|e| e.name.clone()))
+                    .collect();
+                crate::protocol::LspServerInfo {
+                    name: s.name,
+                    root: s.root,
+                    state: state.to_owned(),
+                    percent,
+                    reason,
+                    sessions: names,
+                    stderr: s.stderr,
+                }
+            })
+            .collect();
+        Payload::Lsp { servers }
+    }
+
     /// The configuration for a workspace: the kept user file and the
     /// workspace's project file.
     fn config(&self, workspace: &Path) -> std::result::Result<Config, ErrorReply> {
@@ -61,8 +102,11 @@ impl Shared {
 
     /// An agent for `workspace` with model `model` (`provider/model` or
     /// the short form; `None` for `default_model`).
+    /// `id` is the session's: it names the session among the users of a
+    /// language server.
     fn build(
         &self,
+        id: u64,
         workspace: &Path,
         model: Option<&str>,
     ) -> std::result::Result<Built, ErrorReply> {
@@ -99,6 +143,7 @@ impl Shared {
                     self.lsp.clone(),
                     &config.lsp,
                     std::env::var_os("PATH").as_deref(),
+                    id.to_string(),
                     true,
                     false,
                 ))),
@@ -198,7 +243,7 @@ impl Shared {
             )));
         }
         let loaded = store.load().map_err(failed)?;
-        let built = match self.build(&meta.workspace, Some(model.unwrap_or(&meta.model))) {
+        let built = match self.build(id, &meta.workspace, Some(model.unwrap_or(&meta.model))) {
             Ok(built) => built,
             Err(e) if model.is_none() => {
                 return Err(ErrorReply::usage(format!(
@@ -546,6 +591,15 @@ impl Conn {
             Request::SessionStatus { session } => shared.session_status(&session).await,
             Request::GlobalStats { range, offset } => Ok(shared.global_stats(range, offset)),
             Request::Models { workspace } => shared.models(workspace.as_deref()),
+            Request::LspStatus => Ok(shared.lsp_status()),
+            Request::LspRestart { name, root } => match shared.lsp.restart(&name, &root).await {
+                Ok(_) => Ok(shared.lsp_status()),
+                Err(e) => Err(ErrorReply::failed(format!("{name}: {e}"))),
+            },
+            Request::LspStop { name, root } => {
+                shared.lsp.stop(&name, &root).await;
+                Ok(shared.lsp_status())
+            }
             Request::Stop => {
                 tracing::info!(client = %self.outbox.name, "stop requested");
                 shared.stop.cancel();
@@ -571,13 +625,13 @@ impl Conn {
                 workspace.display()
             )));
         }
-        let built = shared.build(&workspace, model.as_deref())?;
+        let id = shared.next_session.fetch_add(1, Ordering::Relaxed) + 1;
+        let built = shared.build(id, &workspace, model.as_deref())?;
         // A session that cannot be saved still runs, in memory.
         let (store, problem) = match Store::create(&shared.sessions_dir) {
             Ok(store) => (Some(store), None),
             Err(e) => (None, Some(e)),
         };
-        let id = shared.next_session.fetch_add(1, Ordering::Relaxed) + 1;
         let handle = {
             let mut sessions = lock(&shared.sessions);
             let name = match name {
@@ -656,6 +710,7 @@ impl Conn {
             handle.kill("killed", false).await;
         }
         let entry = lock(&shared.sessions).remove(id);
+        shared.lsp.forget_session(&id.to_string());
         if let Some(store) = entry.and_then(|e| e.store) {
             store
                 .remove()

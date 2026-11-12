@@ -118,6 +118,79 @@ pub(crate) fn main_argument(arguments: &Value) -> String {
         .unwrap_or_default()
 }
 
+/// What a tool line says about an `lsp` result: `3 references`,
+/// `1 error, 2 warnings`, `12 symbols`, `none found`.
+fn lsp_result(lines: &[&str]) -> String {
+    // Hover text: the code, not its fence.
+    let lines: Vec<&str> = lines
+        .iter()
+        .copied()
+        .filter(|l| !l.starts_with("```"))
+        .collect();
+    let first = lines.first().copied().unwrap_or_default();
+    // `3 references to parse:`, `1 definition of parse:`, `2 callers of x:`.
+    if first.ends_with(':') && first.starts_with(|c: char| c.is_ascii_digit()) {
+        let head = first.trim_end_matches(':');
+        for cut in [" to ", " of ", " from "] {
+            if let Some((count, _)) = head.split_once(cut) {
+                return count.to_owned();
+            }
+        }
+        return head.to_owned();
+    }
+    match first {
+        "(none found)" => return "none found".to_owned(),
+        "(no errors or warnings)" => return "no errors".to_owned(),
+        "(no symbols)" => return "no symbols".to_owned(),
+        _ => {}
+    }
+    // Diagnostics: `path:1:2: error[E1]: …`.
+    let count = |level: &str| {
+        lines
+            .iter()
+            .filter(|l| {
+                l.split(": ")
+                    .nth(1)
+                    .is_some_and(|w| w == level || w.starts_with(&format!("{level}[")))
+            })
+            .count()
+    };
+    let (errors, warnings) = (count("error"), count("warning"));
+    if errors + warnings > 0 {
+        let plural = |n: usize, word: &str| {
+            if n == 1 {
+                format!("1 {word}")
+            } else {
+                format!("{n} {word}s")
+            }
+        };
+        let mut parts = Vec::new();
+        if errors > 0 {
+            parts.push(plural(errors, "error"));
+        }
+        if warnings > 0 {
+            parts.push(plural(warnings, "warning"));
+        }
+        return parts.join(", ");
+    }
+    // An outline or a list of symbols: one per line.
+    let symbols = lines
+        .iter()
+        .filter(|l| !l.starts_with('(') && !l.starts_with('…'))
+        .count();
+    let listed = lines
+        .iter()
+        .all(|l| l.starts_with('(') || l.starts_with('…') || l.contains("  "));
+    if listed && symbols > 0 {
+        return if symbols == 1 {
+            "1 symbol".to_owned()
+        } else {
+            format!("{symbols} symbols")
+        };
+    }
+    first.to_owned()
+}
+
 /// What a tool line says about the result.
 pub(crate) fn short_result(tool: &str, state: CallState, text: &str) -> String {
     let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
@@ -131,6 +204,7 @@ pub(crate) fn short_result(tool: &str, state: CallState, text: &str) -> String {
                 format!("{} lines", group(n))
             }
         }
+        ("lsp", CallState::Done) => lsp_result(&lines),
         // The answers, without the questions: `SQLite; Search, Export`.
         ("ask_user", CallState::Done) if lines.len() > 1 => lines
             .iter()

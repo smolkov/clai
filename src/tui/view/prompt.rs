@@ -4,6 +4,7 @@ use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
 
 use crate::agent::{Choice, QuestionKind};
+use crate::tools::Details;
 use crate::tui::prompt::{Mode, Prompt};
 use crate::tui::style::Look;
 use crate::tui::wrap::{Piece, plain, wrap};
@@ -63,8 +64,26 @@ fn choices(out: &mut Vec<Line<'static>>, prompt: &Prompt, width: usize, look: &L
     let mut keys = Vec::new();
     match &question.kind {
         QuestionKind::Permission(p) => {
-            head.push((format!("{}  ", question.summary), look.styles.text));
-            head.push((format!("asks: {}", p.reason_text), look.styles.dim));
+            if let Details::LspStart { command, .. } = &p.details {
+                // `Start language server rust-analyzer in ~/ws/clai?`
+                let mut summary = question.summary.clone();
+                if let Some(first) = summary.get(..1) {
+                    summary = format!(
+                        "{}{}?",
+                        first.to_uppercase(),
+                        summary.get(1..).unwrap_or("")
+                    );
+                }
+                out.extend(wrap(&[(summary, look.styles.text)], width, &none, &none));
+                head.push((format!("command: {}  ", command.join(" ")), look.styles.dim));
+                head.push((
+                    "It may run build scripts and macros of the project.".to_owned(),
+                    look.styles.warning,
+                ));
+            } else {
+                head.push((format!("{}  ", question.summary), look.styles.text));
+                head.push((format!("asks: {}", p.reason_text), look.styles.dim));
+            }
             for choice in &question.choices {
                 let label = match choice {
                     Choice::Allow => "[y] yes",

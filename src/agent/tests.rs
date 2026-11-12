@@ -1295,6 +1295,7 @@ mod lsp {
             Pool::with_starter(fakes.starter(), IDLE),
             &config,
             None,
+            "1".into(),
             can_ask,
             false,
         );

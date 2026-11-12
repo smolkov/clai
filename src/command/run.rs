@@ -134,6 +134,7 @@ impl Run {
                         Pool::new(),
                         &config.lsp,
                         std::env::var_os("PATH").as_deref(),
+                        "run".into(),
                         can_ask,
                         answering == Answering::Allow,
                     ))),

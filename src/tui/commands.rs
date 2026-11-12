@@ -83,6 +83,7 @@ pub const COMMANDS: &[Command] = &[
         command("stats", "Show statistics over all sessions"),
         "[7d|30d|all]",
     ),
+    command("lsp", "Show the language servers; restart or stop one"),
     command("settings", "Change the TUI settings and save them"),
     optional(
         command("theme", "Choose the colour theme, saved as the default"),

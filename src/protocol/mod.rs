@@ -143,6 +143,19 @@ pub enum Request {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         workspace: Option<PathBuf>,
     },
+    /// The language servers the server runs (RFC 0019).
+    LspStatus,
+    /// Stops a language server and starts it again; it forgets its crashes.
+    LspRestart {
+        name: String,
+        /// Absolute path of its project root.
+        root: PathBuf,
+    },
+    /// Stops a language server; it starts again when the model uses it.
+    LspStop {
+        name: String,
+        root: PathBuf,
+    },
     /// Stops the server; running sessions stop and stay saved.
     Stop,
 }
@@ -225,6 +238,10 @@ pub enum Payload {
     GlobalStats {
         stats: Box<GlobalStats>,
     },
+    /// The language servers, after `lsp_status`, `lsp_restart`, `lsp_stop`.
+    Lsp {
+        servers: Vec<LspServerInfo>,
+    },
     Models {
         models: Vec<ModelInfo>,
         /// The user config file the server reads.
@@ -252,6 +269,37 @@ impl From<crate::config::DefaultFrom> for DefaultFrom {
             crate::config::DefaultFrom::User => DefaultFrom::User,
             crate::config::DefaultFrom::Project => DefaultFrom::Project,
             crate::config::DefaultFrom::Env => DefaultFrom::Env,
+        }
+    }
+}
+
+/// A language server as `/lsp` shows it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LspServerInfo {
+    pub name: String,
+    /// Absolute.
+    pub root: PathBuf,
+    /// `starting`, `indexing`, `ready`, `stopped`, `failed`.
+    pub state: String,
+    /// While indexing, the last percentage the server gave.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub percent: Option<u32>,
+    /// Why it failed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    /// The sessions that used it, by name.
+    pub sessions: Vec<String>,
+    /// The last lines of its standard error, oldest first.
+    pub stderr: Vec<String>,
+}
+
+impl LspServerInfo {
+    /// `ready`, `indexing 42 %`, `failed: no Cargo.toml`.
+    pub fn state_text(&self) -> String {
+        match (self.state.as_str(), self.percent, &self.reason) {
+            ("indexing", Some(p), _) => format!("indexing {p} %"),
+            ("failed", _, Some(reason)) => format!("failed: {reason}"),
+            (state, ..) => state.to_owned(),
         }
     }
 }

@@ -13,7 +13,6 @@ use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use serde::Deserialize;
@@ -74,19 +73,18 @@ impl fmt::Debug for LspEnv {
     }
 }
 
-static USERS: AtomicU64 = AtomicU64::new(0);
-
 impl LspEnv {
-    /// The servers of `config` with the programs on `path`. `start_allowed`
-    /// also when the run allows all questions (`--yes`).
+    /// The servers of `config` with the programs on `path`, for `user` (the
+    /// session's id). `start_allowed` also when the run allows all
+    /// questions (`--yes`).
     pub fn new(
         pool: Pool,
         config: &Lsp,
         path: Option<&OsStr>,
+        user: String,
         can_ask: bool,
         start_allowed: bool,
     ) -> LspEnv {
-        let user = format!("u{}", USERS.fetch_add(1, Ordering::Relaxed) + 1);
         LspEnv {
             pool,
             servers: servers(config, path),
@@ -1281,12 +1279,4 @@ pub fn started(lsp: &LspEnv) -> Vec<Key> {
     let mut keys: Vec<Key> = lock(&lsp.started).iter().cloned().collect();
     keys.sort();
     keys
-}
-
-/// For tests: an `LspEnv` with these servers.
-#[cfg(test)]
-pub fn for_test(pool: Pool, config: &Lsp, defs: Vec<ServerDef>, can_ask: bool) -> LspEnv {
-    let mut env = LspEnv::new(pool, config, None, can_ask, false);
-    env.servers = defs;
-    env
 }

@@ -5627,3 +5627,159 @@ fn a_long_diff_lays_out_within_its_budget() {
     let elapsed = start.elapsed();
     assert!(elapsed < Duration::from_secs(20), "{elapsed:?}");
 }
+
+// ------------------------------------------------------- lsp (RFC 0019)
+
+fn lsp_server(name: &str, root: &str, state: &str) -> crate::protocol::LspServerInfo {
+    crate::protocol::LspServerInfo {
+        name: name.to_owned(),
+        root: std::path::PathBuf::from(root),
+        state: state.to_owned(),
+        percent: None,
+        reason: None,
+        sessions: vec!["project".to_owned()],
+        stderr: Vec::new(),
+    }
+}
+
+fn lsp_answer(request: Request, servers: Vec<crate::protocol::LspServerInfo>) -> Input {
+    Input::Response {
+        request,
+        result: Ok(Payload::Lsp { servers }),
+    }
+}
+
+#[test]
+fn lsp_box_lists_restarts_and_stops_servers() {
+    let mut app = app();
+    let effects = command(&mut app, "/lsp");
+    assert_eq!(requests(&effects), [Request::LspStatus]);
+    assert!(screen(&mut app, 100, 24).contains("asking the server"));
+
+    let mut failed = lsp_server("gopls", "/elsewhere/go", "failed");
+    failed.reason = Some("no go.mod".into());
+    failed.stderr = vec!["starting".into(), "error: no go.mod".into()];
+    let mut indexing = lsp_server("rust-analyzer", "/ws/project", "indexing");
+    indexing.percent = Some(42);
+    app.update(lsp_answer(Request::LspStatus, vec![indexing, failed]));
+    let text = screen(&mut app, 100, 24);
+    assert!(
+        text.contains("rust-analyzer  .              indexing 42 %"),
+        "{text}"
+    );
+    assert!(text.contains("failed: no go.mod"), "{text}");
+    assert!(text.contains("r restart"), "{text}");
+
+    // Down selects gopls and shows its last lines.
+    app.update(key(KeyCode::Down));
+    let text = screen(&mut app, 100, 24);
+    assert!(text.contains("Last lines of gopls:"), "{text}");
+    assert!(text.contains("error: no go.mod"), "{text}");
+    let effects = app.update(ch('r'));
+    assert_eq!(
+        requests(&effects),
+        [Request::LspRestart {
+            name: "gopls".into(),
+            root: "/elsewhere/go".into()
+        }]
+    );
+    // A failed restart shows its error and keeps the list.
+    app.update(Input::Response {
+        request: Request::LspRestart {
+            name: "gopls".into(),
+            root: "/elsewhere/go".into(),
+        },
+        result: Err("gopls: no go.mod".into()),
+    });
+    assert!(screen(&mut app, 100, 24).contains("gopls: no go.mod"));
+    let effects = app.update(ch('k'));
+    assert_eq!(
+        requests(&effects),
+        [Request::LspStop {
+            name: "gopls".into(),
+            root: "/elsewhere/go".into()
+        }]
+    );
+    app.update(key(KeyCode::Esc));
+    assert!(app.lsp_box.is_none());
+}
+
+#[test]
+fn lsp_box_without_servers_and_a_failed_first_answer() {
+    let mut app = app();
+    command(&mut app, "/lsp");
+    app.update(lsp_answer(Request::LspStatus, Vec::new()));
+    assert!(screen(&mut app, 100, 24).contains("No language server has run"));
+    // r and k do nothing without a server.
+    assert!(requests(&app.update(ch('r'))).is_empty());
+    app.update(key(KeyCode::Esc));
+
+    command(&mut app, "/lsp");
+    app.update(Input::Response {
+        request: Request::LspStatus,
+        result: Err("unknown command".into()),
+    });
+    assert!(app.lsp_box.is_none());
+}
+
+fn lsp_start_question() -> Question {
+    let mut question = permission();
+    question.summary = "start language server rust-analyzer in ~/project".to_owned();
+    question.choices = crate::agent::LSP_START_CHOICES.to_vec();
+    if let QuestionKind::Permission(p) = &mut question.kind {
+        p.call.tool = Tool::Lsp;
+        p.details = Details::LspStart {
+            server: "rust-analyzer".into(),
+            command: vec!["rust-analyzer".into()],
+            root: "~/project".into(),
+            env: Vec::new(),
+        };
+        p.proposals = Vec::new();
+    }
+    question
+}
+
+#[test]
+fn the_start_question_names_the_command_and_has_no_always() {
+    let mut app = app();
+    app.update(live(SessionEvent::ToolCall(call(
+        "c1",
+        "lsp",
+        CallState::Waiting,
+    ))));
+    app.update(live(SessionEvent::Question(Box::new(lsp_start_question()))));
+    let text = screen(&mut app, 100, 24);
+    assert!(
+        text.contains("Start language server rust-analyzer in ~/project?"),
+        "{text}"
+    );
+    assert!(text.contains("command: rust-analyzer"), "{text}");
+    assert!(
+        text.contains("It may run build scripts and macros"),
+        "{text}"
+    );
+    assert!(
+        text.contains("[y] yes  [n] no  [e] explain  [Esc] cancel"),
+        "{text}"
+    );
+    assert!(!text.contains("[a]"), "{text}");
+    insta::assert_snapshot!(screen(&mut app, 80, 16));
+}
+
+#[test]
+fn an_lsp_call_line_shows_its_count() {
+    let mut app = app();
+    let mut event = call("c1", "lsp", CallState::Running);
+    event.summary = Some("references parse src/parse.rs:3".into());
+    app.update(live(SessionEvent::ToolCall(event.clone())));
+    app.update(live(SessionEvent::ToolCall(done(
+        event,
+        "3 references to parse:\nsrc/a.rs:1:1: a\nsrc/b.rs:2:2: b\nsrc/c.rs:3:3: c",
+    ))));
+    let text = screen(&mut app, 80, 24);
+    assert!(
+        text.contains("lsp references parse src/parse.rs:3"),
+        "{text}"
+    );
+    assert!(text.contains("3 references"), "{text}");
+}

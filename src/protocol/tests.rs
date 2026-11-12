@@ -408,3 +408,43 @@ fn session_info_of_an_older_server() {
     let back = round_trip(&info);
     assert_eq!((back.updated, back.turns), (200, 3));
 }
+
+#[test]
+fn lsp_requests_and_answers() {
+    let restart = Request::LspRestart {
+        name: "rust-analyzer".into(),
+        root: "/ws/clai".into(),
+    };
+    assert_eq!(
+        serde_json::to_value(&restart).unwrap(),
+        json!({"command": "lsp_restart", "name": "rust-analyzer", "root": "/ws/clai"})
+    );
+    assert_eq!(round_trip(&restart), restart);
+    assert_eq!(
+        serde_json::to_value(Request::LspStatus).unwrap(),
+        json!({"command": "lsp_status"})
+    );
+    let info = LspServerInfo {
+        name: "gopls".into(),
+        root: "/ws/go".into(),
+        state: "failed".into(),
+        percent: None,
+        reason: Some("no go.mod".into()),
+        sessions: vec!["go".into()],
+        stderr: vec!["error".into()],
+    };
+    assert_eq!(info.state_text(), "failed: no go.mod");
+    let payload = Payload::Lsp {
+        servers: vec![info.clone()],
+    };
+    assert_eq!(round_trip(&payload), payload);
+    let indexing = LspServerInfo {
+        state: "indexing".into(),
+        percent: Some(42),
+        reason: None,
+        ..info
+    };
+    assert_eq!(indexing.state_text(), "indexing 42 %");
+    let wire = serde_json::to_value(&indexing).unwrap();
+    assert!(wire.get("reason").is_none(), "{wire}");
+}

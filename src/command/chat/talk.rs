@@ -41,6 +41,9 @@ commands:
   /new [NAME] [MODEL]  start a session in this workspace and attach;
                    MODEL is PROVIDER/MODEL, default: default_model
   /models          list the configured models
+  /lsp             list the language servers
+  /lsp restart NAME, /lsp stop NAME
+                   restart or stop a language server
   /detach          leave; the session keeps running (also Ctrl-D)
   /kill            end the session and leave
   /help            this list
@@ -355,6 +358,7 @@ impl Talk {
                 }
                 None => Err(Error::Usage("usage: /stats [7d|30d|all]".into())),
             },
+            "lsp" => return Some(self.lsp(argument).await),
             "attach" if argument.is_empty() => Err(Error::Usage(
                 "usage: /attach NAME; /sessions lists them".into(),
             )),
@@ -598,6 +602,46 @@ impl Talk {
         Ok(Flow::Go)
     }
 
+    /// `/lsp`, `/lsp restart NAME`, `/lsp stop NAME`.
+    async fn lsp(&mut self, argument: &str) -> Result<()> {
+        let usage = || Error::Usage("usage: /lsp [restart NAME | stop NAME]".into());
+        let workspace = self.session.path.clone();
+        let request = match argument.split_once(char::is_whitespace) {
+            None if argument.is_empty() => Request::LspStatus,
+            Some((action @ ("restart" | "stop"), name)) => {
+                let name = name.trim();
+                let servers = match self.client.request(Request::LspStatus).await? {
+                    Payload::Lsp { servers } => servers,
+                    other => return Err(unexpected(&other)),
+                };
+                // The one for this workspace first.
+                let Some(server) = servers
+                    .iter()
+                    .filter(|s| s.name == name)
+                    .min_by_key(|s| !s.root.starts_with(&workspace))
+                else {
+                    return Err(Error::Usage(format!(
+                        "no language server {name}; /lsp lists them"
+                    )));
+                };
+                let (name, root) = (server.name.clone(), server.root.clone());
+                if action == "restart" {
+                    Request::LspRestart { name, root }
+                } else {
+                    Request::LspStop { name, root }
+                }
+            }
+            _ => return Err(usage()),
+        };
+        match self.client.request(request).await? {
+            Payload::Lsp { servers } => {
+                self.out(&lsp_text(&servers, &workspace, self.unicode));
+                Ok(())
+            }
+            other => Err(unexpected(&other)),
+        }
+    }
+
     async fn command(&mut self, command: &str) -> Result<Flow> {
         let (name, argument) = command
             .split_once(char::is_whitespace)
@@ -735,9 +779,88 @@ impl Talk {
     }
 }
 
+/// The language servers, one line each, with the last error line of a
+/// failed one.
+pub fn lsp_text(
+    servers: &[crate::protocol::LspServerInfo],
+    workspace: &std::path::Path,
+    unicode: bool,
+) -> String {
+    if servers.is_empty() {
+        return "no language server has run; one starts when the model uses lsp\n".to_owned();
+    }
+    let dash = if unicode { "—" } else { "-" };
+    let roots: Vec<String> = servers
+        .iter()
+        .map(|s| match s.root.strip_prefix(workspace) {
+            Ok(rest) if rest.as_os_str().is_empty() => ".".to_owned(),
+            Ok(rest) => rest.display().to_string(),
+            Err(_) => s.root.display().to_string(),
+        })
+        .collect();
+    let name_width = servers
+        .iter()
+        .map(|s| s.name.chars().count())
+        .max()
+        .unwrap_or(0);
+    let root_width = roots.iter().map(|r| r.chars().count()).max().unwrap_or(0);
+    let mut out = String::new();
+    for (server, root) in servers.iter().zip(&roots) {
+        let mut line = format!(
+            "{:<name_width$}  {root:<root_width$}  {}",
+            server.name,
+            server.state_text()
+        );
+        if !server.sessions.is_empty() {
+            line.push_str(&format!(" {dash} {}", server.sessions.join(", ")));
+        }
+        out.push_str(line.trim_end());
+        out.push('\n');
+        if server.state == "failed"
+            && let Some(last) = server.stderr.last()
+        {
+            out.push_str(&format!("  {last}\n"));
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lsp_lists_servers_with_state_and_sessions() {
+        use crate::protocol::LspServerInfo;
+        let ws = std::path::Path::new("/ws/clai");
+        assert_eq!(
+            lsp_text(&[], ws, true),
+            "no language server has run; one starts when the model uses lsp\n"
+        );
+        let ready = LspServerInfo {
+            name: "rust-analyzer".into(),
+            root: "/ws/clai".into(),
+            state: "ready".into(),
+            percent: None,
+            reason: None,
+            sessions: vec!["clai".into(), "fix".into()],
+            stderr: vec!["ignored".into()],
+        };
+        let failed = LspServerInfo {
+            name: "gopls".into(),
+            root: "/ws/go".into(),
+            state: "failed".into(),
+            reason: Some("exited".into()),
+            sessions: Vec::new(),
+            stderr: vec!["a".into(), "error: no go.mod".into()],
+            ..ready.clone()
+        };
+        assert_eq!(
+            lsp_text(&[ready, failed], ws, false),
+            "rust-analyzer  .       ready - clai, fix\n\
+             gopls          /ws/go  failed: exited\n  error: no go.mod\n"
+        );
+    }
 
     #[test]
     fn new_takes_a_name_and_a_model_in_any_order() {

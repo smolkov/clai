@@ -644,3 +644,37 @@ fn ask_user_tool_line_shows_the_answers() {
         crate::tools::ask_user::DECLINED
     );
 }
+
+#[test]
+fn lsp_tool_line_counts_the_result() {
+    let short = |text: &str| short_result("lsp", CallState::Done, text);
+    assert_eq!(
+        short("3 references to parse:\nsrc/a.rs:1:1: x\n(1 location skipped by permission rules)"),
+        "3 references"
+    );
+    assert_eq!(
+        short("1 definition of parse:\nsrc/a.rs:1:1: x"),
+        "1 definition"
+    );
+    assert_eq!(short("2 callers of parse:\na\nb"), "2 callers");
+    assert_eq!(short("(none found)"), "none found");
+    assert_eq!(short("(no errors or warnings)"), "no errors");
+    assert_eq!(
+        short("a.rs:2:5: error[E0425]: x\na.rs:3:1: error: y\na.rs:1:1: warning: z"),
+        "2 errors, 1 warning"
+    );
+    assert_eq!(
+        short("struct Parser   12-40\n  method new    18-22\nfunction parse  43"),
+        "3 symbols"
+    );
+    assert_eq!(short("struct Parser  src/main.rs:1:4"), "1 symbol");
+    assert_eq!(
+        short("```rust\nfn parse(&str) -> Vec<Line>\n```"),
+        "fn parse(&str) -> Vec<Line>"
+    );
+    // A failed call shows its error.
+    assert_eq!(
+        short_result("lsp", CallState::Error, "fake-rs: no answer"),
+        "fake-rs: no answer"
+    );
+}

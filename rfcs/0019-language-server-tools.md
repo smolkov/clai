@@ -2,7 +2,7 @@
 
 - RFC: 0019
 - Status: accepted
-- Progress: step 4 of 6 done (transport and one server; configuration and pool; the tool; diagnostics after edits)
+- Progress: step 5 of 6 done (transport and one server; configuration and pool; the tool; diagnostics after edits; clients)
 - Milestone: none; it adds a tool, a configuration table and a question
 - Spec: [`spec/tools.md`](../spec/tools.md);
   [`spec/config.md`](../spec/config.md), "Permissions", "Project files";
@@ -593,11 +593,27 @@ No new `tokio` features: `process` and `io-util` are on.
        errors says `(and 2 warnings or notes; lsp diagnostics lists them)`.
 
 5. **Clients**
-   - Status: todo
+   - Status: done
    - Files: `src/tui/`, `src/command/chat/`, `src/text/`, snapshots
    - Result: tool lines, the start prompt, `/lsp` with restart and
      stop.
    - Tests: TUI snapshots and keys; chat text.
+   - Built: requests `lsp_status`, `lsp_restart`, `lsp_stop` with
+     `Payload::Lsp` (`LspServerInfo`); the `/lsp` box (`src/tui/lsp.rs`,
+     `src/tui/view/lsp.rs`; `r`, `k`, `Up`/`Down`, `Enter` asks again,
+     `Esc`); `/lsp`, `/lsp restart NAME`, `/lsp stop NAME` in `clai chat`;
+     the start question in the prompt bar (command and warning, no
+     `[a]`); short results on the tool line (`3 references`,
+     `1 error, 2 warnings`, `12 symbols`). Choices made while building it:
+     - The pool's users are session ids; `/lsp` shows their names, and a
+       deleted session is forgotten. `new` now takes the session id
+       before building the agent.
+     - A start question does not replace the call's own details in the
+       TUI.
+     - Roots are shown relative to the session's workspace, else
+       absolute.
+     - Not tested end to end: the session names in `/lsp` need a real
+       server process (step 6's live test).
 
 6. **Spec, readme and a live test**
    - Status: todo

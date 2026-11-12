@@ -23,6 +23,7 @@ use super::conversation::{Conversation, Expansion, Kind};
 use super::details::Details;
 use super::editor::{Browse, Edit, Editor};
 use super::keys::{self, Action, Focus};
+use super::lsp::LspBox;
 use super::picker::{Picker, Purpose};
 use super::prompt::Prompt;
 use super::selection::Selection;
@@ -304,6 +305,8 @@ pub struct App {
     pub theme_list: Option<ThemeList>,
     /// The status box of `/status`.
     pub status_box: Option<StatusBox>,
+    /// The box of `/lsp`.
+    pub lsp_box: Option<LspBox>,
     /// A theme taken in this run: it wins over `CLAI_THEME` on a reload.
     chosen_theme: Option<String>,
     /// What the save on its way is for.
@@ -395,6 +398,7 @@ impl App {
             stopping: false,
             settings_box: None,
             status_box: None,
+            lsp_box: None,
             theme_list: None,
             chosen_theme: None,
             saving: None,
@@ -443,6 +447,7 @@ impl App {
         let asked_now = self.prompt.as_ref().map(|p| p.id());
         if asked_now.is_some() && asked_now != asked_before.as_deref() {
             self.status_box = None;
+            self.lsp_box = None;
             self.details = None;
             self.clear_selection();
             let mut restored = self.close_theme_boxes();
@@ -478,6 +483,7 @@ impl App {
             || self.settings_box.is_some()
             || self.theme_list.is_some()
             || self.status_box.is_some()
+            || self.lsp_box.is_some()
             || self.prompt.is_some()
             || self.dialog.is_some()
             || self.ended.is_some();
@@ -928,6 +934,7 @@ impl App {
         self.list_wanted = false;
         self.command_list = None;
         self.status_box = None;
+        self.lsp_box = None;
         self.details = None;
         self.selection = None;
         self.ended = None;
@@ -1095,8 +1102,12 @@ impl App {
     fn open_question(&mut self, question: &crate::agent::Question) {
         match &question.kind {
             QuestionKind::Permission(p) => {
-                self.conversation
-                    .set_details(&p.call.id, p.call.tool.name(), &p.details);
+                // The start of a language server is not the call's own
+                // details; the call keeps those.
+                if !matches!(p.details, crate::tools::Details::LspStart { .. }) {
+                    self.conversation
+                        .set_details(&p.call.id, p.call.tool.name(), &p.details);
+                }
                 if !question.choices.is_empty() {
                     self.reveal = self.conversation.entry_of_call(&p.call.id);
                 }
@@ -1152,6 +1163,23 @@ impl App {
             }
             (Request::New { .. }, Ok(Payload::Session { session })) => {
                 return self.created(&session);
+            }
+            (Request::LspStatus | Request::LspRestart { .. } | Request::LspStop { .. }, result) => {
+                let Some(open) = &mut self.lsp_box else {
+                    return Vec::new();
+                };
+                match result {
+                    Ok(Payload::Lsp { servers }) => open.set(servers),
+                    // A first answer that fails closes the box.
+                    Err(message) if open.servers.is_none() => {
+                        self.lsp_box = None;
+                        if !lost {
+                            self.conversation.error(message);
+                        }
+                    }
+                    Err(message) => open.error = Some(message),
+                    Ok(_) => {}
+                }
             }
             (Request::SessionStatus { session }, result) => {
                 if let Ok(Payload::SessionStatus { status }) = &result
@@ -1414,6 +1442,39 @@ impl App {
     fn open_stats(&mut self, range: Range) -> Vec<Effect> {
         self.status_box = Some(StatusBox::global(self.session.name.clone(), range));
         self.status_asks()
+    }
+
+    /// A key while the box of `/lsp` is open.
+    fn lsp_box_key(&mut self, key: KeyEvent) -> Vec<Effect> {
+        let mut effects = vec![Effect::Redraw];
+        let Some(open) = &mut self.lsp_box else {
+            return effects;
+        };
+        let target = open.selected().map(|s| (s.name.clone(), s.root.clone()));
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') => self.lsp_box = None,
+            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.lsp_box = None;
+            }
+            KeyCode::Up => open.step(-1),
+            KeyCode::Down => open.step(1),
+            KeyCode::Char('r') => {
+                if let Some((name, root)) = target {
+                    open.error = None;
+                    effects.push(Effect::Request(Request::LspRestart { name, root }));
+                }
+            }
+            KeyCode::Char('k') => {
+                if let Some((name, root)) = target {
+                    open.error = None;
+                    effects.push(Effect::Request(Request::LspStop { name, root }));
+                }
+            }
+            // Asks again.
+            KeyCode::Enter | KeyCode::F(5) => effects.push(Effect::Request(Request::LspStatus)),
+            _ => {}
+        }
+        effects
     }
 
     /// A key while the status box is open: it switches tabs and ranges,
@@ -1707,6 +1768,9 @@ impl App {
         }
         if self.status_box.is_some() {
             return self.status_box_key(key);
+        }
+        if self.lsp_box.is_some() {
+            return self.lsp_box_key(key);
         }
         if self.theme_list.is_some() {
             return self.theme_list_key(key);
@@ -2181,6 +2245,7 @@ impl App {
             || self.settings_box.is_some()
             || self.theme_list.is_some()
             || self.status_box.is_some()
+            || self.lsp_box.is_some()
             || self.dialog.is_some()
             || self.prompt.as_ref().is_some_and(Prompt::is_ask);
         match mouse.kind {
@@ -2325,6 +2390,10 @@ impl App {
                     return Vec::new();
                 }
             },
+            ("lsp", _) => {
+                self.lsp_box = Some(LspBox::default());
+                vec![Effect::Request(Request::LspStatus)]
+            }
             ("status", "") => self.open_status(session),
             ("status", name) => {
                 if !self.sessions.iter().any(|s| s.name == name) && name != session {
