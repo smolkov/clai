@@ -16,6 +16,8 @@ pub mod server;
 pub mod transport;
 
 #[cfg(test)]
+pub(crate) mod fake;
+#[cfg(test)]
 mod tests;
 
 /// Errors of talking to a language server. They never end a session; the

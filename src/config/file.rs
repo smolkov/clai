@@ -74,6 +74,7 @@ pub struct PermissionsFile {
     pub edit_file: Option<Spanned<Action>>,
     pub write_file: Option<Spanned<Action>>,
     pub run_command: Option<Spanned<Action>>,
+    pub lsp: Option<Spanned<Action>>,
     /// `allow` or `deny`: whether the model may ask the user questions.
     pub ask_user: Option<Spanned<Action>>,
     pub allow: Option<Spanned<RuleTable>>,

@@ -1015,6 +1015,20 @@ impl Render<'_> {
                     styles.dim,
                 )]);
             }
+            Some(Details::Lsp { server, root, .. }) => {
+                out.push(vec![(format!("{server} in {root}"), styles.dim)]);
+            }
+            Some(Details::LspStart {
+                server,
+                command,
+                root,
+                ..
+            }) => {
+                out.push(vec![(
+                    format!("start {server} in {root}: {}", command.join(" ")),
+                    styles.dim,
+                )]);
+            }
             None => match call.name.as_str() {
                 "edit_file" => {
                     // The old and new text as one hunk.

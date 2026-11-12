@@ -169,7 +169,7 @@ impl Server {
     /// Initializes a server that talks over the given streams, without a
     /// process: a server in the same process, for tests.
     #[cfg(test)]
-    pub(super) async fn over<R, W>(setup: &Setup, reader: R, writer: W) -> Result<Server>
+    pub(crate) async fn over<R, W>(setup: &Setup, reader: R, writer: W) -> Result<Server>
     where
         R: AsyncRead + Unpin + Send + 'static,
         W: AsyncWrite + Unpin + Send + 'static,

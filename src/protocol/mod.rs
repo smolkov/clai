@@ -21,7 +21,7 @@ use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWrite, AsyncWr
 use crate::agent::{Answer, Question, SessionEvent, State};
 
 /// The protocol version; a new message or event kind needs a new one.
-pub const VERSION: u32 = 7;
+pub const VERSION: u32 = 8;
 
 /// The longest message accepted, in bytes.
 pub const MAX_LINE: usize = 16 << 20;

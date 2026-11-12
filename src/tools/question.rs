@@ -98,4 +98,23 @@ pub enum Details {
         parts: Vec<PartDecision>,
         redirects: Vec<RedirectDecision>,
     },
+    /// A question to a language server; `path` is missing for
+    /// `workspace_symbols` without one.
+    Lsp {
+        path: Option<PathDetails>,
+        operation: String,
+        server: String,
+        /// The project root, with `~`.
+        root: String,
+    },
+    /// Starting a language server (RFC 0019): it may run code of the
+    /// project.
+    LspStart {
+        server: String,
+        command: Vec<String>,
+        /// The project root, with `~`; the process's working directory.
+        root: String,
+        /// Extra environment variables.
+        env: Vec<(String, String)>,
+    },
 }

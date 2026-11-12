@@ -3,14 +3,15 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 
 use serde_json::{Value, json};
-use tokio::io::{AsyncWriteExt, BufReader, DuplexStream, ReadHalf, WriteHalf, duplex, split};
+use tokio::io::{AsyncWriteExt, BufReader, duplex, split};
 
 use super::Error;
 use super::docs::*;
+use super::fake::*;
 use super::server::{Server, Setup, State};
 use super::transport::*;
 
@@ -378,104 +379,6 @@ fn changes_and_saves_raise_the_version() {
 }
 
 // -------------------------------------------------------------- the server
-
-type Answer = Option<Result<Value, (i64, String)>>;
-type Handler = Arc<dyn Fn(&str, &Value) -> Answer + Send + Sync>;
-
-/// A language server in the same process. It answers with `handler`
-/// (`None`: no answer) and logs every message it gets.
-struct Fake {
-    conn: Connection,
-    log: Arc<Mutex<Vec<(String, Value)>>>,
-    task: tokio::task::AbortHandle,
-}
-
-/// Dropping the fake closes its end of the stream.
-impl Drop for Fake {
-    fn drop(&mut self) {
-        self.task.abort();
-    }
-}
-
-impl Fake {
-    fn start(handler: Handler) -> (Fake, ReadHalf<DuplexStream>, WriteHalf<DuplexStream>) {
-        let (client, server) = duplex(1 << 20);
-        let (cr, cw) = split(client);
-        let (sr, sw) = split(server);
-        let (conn, mut incoming) = Connection::new(sr, sw);
-        let log = Arc::new(Mutex::new(Vec::new()));
-        let task = tokio::spawn({
-            let conn = conn.clone();
-            let log = Arc::clone(&log);
-            async move {
-                while let Some(message) = incoming.recv().await {
-                    match message {
-                        Incoming::Notification { method, params } => {
-                            log.lock().unwrap().push((method, params));
-                        }
-                        Incoming::Request { id, method, params } => {
-                            log.lock().unwrap().push((method.clone(), params.clone()));
-                            if let Some(answer) = handler(&method, &params) {
-                                let _ = conn.respond(id, answer);
-                            }
-                        }
-                    }
-                }
-            }
-        })
-        .abort_handle();
-        (Fake { conn, log, task }, cr, cw)
-    }
-
-    fn methods(&self) -> Vec<String> {
-        self.log
-            .lock()
-            .unwrap()
-            .iter()
-            .map(|(m, _)| m.clone())
-            .collect()
-    }
-
-    /// The params of the last message with `method`, waiting for it.
-    async fn wait_for(&self, method: &str) -> Value {
-        let until = Instant::now() + Duration::from_secs(2);
-        loop {
-            let found = self
-                .log
-                .lock()
-                .unwrap()
-                .iter()
-                .rev()
-                .find(|(m, _)| m == method)
-                .map(|(_, p)| p.clone());
-            if let Some(params) = found {
-                return params;
-            }
-            assert!(Instant::now() < until, "no {method}: {:?}", self.methods());
-            tokio::time::sleep(Duration::from_millis(5)).await;
-        }
-    }
-}
-
-fn capabilities() -> Value {
-    json!({
-        "positionEncoding": "utf-8",
-        "textDocumentSync": {"openClose": true, "change": 1, "save": {"includeText": false}},
-        "definitionProvider": true,
-        "referencesProvider": true,
-    })
-}
-
-/// Answers `initialize`, `shutdown`, and `test/echo` with its params;
-/// anything else gets no answer.
-fn standard() -> Handler {
-    Arc::new(|method, params| match method {
-        "initialize" => Some(Ok(json!({"capabilities": capabilities()}))),
-        "shutdown" => Some(Ok(Value::Null)),
-        "test/echo" => Some(Ok(params.clone())),
-        _ => None,
-    })
-}
 
 fn setup(root: &Path) -> Setup {
     Setup {
@@ -944,48 +847,23 @@ mod pool {
     use crate::config::Lsp;
     use crate::lsp::pool::*;
 
-    /// Starts fakes; keeps them so a test can drop one (a crash).
-    #[derive(Clone, Default)]
-    struct Fakes {
-        fakes: Arc<Mutex<Vec<Option<Fake>>>>,
-        /// Starts fail while set.
-        failing: Arc<Mutex<bool>>,
+    fn new_fakes() -> Fakes {
+        Fakes::new(standard())
     }
 
-    impl Fakes {
-        fn pool(&self, idle: Duration) -> Pool {
-            let fakes = self.clone();
-            let starter: Starter = Arc::new(move |setup: Setup| {
-                let fakes = fakes.clone();
-                Box::pin(async move {
-                    let handler = if *fakes.failing.lock().unwrap() {
-                        Arc::new(|method: &str, _: &Value| match method {
-                            "initialize" => Some(Err((-32603_i64, "broken".to_owned()))),
-                            _ => None,
-                        }) as Handler
-                    } else {
-                        standard()
-                    };
-                    let (fake, reader, writer) = Fake::start(handler);
-                    fakes.fakes.lock().unwrap().push(Some(fake));
-                    Server::over(&setup, reader, writer).await
-                })
-            });
-            Pool::with_starter(starter, idle)
-        }
+    fn pool_of(fakes: &Fakes, idle: Duration) -> Pool {
+        Pool::with_starter(fakes.starter(), idle)
+    }
 
-        fn starts(&self) -> usize {
-            self.fakes.lock().unwrap().len()
-        }
-
-        fn crash_last(&self) {
-            if let Some(slot) = self.fakes.lock().unwrap().last_mut() {
-                slot.take();
-            }
-        }
-
-        fn fail(&self, on: bool) {
-            *self.failing.lock().unwrap() = on;
+    /// Later starts fail (`on`) or work.
+    fn fail(fakes: &Fakes, on: bool) {
+        if on {
+            fakes.set_handler(Arc::new(|method: &str, _: &Value| match method {
+                "initialize" => Some(Err((-32603_i64, "broken".to_owned()))),
+                _ => None,
+            }));
+        } else {
+            fakes.set_handler(standard());
         }
     }
 
@@ -1007,8 +885,8 @@ mod pool {
     #[tokio::test]
     async fn sessions_with_the_same_root_share_a_server() {
         let tmp = tempfile::tempdir().unwrap();
-        let fakes = Fakes::default();
-        let pool = fakes.pool(IDLE);
+        let fakes = new_fakes();
+        let pool = pool_of(&fakes, IDLE);
         let setup = setup(tmp.path());
         let (a, b) = tokio::join!(pool.get(&setup, "one"), pool.get(&setup, "two"));
         let (a, b) = (a.unwrap(), b.unwrap());
@@ -1038,8 +916,8 @@ mod pool {
     #[tokio::test]
     async fn a_crash_restarts_once_then_it_stays_failed() {
         let tmp = tempfile::tempdir().unwrap();
-        let fakes = Fakes::default();
-        let pool = fakes.pool(IDLE);
+        let fakes = new_fakes();
+        let pool = pool_of(&fakes, IDLE);
         let setup = setup(tmp.path());
         let first = pool.get(&setup, "s").await.unwrap();
         fakes.crash_last();
@@ -1075,16 +953,16 @@ mod pool {
     #[tokio::test]
     async fn two_failed_starts_leave_it_failed() {
         let tmp = tempfile::tempdir().unwrap();
-        let fakes = Fakes::default();
-        fakes.fail(true);
-        let pool = fakes.pool(IDLE);
+        let fakes = new_fakes();
+        fail(&fakes, true);
+        let pool = pool_of(&fakes, IDLE);
         let setup = setup(tmp.path());
         assert!(matches!(
             pool.get(&setup, "s").await,
             Err(Error::Server { .. })
         ));
         assert!(pool.get(&setup, "s").await.is_err());
-        fakes.fail(false);
+        fail(&fakes, false);
         assert!(matches!(pool.get(&setup, "s").await, Err(Error::Closed(_))));
         assert_eq!(fakes.starts(), 2);
         // A changed [lsp] forgets the failure.
@@ -1102,8 +980,8 @@ mod pool {
     #[tokio::test]
     async fn idle_servers_are_stopped_and_start_again() {
         let tmp = tempfile::tempdir().unwrap();
-        let fakes = Fakes::default();
-        let pool = fakes.pool(Duration::from_millis(50));
+        let fakes = new_fakes();
+        let pool = pool_of(&fakes, Duration::from_millis(50));
         let setup = setup(tmp.path());
         pool.get(&setup, "s").await.unwrap();
         assert!(pool.reap().await.is_empty(), "just used");
@@ -1126,8 +1004,8 @@ mod pool {
     #[tokio::test]
     async fn the_reaper_stops_idle_servers_by_itself() {
         let tmp = tempfile::tempdir().unwrap();
-        let fakes = Fakes::default();
-        let pool = fakes.pool(Duration::from_millis(30));
+        let fakes = new_fakes();
+        let pool = pool_of(&fakes, Duration::from_millis(30));
         pool.get(&setup(tmp.path()), "s").await.unwrap();
         let reaper = pool.spawn_reaper();
         let until = Instant::now() + Duration::from_secs(2);
@@ -1141,8 +1019,8 @@ mod pool {
     #[tokio::test]
     async fn stop_all_stops_and_forgets_every_server() {
         let tmp = tempfile::tempdir().unwrap();
-        let fakes = Fakes::default();
-        let pool = fakes.pool(IDLE);
+        let fakes = new_fakes();
+        let pool = pool_of(&fakes, IDLE);
         pool.get(&setup(tmp.path()), "s").await.unwrap();
         pool.get(&named(tmp.path(), "two"), "s").await.unwrap();
         pool.stop("two", tmp.path()).await;

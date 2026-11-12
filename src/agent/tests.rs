@@ -129,6 +129,19 @@ impl Fixture {
     }
 
     fn with_limits(steps: Vec<Step>, limits: Limits) -> Fixture {
+        Fixture::build(steps, limits, None)
+    }
+
+    /// With language servers (RFC 0019).
+    fn with_lsp(steps: Vec<Step>, lsp: crate::tools::lsp::LspEnv) -> Fixture {
+        Fixture::build(steps, Limits::default(), Some(Arc::new(lsp)))
+    }
+
+    fn build(
+        steps: Vec<Step>,
+        limits: Limits,
+        lsp: Option<Arc<crate::tools::lsp::LspEnv>>,
+    ) -> Fixture {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path().join("ws");
         fs::create_dir_all(&root).unwrap();
@@ -155,6 +168,7 @@ impl Fixture {
                 permissions: Arc::new(parse_for_test(CONFIG, None)),
                 session: Arc::new(SessionRules::default()),
                 workspace: Arc::new(workspace),
+                lsp,
             },
             system,
             can_ask: true,
@@ -1247,4 +1261,177 @@ async fn ask_user_is_left_out_when_no_one_can_answer() {
         Arc::new(parse_for_test("[permissions]\nask_user = \"deny\"\n", None));
     f.turn("go", &no_questions()).await;
     assert_eq!(f.requests()[0].tools.len(), 6);
+}
+
+// ---------------------------------------------------------- lsp (RFC 0019)
+
+mod lsp {
+    use super::*;
+    use crate::config::Lsp;
+    use crate::lsp::config::ServerDef;
+    use crate::lsp::fake::{Fakes, Handler};
+    use crate::lsp::pool::{IDLE, Pool};
+    use crate::tools::Details;
+    use crate::tools::lsp::LspEnv;
+
+    fn handler() -> Handler {
+        Arc::new(|method: &str, _: &Value| match method {
+            "initialize" => Some(Ok(json!({"capabilities": {
+                "textDocumentSync": 1,
+                "diagnosticProvider": {"interFileDependencies": false, "workspaceDiagnostics": false}
+            }}))),
+            "shutdown" => Some(Ok(Value::Null)),
+            "textDocument/diagnostic" => Some(Ok(json!({"kind": "full", "items": []}))),
+            _ => None,
+        })
+    }
+
+    fn lsp_env(fakes: &Fakes, start: Action, can_ask: bool) -> LspEnv {
+        let config = Lsp {
+            start,
+            ..Lsp::default()
+        };
+        let mut env = LspEnv::new(
+            Pool::with_starter(fakes.starter(), IDLE),
+            &config,
+            None,
+            can_ask,
+            false,
+        );
+        env.servers = vec![ServerDef {
+            name: "fake-rs".into(),
+            command: vec!["fake-rs".into(), "--stdio".into()],
+            extensions: vec!["rs".into()],
+            roots: Vec::new(),
+            settings: Value::Null,
+            env: Vec::new(),
+            builtin: false,
+        }];
+        env
+    }
+
+    fn diagnostics(id: &str) -> Step {
+        calls(&[(
+            id,
+            "lsp",
+            json!({"operation": "diagnostics", "path": "a.rs"}),
+        )])
+    }
+
+    #[tokio::test]
+    async fn the_tool_is_offered_and_the_start_asked_once() {
+        let fakes = Fakes::new(handler());
+        let mut f = Fixture::with_lsp(
+            vec![diagnostics("c1"), say("ok"), diagnostics("c2"), say("ok")],
+            lsp_env(&fakes, Action::Ask, true),
+        );
+        f.write("a.rs", "fn a() {}\n");
+        let asker = TestAsker::answers(vec![Answer::Allow]);
+        let (end, _) = f.turn("check", &asker).await;
+        assert_eq!(end.reason, EndReason::Done);
+        let asked = asker.asked();
+        assert_eq!(asked.len(), 1);
+        let question = &asked[0];
+        assert_eq!(
+            question.summary,
+            format!("start language server fake-rs in {}", f.root.display())
+        );
+        assert_eq!(question.choices, LSP_START_CHOICES);
+        match &question.kind {
+            QuestionKind::Permission(p) => {
+                assert_eq!(p.call.tool, crate::config::Tool::Lsp);
+                assert!(p.proposals.is_empty());
+                match &p.details {
+                    Details::LspStart {
+                        server, command, ..
+                    } => {
+                        assert_eq!(server, "fake-rs");
+                        assert_eq!(command, &["fake-rs", "--stdio"]);
+                    }
+                    other => panic!("{other:?}"),
+                }
+            }
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(
+            last_results(&f),
+            [("(no errors or warnings)".to_owned(), false)]
+        );
+        let request = &f.requests()[0];
+        assert!(request.tools.iter().any(|t| t.name == "lsp"));
+        assert!(
+            request
+                .system
+                .contains("symbol in .rs files, use lsp before search_files")
+        );
+
+        // The next turn uses the server without asking.
+        let (end, _) = f.turn("again", &no_questions()).await;
+        assert_eq!(end.reason, EndReason::Done);
+        assert_eq!(fakes.starts(), 1);
+    }
+
+    #[tokio::test]
+    async fn no_means_not_again_in_this_turn() {
+        let fakes = Fakes::new(handler());
+        let mut f = Fixture::with_lsp(
+            vec![
+                diagnostics("c1"),
+                diagnostics("c2"),
+                say("ok"),
+                diagnostics("c3"),
+                say("ok"),
+            ],
+            lsp_env(&fakes, Action::Ask, true),
+        );
+        f.write("a.rs", "fn a() {}\n");
+        let asker = TestAsker::answers(vec![Answer::Deny]);
+        let (_, events) = f.turn("check", &asker).await;
+        assert_eq!(asker.asked().len(), 1);
+        let denied = "language server not started: denied by the user".to_owned();
+        let messages = f.messages();
+        let firsts: Vec<_> = messages
+            .iter()
+            .filter(|m| m.role == Role::User)
+            .flat_map(results)
+            .collect();
+        assert_eq!(firsts, [(denied.clone(), true), (denied.clone(), true)]);
+        assert!(
+            final_states(&events)
+                .iter()
+                .all(|(_, state)| *state == CallState::Denied)
+        );
+        assert_eq!(fakes.starts(), 0);
+
+        // A new turn asks again.
+        let asker = TestAsker::answers(vec![Answer::DenyMessage {
+            text: "use grep".into(),
+        }]);
+        f.turn("again", &asker).await;
+        assert_eq!(asker.asked().len(), 1);
+        assert_eq!(last_results(&f), [(format!("{denied}: use grep"), true)]);
+    }
+
+    #[tokio::test]
+    async fn without_anyone_to_ask_the_tool_is_left_out() {
+        let fakes = Fakes::new(handler());
+        let mut f = Fixture::with_lsp(vec![say("ok")], lsp_env(&fakes, Action::Ask, false));
+        f.turn("hi", &no_questions()).await;
+        let request = &f.requests()[0];
+        assert!(!request.tools.iter().any(|t| t.name == "lsp"));
+        assert!(!request.system.contains("lsp"));
+
+        // `start = "allow"`: offered, and started without a question.
+        let mut f = Fixture::with_lsp(
+            vec![diagnostics("c1"), say("ok")],
+            lsp_env(&fakes, Action::Allow, false),
+        );
+        f.write("a.rs", "fn a() {}\n");
+        f.turn("check", &no_questions()).await;
+        assert!(f.requests()[0].tools.iter().any(|t| t.name == "lsp"));
+        assert_eq!(
+            last_results(&f),
+            [("(no errors or warnings)".to_owned(), false)]
+        );
+    }
 }

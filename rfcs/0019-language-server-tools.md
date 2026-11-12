@@ -2,7 +2,7 @@
 
 - RFC: 0019
 - Status: accepted
-- Progress: step 2 of 6 done (transport and one server; configuration and pool)
+- Progress: step 3 of 6 done (transport and one server; configuration and pool; the tool)
 - Milestone: none; it adds a tool, a configuration table and a question
 - Spec: [`spec/tools.md`](../spec/tools.md);
   [`spec/config.md`](../spec/config.md), "Permissions", "Project files";
@@ -525,13 +525,50 @@ No new `tokio` features: `process` and `io-util` are on.
        a pool from step 3.
 
 3. **The tool**
-   - Status: todo
+   - Status: done
    - Files: `src/tools/lsp.rs`, `src/tools/mod.rs`,
      `src/config/permissions.rs`, `src/agent/`, `src/server/`,
      `src/command/run.rs`, `src/protocol/`, `src/agent/system_prompt.md`
    - Result: the model can call `lsp` in a session and in `clai run`;
      the start question; filtering; protocol `8`.
    - Tests: tool tests, agent tests, protocol tests.
+   - Built: `src/tools/lsp.rs` (`LspEnv`, `Operation`, `prepare`, the
+     operations and their texts) with `src/tools/lsp_tests.rs`;
+     `Tool::Lsp` in `[permissions]` and the `read` group;
+     `Details::Lsp` and `Details::LspStart`; the start question in
+     `src/agent/mod.rs`; the pool owned by the clai server and by
+     `clai run`; protocol `8`. The fake server moved to
+     `src/lsp/fake.rs`, shared by the tests. Choices made while building
+     it:
+     - **No "always" in the start question.** Its choices are allow,
+       deny, deny with a message and cancel (`LSP_START_CHOICES`). "Yes"
+       already lasts for the session (decision 7), so `y` and `a` would
+       do the same. It is not written to the session log: a resumed
+       session asks again.
+     - "No" answers the later calls of that turn for the same server at
+       once; the next turn asks again.
+     - The tool is offered when `[lsp]` is on, a server is in use,
+       `start` is not `deny`, and someone can answer or `start` is
+       `allow`. In `clai run`, `--yes` counts as `allow`.
+     - The question's reason is `starting a language server ([lsp]
+       start = "ask")`. It comes after the path's own question, if that
+       asks.
+     - `workspace_symbols` without `path` works when one server is in
+       use; with more, it asks for a file of the language. Its path check
+       uses the workspace.
+     - A location in a file whose `read_file` rules ask is skipped too,
+       as one that is denied. Locations are sorted and duplicates
+       dropped.
+     - `diagnostics` pulls (`textDocument/diagnostic`) when the server
+       offers it, else waits up to 3 s for the published ones of the
+       file's version.
+     - The clai server checks `[lsp]` at start and on each reload
+       (`Pool::apply_config`), and stops the servers when it stops;
+       `clai run` stops its servers after the turn.
+     - Clients show the new details only plainly (`clai chat`/`clai run`
+       questions, the TUI's call body); step 5 does the rest.
+     - Left for step 5: `/lsp` names sessions by a token (`u1`), and a
+       deleted session is not yet removed from the pool's list.
 
 4. **Diagnostics after edits**
    - Status: todo

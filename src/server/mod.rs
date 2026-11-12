@@ -93,6 +93,8 @@ struct Shared {
     next_session: AtomicU64,
     next_client: AtomicU64,
     questions: Arc<AtomicU64>,
+    /// The language servers of all sessions (RFC 0019).
+    lsp: crate::lsp::pool::Pool,
     stop: CancellationToken,
     /// The summaries of the session logs for `global_stats`, by directory,
     /// with the size and time of the log they were counted from.
@@ -143,7 +145,7 @@ pub async fn serve(options: Options) -> Result<()> {
         workspace: options.dir.clone(),
         ..options.load.clone()
     };
-    config::load_with_user_text(&path, &text, &base)?;
+    let initial = config::load_with_user_text(&path, &text, &base)?;
     let user = UserConfig {
         stamp: stamp(&path),
         path,
@@ -174,12 +176,15 @@ pub async fn serve(options: Options) -> Result<()> {
         next_session: AtomicU64::new(0),
         next_client: AtomicU64::new(0),
         questions: Arc::new(AtomicU64::new(0)),
+        lsp: crate::lsp::pool::Pool::new(),
         stop: options.stop.clone(),
         summaries: Mutex::new(HashMap::new()),
     });
     load_saved(&shared);
     tokio::spawn(idle_watch(shared.clone(), options.idle));
     tokio::spawn(reload_watch(shared.clone(), options.reload_every));
+    shared.lsp.apply_config(&initial.lsp).await;
+    let reaper = shared.lsp.spawn_reaper();
 
     loop {
         tokio::select! {
@@ -204,6 +209,8 @@ pub async fn serve(options: Options) -> Result<()> {
         .iter()
         .map(|handle| async move { handle.kill("server stopped", true).await });
     futures_util::future::join_all(kills).await;
+    reaper.abort();
+    shared.lsp.stop_all().await;
     // Give the connections a moment to send what is queued.
     tokio::time::sleep(Duration::from_millis(100)).await;
     drop(listener);
@@ -316,7 +323,12 @@ fn refresh(shared: &Shared) {
                 ..shared.load.clone()
             };
             match config::load_with_user_text(&path, &text, &options) {
-                Ok(_) => Ok(text),
+                Ok(config) => {
+                    // A changed [lsp] stops the language servers.
+                    let pool = shared.lsp.clone();
+                    tokio::spawn(async move { pool.apply_config(&config.lsp).await });
+                    Ok(text)
+                }
                 Err(e) => Err(error_lines(&e)),
             }
         }

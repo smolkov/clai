@@ -16,6 +16,7 @@ use crate::session::global::{self, Part, Summary};
 use crate::session::store::{self, Meta, Store};
 use crate::session::{self, SessionHandle, Spec};
 use crate::tools::Env;
+use crate::tools::lsp::LspEnv;
 
 use super::{Conn, Counted, Entry, Shared, Slot, broadcast, busy, check_name, error_lines, lock};
 
@@ -94,6 +95,13 @@ impl Shared {
                 permissions: Arc::new(config.permissions.clone()),
                 session: Arc::new(SessionRules::default()),
                 workspace: Arc::new(ws),
+                lsp: Some(Arc::new(LspEnv::new(
+                    self.lsp.clone(),
+                    &config.lsp,
+                    std::env::var_os("PATH").as_deref(),
+                    true,
+                    false,
+                ))),
             },
         });
         agent.share_question_ids(self.questions.clone());

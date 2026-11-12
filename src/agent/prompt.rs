@@ -32,6 +32,24 @@ pub fn system_prompt(workspace: &Workspace, today: &str) -> String {
         .replace("{date}", today)
 }
 
+/// The prompt with the bullet for the `lsp` tool, for the files of
+/// `languages` (`.rs and .go`), before the bullet about focused changes.
+pub fn with_lsp(system: &str, languages: &str) -> String {
+    let bullet = format!(
+        "- For definitions, references, types and callers of a symbol in {languages} files, \
+         use lsp before search_files. After an edit, errors the language server reports are \
+         added to the result; fix them before you go on.\n"
+    );
+    match system.find("- Keep changes focused") {
+        Some(at) => format!(
+            "{}{bullet}{}",
+            system.get(..at).unwrap_or(""),
+            system.get(at..).unwrap_or("")
+        ),
+        None => format!("{system}\n{bullet}"),
+    }
+}
+
 /// Today's date in UTC, `YYYY-MM-DD`.
 pub fn today() -> String {
     let secs = SystemTime::now()
@@ -102,5 +120,19 @@ mod tests {
 
         let ws = Workspace::new(tmp.path(), &[], None).unwrap();
         assert!(system_prompt(&ws, "x").contains("you may use: none"));
+    }
+
+    #[test]
+    fn the_lsp_bullet_comes_before_the_last_ones() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ws = Workspace::new(tmp.path(), &[], None).unwrap();
+        let plain = system_prompt(&ws, "x");
+        assert!(!plain.contains("lsp"));
+        let with = with_lsp(&plain, ".rs and .go");
+        let bullet = with
+            .find("- For definitions, references, types and callers of a symbol in .rs and .go files, use lsp before search_files.")
+            .unwrap();
+        assert!(bullet < with.find("- Keep changes focused").unwrap());
+        assert!(with.contains("fix them before you go on.\n- Keep changes focused"));
     }
 }

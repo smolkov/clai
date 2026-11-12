@@ -48,6 +48,14 @@ pub const PERMISSION_CHOICES: [Choice; 5] = [
     Choice::DenyMessage,
     Choice::Cancel,
 ];
+/// Starting a language server: yes lasts for the session, so there is no
+/// "always".
+pub const LSP_START_CHOICES: [Choice; 4] = [
+    Choice::Allow,
+    Choice::Deny,
+    Choice::DenyMessage,
+    Choice::Cancel,
+];
 pub const LIMIT_CHOICES: [Choice; 3] = [Choice::Continue, Choice::Stop, Choice::Cancel];
 pub const ASK_USER_CHOICES: [Choice; 3] = [Choice::Reply, Choice::Decline, Choice::Cancel];
 
@@ -258,6 +266,7 @@ mod tests {
             .iter()
             .chain(&LIMIT_CHOICES)
             .chain(&ASK_USER_CHOICES)
+            .chain(&LSP_START_CHOICES)
         {
             assert_eq!(
                 serde_json::to_value(choice).unwrap(),

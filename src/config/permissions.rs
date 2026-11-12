@@ -49,16 +49,19 @@ pub enum Tool {
     EditFile,
     WriteFile,
     RunCommand,
+    /// Questions to a language server (RFC 0019).
+    Lsp,
 }
 
 impl Tool {
-    pub const ALL: [Tool; 6] = [
+    pub const ALL: [Tool; 7] = [
         Tool::ReadFile,
         Tool::ListFiles,
         Tool::SearchFiles,
         Tool::EditFile,
         Tool::WriteFile,
         Tool::RunCommand,
+        Tool::Lsp,
     ];
 
     pub fn name(self) -> &'static str {
@@ -69,6 +72,7 @@ impl Tool {
             Tool::EditFile => "edit_file",
             Tool::WriteFile => "write_file",
             Tool::RunCommand => "run_command",
+            Tool::Lsp => "lsp",
         }
     }
 
@@ -79,7 +83,7 @@ impl Tool {
     /// Action when neither the configuration nor a rule decides.
     pub fn default_action(self) -> Action {
         match self {
-            Tool::ReadFile | Tool::ListFiles | Tool::SearchFiles => Action::Allow,
+            Tool::ReadFile | Tool::ListFiles | Tool::SearchFiles | Tool::Lsp => Action::Allow,
             Tool::EditFile | Tool::WriteFile | Tool::RunCommand => Action::Ask,
         }
     }
@@ -119,7 +123,12 @@ impl fmt::Display for Tool {
 pub const GROUPS: [(&str, &[Tool]); 2] = [
     (
         "read",
-        &[Tool::ReadFile, Tool::ListFiles, Tool::SearchFiles],
+        &[
+            Tool::ReadFile,
+            Tool::ListFiles,
+            Tool::SearchFiles,
+            Tool::Lsp,
+        ],
     ),
     ("edit", &[Tool::EditFile, Tool::WriteFile]),
 ];
@@ -543,7 +552,7 @@ pub(crate) fn parse_for_test(text: &str, home: Option<&Path>) -> Permissions {
     perms
 }
 
-fn tool_keys(file: &PermissionsFile) -> [(Tool, &Option<Spanned<Action>>); 6] {
+fn tool_keys(file: &PermissionsFile) -> [(Tool, &Option<Spanned<Action>>); 7] {
     [
         (Tool::ReadFile, &file.read_file),
         (Tool::ListFiles, &file.list_files),
@@ -551,6 +560,7 @@ fn tool_keys(file: &PermissionsFile) -> [(Tool, &Option<Spanned<Action>>); 6] {
         (Tool::EditFile, &file.edit_file),
         (Tool::WriteFile, &file.write_file),
         (Tool::RunCommand, &file.run_command),
+        (Tool::Lsp, &file.lsp),
     ]
 }
 
@@ -846,7 +856,15 @@ mod tests {
             tools_named("edit").unwrap(),
             [Tool::EditFile, Tool::WriteFile]
         );
-        assert_eq!(tools_named("read").unwrap().len(), 3);
+        assert_eq!(
+            tools_named("read").unwrap(),
+            [
+                Tool::ReadFile,
+                Tool::ListFiles,
+                Tool::SearchFiles,
+                Tool::Lsp
+            ]
+        );
         assert_eq!(tools_named("run_command").unwrap(), [Tool::RunCommand]);
         assert!(tools_named("bash").is_none());
     }

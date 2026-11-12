@@ -8,6 +8,7 @@
 pub mod ask_user;
 mod edit_file;
 mod list_files;
+pub mod lsp;
 mod output;
 mod question;
 mod read_file;
@@ -17,6 +18,8 @@ mod text;
 mod walk;
 mod write_file;
 
+#[cfg(test)]
+mod lsp_tests;
 #[cfg(test)]
 mod tests;
 
@@ -45,6 +48,8 @@ pub struct Env {
     pub permissions: Arc<Permissions>,
     pub session: Arc<SessionRules>,
     pub workspace: Arc<Workspace>,
+    /// The session's language servers; `None` without the `lsp` tool.
+    pub lsp: Option<Arc<lsp::LspEnv>>,
 }
 
 impl Env {
@@ -91,6 +96,7 @@ enum Op {
     Edit(edit_file::Op),
     Write(write_file::Op),
     Run(run_command::Op),
+    Lsp(lsp::Op),
 }
 
 impl PreparedCall {
@@ -124,6 +130,35 @@ impl PreparedCall {
             Op::Edit(op) => blocking(move || op.run()).await,
             Op::Write(op) => blocking(move || op.run()).await,
             Op::Run(op) => op.run(env, cancel, progress).await,
+            Op::Lsp(op) => op.run(env, cancel).await,
+        }
+    }
+
+    /// For an `lsp` call: whether its server may be used, or what to ask
+    /// first. Other tools are always ready.
+    pub fn lsp_start(&self, env: &Env) -> lsp::Start {
+        match &self.op {
+            Op::Lsp(op) => op.start(env),
+            _ => lsp::Start::Ready,
+        }
+    }
+
+    /// The question's one line for starting the server of an `lsp` call.
+    pub fn lsp_start_summary(&self, env: &Env) -> String {
+        match &self.op {
+            Op::Lsp(op) => op.start_summary(env),
+            _ => String::new(),
+        }
+    }
+
+    /// The user answered the start question of an `lsp` call.
+    pub fn lsp_started(&self, env: &Env, allowed: bool) {
+        if let (Op::Lsp(op), Some(lsp)) = (&self.op, env.lsp.as_deref()) {
+            if allowed {
+                lsp.allow_start(op.key());
+            } else {
+                lsp.deny_start(op.key());
+            }
         }
     }
 
@@ -171,6 +206,14 @@ impl PreparedCall {
             Op::Edit(op) => checker.check_path(Tool::EditFile, &op.path).action,
             Op::Write(op) => checker.check_path(Tool::WriteFile, &op.path).action,
             Op::Run(op) => checker.check_command(&op.command).decision.action,
+            Op::Lsp(op) => match &op.path {
+                Some(path) => checker.check_path(Tool::Lsp, path).action,
+                None => {
+                    checker
+                        .check_path(Tool::Lsp, &env.workspace.resolve(""))
+                        .action
+                }
+            },
         }
     }
 }
@@ -190,6 +233,7 @@ pub fn prepare(env: &Env, name: &str, arguments: &Value) -> Prepared {
         Tool::EditFile => edit_file::prepare(env, args(tool, arguments)),
         Tool::WriteFile => write_file::prepare(env, args(tool, arguments)),
         Tool::RunCommand => run_command::prepare(env, args(tool, arguments)),
+        Tool::Lsp => lsp::prepare(env, args(tool, arguments)),
     };
     match result {
         Ok(call) if call.decision.action == Action::Deny => Prepared::Denied(ToolOutput::error(

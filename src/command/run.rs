@@ -17,12 +17,14 @@ use crate::agent::{Agent, Asker, EndReason, EventSink, PolicyAsker, Setup, syste
 use crate::complete;
 use crate::config;
 use crate::error::{Error, Result};
+use crate::lsp::pool::Pool;
 use crate::output::write_stdout;
 use crate::permissions::{SessionRules, Workspace};
 use crate::provider;
 use crate::sync::lock;
 use crate::text::{LineAsker, Renderer, unicode};
 use crate::tools::Env;
+use crate::tools::lsp::LspEnv;
 
 #[derive(Debug, Args)]
 pub struct Run {
@@ -74,7 +76,7 @@ impl Execute for Run {
             self.no_ask,
             !task.from_stdin && io::stdin().is_terminal(),
         );
-        let prepared = self.setup(ctx, answering == Answering::Terminal)?;
+        let prepared = self.setup(ctx, answering)?;
         let asker = asker(answering, prepared.place, prepared.unicode);
         one_shot(
             Agent::new(prepared.setup),
@@ -95,8 +97,9 @@ struct Prepared {
 
 impl Run {
     /// The workspace, the configuration, the model and its provider.
-    /// `can_ask`: someone answers on the terminal.
-    fn setup(&self, ctx: &Context, can_ask: bool) -> Result<Prepared> {
+    /// `answering`: who answers questions.
+    fn setup(&self, ctx: &Context, answering: Answering) -> Result<Prepared> {
+        let can_ask = answering == Answering::Terminal;
         let workspace = workspace(self.dir.as_deref())?;
         let options = ctx.load_options(workspace.clone());
         let config = config::load(&options)?;
@@ -127,6 +130,13 @@ impl Run {
                     permissions: Arc::new(config.permissions.clone()),
                     session: Arc::new(SessionRules::default()),
                     workspace: Arc::new(workspace),
+                    lsp: Some(Arc::new(LspEnv::new(
+                        Pool::new(),
+                        &config.lsp,
+                        std::env::var_os("PATH").as_deref(),
+                        can_ask,
+                        answering == Answering::Allow,
+                    ))),
                 },
             },
             place,
@@ -188,6 +198,10 @@ async fn turn(mut agent: Agent, task: String, asker: Box<dyn Asker>, unicode: bo
         })
     };
     let end = agent.run_turn(task, &sink, asker.as_ref(), cancel).await;
+    // The language servers of the run end with it.
+    if let Some(lsp) = &agent.env().lsp {
+        lsp.pool.stop_all().await;
+    }
 
     match stopped.load(Ordering::SeqCst) {
         SIGINT => return Err(Error::Exit(INTERRUPTED)),

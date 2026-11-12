@@ -29,11 +29,11 @@ pub use events::{
     retry_text,
 };
 pub use history::{History, INTERRUPTED, Journal, Record};
-pub use prompt::{date_of, now_ms, now_secs, system_prompt, today};
+pub use prompt::{date_of, now_ms, now_secs, system_prompt, today, with_lsp};
 pub use question::{
     ASK_USER_CHOICES, Answer, AskCall, AskUser, Asker, CallInfo, Choice, Closed, LIMIT_CHOICES,
-    Limit, PERMISSION_CHOICES, Permission, PolicyAsker, Question, QuestionKind, Reply, SessionRef,
-    TurnInfo,
+    LSP_START_CHOICES, Limit, PERMISSION_CHOICES, Permission, PolicyAsker, Question, QuestionKind,
+    Reply, SessionRef, TurnInfo,
 };
 
 use crate::sync::lock;
@@ -43,6 +43,7 @@ use stream::{StreamEnd, Streamed};
 const NOT_RUN_LIMIT: &str = "not run: the turn was stopped at its limit";
 const CANCELLED: &str = "cancelled by the user";
 const NO_ONE: &str = "denied: needs permission, and no one can answer";
+const LSP_NOT_STARTED: &str = "language server not started: denied by the user";
 
 /// What a session gives its agent.
 pub struct Setup {
@@ -191,12 +192,16 @@ struct CallIn {
 
 impl Agent {
     pub fn new(setup: Setup) -> Agent {
+        let system = match setup.env.lsp.as_deref().filter(|l| l.offered()) {
+            Some(lsp) => with_lsp(&setup.system, &lsp.languages()),
+            None => setup.system,
+        };
         Agent {
             cancel_reason: CancelReason::default(),
             model: ModelHandle::new(setup.provider, setup.model, setup.model_name),
             limits: setup.limits,
             env: setup.env,
-            system: setup.system,
+            system,
             can_ask: setup.can_ask,
             history: History::default(),
             turns: 0,
@@ -309,6 +314,9 @@ impl Agent {
         cancel: CancellationToken,
     ) -> TurnEnd {
         self.turns += 1;
+        if let Some(lsp) = &self.env.lsp {
+            lsp.new_turn();
+        }
         let mut budget = Budget::default();
         events.emit(SessionEvent::State {
             state: State::Working,
@@ -494,6 +502,9 @@ impl Agent {
     /// The tools sent with a request.
     fn tool_specs(&self) -> Vec<crate::provider::ToolSpec> {
         let mut specs = tools::specs();
+        if self.env.lsp.as_deref().is_some_and(|l| l.offered()) {
+            specs.push(tools::lsp::spec());
+        }
         if self.offers_ask_user() {
             specs.push(ask_user::spec());
         }
@@ -614,6 +625,33 @@ impl Agent {
                 }
             }
         }
+        match prepared.lsp_start(&self.env) {
+            tools::lsp::Start::Ready => {}
+            tools::lsp::Start::Denied => {
+                return (ToolOutput::error(LSP_NOT_STARTED), CallState::Denied, None);
+            }
+            tools::lsp::Start::Ask(details) => {
+                self.emit_call(
+                    events,
+                    call,
+                    CallState::Waiting,
+                    summary.clone(),
+                    None,
+                    Some(&prepared.details),
+                );
+                match self
+                    .ask_lsp_start(call, &prepared, *details, budget, events, asker, cancel)
+                    .await
+                {
+                    Decided::Run => {}
+                    Decided::Result(output, state) => return (output, state, None),
+                    Decided::Stop(stop) => {
+                        let (text, state) = stop.not_run(self.cancel_reason.get().as_deref());
+                        return (ToolOutput::error(text), state, Some(stop));
+                    }
+                }
+            }
+        }
         // A question gave the details already.
         let details = (prepared.action() != Action::Ask).then_some(&prepared.details);
         self.emit_call(events, call, CallState::Running, summary, None, details);
@@ -727,6 +765,73 @@ impl Agent {
             Answer::Continue | Answer::Stop | Answer::Reply { .. } | Answer::Decline => {
                 Decided::Stop(Stop::Cancelled)
             }
+        }
+    }
+
+    /// Asks whether the language server of an `lsp` call may start (RFC
+    /// 0019): it may run code of the project. "Yes" lasts for the session.
+    #[allow(clippy::too_many_arguments)]
+    async fn ask_lsp_start(
+        &mut self,
+        call: &CallIn,
+        prepared: &PreparedCall,
+        details: tools::Details,
+        budget: &Budget,
+        events: &EventSink,
+        asker: &dyn Asker,
+        cancel: &CancellationToken,
+    ) -> Decided {
+        let question = self.question(
+            budget,
+            prepared.lsp_start_summary(&self.env),
+            &LSP_START_CHOICES,
+            QuestionKind::Permission(Box::new(Permission {
+                call: CallInfo {
+                    tool: prepared.tool,
+                    id: call.id.clone(),
+                    arguments: call.arguments.clone(),
+                },
+                details,
+                reason: crate::permissions::Reason::Default {
+                    tool: crate::config::Tool::Lsp,
+                },
+                reason_text: "starting a language server ([lsp] start = \"ask\")".into(),
+                proposals: Vec::new(),
+                text: call.text.clone(),
+            })),
+        );
+        let validate = |answer: &Answer| -> Result<(), String> {
+            match answer {
+                Answer::DenyMessage { text } if text.trim().is_empty() => {
+                    Err("the message is empty".into())
+                }
+                _ => Ok(()),
+            }
+        };
+        let Some((reply, ())) = wait(&question, events, asker, cancel, validate).await else {
+            return Decided::Stop(Stop::Cancelled);
+        };
+        let answer = match reply {
+            Reply::NoOne => return Decided::Result(ToolOutput::error(NO_ONE), CallState::Denied),
+            Reply::Answer { answer, .. } => answer,
+        };
+        match answer {
+            Answer::Allow | Answer::AllowAlways { .. } => {
+                prepared.lsp_started(&self.env, true);
+                Decided::Run
+            }
+            Answer::Deny => {
+                prepared.lsp_started(&self.env, false);
+                Decided::Result(ToolOutput::error(LSP_NOT_STARTED), CallState::Denied)
+            }
+            Answer::DenyMessage { text } => {
+                prepared.lsp_started(&self.env, false);
+                Decided::Result(
+                    ToolOutput::error(format!("{LSP_NOT_STARTED}: {}", text.trim())),
+                    CallState::Denied,
+                )
+            }
+            _ => Decided::Stop(Stop::Cancelled),
         }
     }
 

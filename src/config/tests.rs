@@ -528,7 +528,7 @@ except = ["cargo publish"]
         ]
     );
     let detailed = &p.rules[8];
-    assert_eq!(detailed.tools.len(), 3);
+    assert_eq!(detailed.tools.len(), 4, "read includes lsp");
     assert_eq!(detailed.except[0].text(), "secrets/README.md");
     assert_eq!(detailed.message.as_deref(), Some("no secrets"));
     assert_eq!(p.rules[4].source.to_string(), "user.toml:39");

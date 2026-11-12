@@ -207,6 +207,26 @@ fn permission(out: &mut String, question: &Question, p: &Permission, style: &Sty
             label(out, "in", &format!("{}, pattern {pattern}", where_(path)));
             label(out, "asks", &p.reason_text);
         }
+        Details::Lsp {
+            path,
+            operation,
+            server,
+            ..
+        } => {
+            let file = path.as_ref().map(where_).unwrap_or_default();
+            label(out, "lsp", &format!("{server}: {operation} {file}"));
+            label(out, "asks", &p.reason_text);
+        }
+        Details::LspStart {
+            command, root, env, ..
+        } => {
+            label(out, "command", &command.join(" "));
+            label(out, "in", root);
+            for (name, value) in env {
+                label(out, "env", &format!("{name}={value}"));
+            }
+            let _ = writeln!(out, "  It may run build scripts and macros of the project.");
+        }
         Details::SearchFiles {
             path,
             pattern,

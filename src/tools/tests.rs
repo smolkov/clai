@@ -46,6 +46,7 @@ impl Fixture {
             permissions: Arc::new(parse_for_test(config, None)),
             session: Arc::new(SessionRules::default()),
             workspace: Arc::new(Workspace::new(&root, &[], None).unwrap()),
+            lsp: None,
         };
         Fixture { tmp, env }
     }
@@ -108,9 +109,11 @@ impl Fixture {
 
 #[test]
 fn specs_cover_all_tools() {
-    let names: Vec<String> = specs().into_iter().map(|s| s.name).collect();
+    // `lsp` is added by the agent when the session has a server.
+    let mut names: Vec<String> = specs().into_iter().map(|s| s.name).collect();
+    names.push(super::lsp::spec().name);
     assert_eq!(names, Tool::ALL.map(|t| t.name().to_owned()));
-    for spec in specs() {
+    for spec in specs().into_iter().chain([super::lsp::spec()]) {
         assert_eq!(spec.input_schema["type"], "object");
     }
 }
