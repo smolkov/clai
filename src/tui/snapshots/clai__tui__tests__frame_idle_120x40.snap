@@ -4,7 +4,7 @@ expression: "screen(&mut app, 120, 40)"
 ---
 > fix the failing test                                                                                                  
                                                                                                                         
-The test fails because parse drops the last line. Let me look.                                                          
+● The test fails because parse drops the last line. Let me look.                                                        
                                                                                                                         
 ▸ read src/parse.rs                                                                                            ✓ 3 lines
                                                                                                                         

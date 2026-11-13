@@ -5376,7 +5376,7 @@ fn a_drag_selects_and_a_release_copies() {
     assert_eq!(
         copies(&effects),
         [
-            "first line\n\nan answer that the TUI wraps because it is longer than the width of the screen it is sho"
+            "first line\n\nan answer that the TUI wraps because it is longer than the width of the screen it is s"
         ]
     );
     assert!(app.selection.is_some());
@@ -5787,4 +5787,84 @@ fn an_lsp_call_line_shows_its_count() {
         "{text}"
     );
     assert!(text.contains("3 references"), "{text}");
+}
+
+// The answer marker (RFC 0022).
+
+fn answers() -> Vec<SessionEvent> {
+    vec![
+        SessionEvent::UserMessage {
+            text: "fix the failing test".into(),
+        },
+        SessionEvent::TextDone {
+            text: "The test fails because `parse` drops the last line of the input, \
+                   which the loop below never reaches:\n\n\
+                   - `lines.len() - 1` stops one early\n\
+                   - the last line has no newline\n\n\
+                   ```rust\nfor i in 0..lines.len() - 1 {\n```\n\nLet me look."
+                .into(),
+        },
+        SessionEvent::ToolCall(done(
+            call("c1", "read_file", CallState::Running),
+            "one\ntwo",
+        )),
+        SessionEvent::TextDone {
+            text: "Fixed.".into(),
+        },
+    ]
+}
+
+#[test]
+fn frame_answers_with_their_marker() {
+    let mut app = App::new(settings(true, false), attachment(answers()), Instant::now());
+    let text = screen(&mut app, 60, 24);
+    assert!(text.contains("● The test fails"), "{text}");
+    assert!(text.contains("● Fixed."), "{text}");
+    // Wrapped rows, list items and code are indented with the text.
+    for row in text.lines().filter(|l| l.contains("lines.len()")) {
+        assert!(row.starts_with("  "), "{row:?}\n{text}");
+    }
+    insta::assert_snapshot!(text);
+}
+
+#[test]
+fn frame_answers_with_their_marker_ascii() {
+    let mut app = App::new(
+        settings(false, false),
+        attachment(answers()),
+        Instant::now(),
+    );
+    let text = screen(&mut app, 60, 24);
+    assert!(text.is_ascii(), "{text}");
+    assert!(text.contains("* The test fails"), "{text}");
+    insta::assert_snapshot!(text);
+}
+
+#[test]
+fn a_streaming_answer_has_its_marker_from_the_first_row() {
+    let mut app = App::new(
+        settings(true, false),
+        attachment(Vec::new()),
+        Instant::now(),
+    );
+    app.update(live(SessionEvent::TextDelta { text: "Let".into() }));
+    let text = screen(&mut app, 60, 12);
+    assert!(text.contains("● Let"), "{text}");
+}
+
+#[test]
+fn a_selection_leaves_out_the_answer_marker_and_indent() {
+    let mut app = previewing(answers());
+    let first = row_of(&mut app, "● The test fails");
+    let last = row_of(&mut app, "● Fixed.");
+    app.update(mouse(MouseEventKind::Down(MouseButton::Left), 0, first));
+    app.update(mouse(MouseEventKind::Drag(MouseButton::Left), 79, last));
+    let effects = app.update(mouse(MouseEventKind::Up(MouseButton::Left), 79, last));
+    let copied = copies(&effects).concat();
+    assert!(copied.starts_with("The test fails because"), "{copied:?}");
+    assert!(copied.contains("\n• lines.len() - 1"), "{copied:?}");
+    assert!(copied.contains("\n\nread src/parse.rs\n\n"), "{copied:?}");
+    assert!(copied.ends_with("Fixed."), "{copied:?}");
+    assert!(!copied.contains('●'), "{copied:?}");
+    assert!(!copied.contains("\n  "), "{copied:?}");
 }

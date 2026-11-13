@@ -26,6 +26,8 @@ const MAX_OUTPUT: usize = 1 << 20;
 const STAMP: usize = 6;
 /// Characters of the short result in a call's summary line.
 const SHORT_RESULT: usize = 24;
+/// Cells of the marker and indent before an answer's rows.
+const ANSWER_INDENT: usize = 2;
 /// The last lines of a command's output in its preview.
 const COMMAND_TAIL: usize = 6;
 
@@ -742,14 +744,7 @@ impl Render<'_> {
         };
         let mut lines = match &entry.kind {
             Kind::User(text) => self.user(text, inner),
-            Kind::Text(text) => {
-                let lines = markdown::rows(text, inner, self.look);
-                if lines.is_empty() {
-                    vec![(Line::default(), Source::default())]
-                } else {
-                    lines
-                }
-            }
+            Kind::Text(text) => self.answer(text, inner),
             Kind::Call(call) => self.call(call, inner),
             Kind::Notice(text) => plain_rows(text, inner, self.look.styles.dim),
             Kind::Error(text) => plain_rows(text, inner, self.look.styles.error),
@@ -760,6 +755,27 @@ impl Render<'_> {
                 .insert(0, Span::styled(format!("{stamp} "), self.look.styles.dim));
             source.prefix += STAMP;
             source.end = source.end.saturating_add(STAMP);
+        }
+        lines
+    }
+
+    /// An answer of the model: `● ` before its first row, two columns
+    /// before the others, so its text forms one column.
+    fn answer(&self, text: &str, width: usize) -> Vec<Drawn> {
+        let mut lines = markdown::rows(text, width.saturating_sub(ANSWER_INDENT), self.look);
+        if lines.is_empty() {
+            lines.push((Line::default(), Source::default()));
+        }
+        let marker = self.look.symbols.answer;
+        for (i, (line, source)) in lines.iter_mut().enumerate() {
+            let head = if i == 0 {
+                Span::styled(format!("{marker} "), self.look.styles.accent)
+            } else {
+                Span::raw(" ".repeat(ANSWER_INDENT))
+            };
+            line.spans.insert(0, head);
+            source.prefix += ANSWER_INDENT;
+            source.end = source.end.saturating_add(ANSWER_INDENT);
         }
         lines
     }

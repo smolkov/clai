@@ -2,7 +2,7 @@
 
 - RFC: 0022
 - Status: accepted
-- Progress: step 1 of 5 done (short tool names)
+- Progress: step 2 of 5 done (short tool names; the answer marker)
 - Milestone: none; it extends the conversation of RFC 0001 and RFC 0016
 - Spec: [`spec/tui.md`](../spec/tui.md), "Layout", "Conversation entries",
   "Keys", "Copy", "Appearance", "Questions from the model";
@@ -301,11 +301,20 @@ Written into the spec when the RFC is accepted:
      - The activity line already says `Editing …`, `Running …`; it is
        unchanged.
 2. **The answer marker**
-   - Status: todo
+   - Status: done
    - Files: `src/tui/conversation.rs`, `src/tui/view/conversation.rs`,
      `src/tui/selection.rs`, `src/tui/tests.rs`, snapshots
    - Result: `●` and the indent, the copy rules.
    - Tests: snapshots, selection tests.
+   - Built: `Symbols::answer` (`●`, `*`) in the accent colour, and
+     `Conversation::answer`, which renders the Markdown two columns
+     narrower and puts the marker or the indent before each row. Choices
+     made while building it:
+     - The marker and indent count as the row's prefix (`Source::prefix`),
+       as a timestamp does, so the selection code needed no change; with
+       `tui.timestamps` the time comes first, then the marker.
+     - An empty answer (the first moment of a stream) is one row with the
+       marker.
 3. **Clicks**
    - Status: todo
    - Files: `src/tui/app.rs`, `src/tui/conversation.rs`, `src/tui/tests.rs`
