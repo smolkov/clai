@@ -177,6 +177,25 @@ Each call is one line in the TUI conversation (see [`tui.md`](tui.md),
 "Shown" line of each tool below says what the main argument and the expanded
 details are.
 
+The TUI shows the built-in tools by short names; the model, the
+configuration and the permission rules keep the real ones:
+
+| Tool | Shown as |
+|------|----------|
+| `read_file` | `read` |
+| `list_files` | `ls` |
+| `search_files` | `search` |
+| `edit_file` | `edit` |
+| `write_file` | `write` |
+| `run_command` | `run` |
+| others (`lsp`, `ask_user`) | their own name |
+
+The short name is used on the call's summary line, in the prompt bar of a
+permission question and in the title of the details view. The rule text of
+a question (`asks: default for edit_file`), the rules `a` proposes
+(`edit_file(src/**)`), the status box, the settings, configuration errors
+and the output of `clai chat` and `clai run` keep the real name.
+
 ## read_file
 
 Reads lines of a text file.

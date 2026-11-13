@@ -103,6 +103,10 @@ interface; `clai new [DIR]` does the same for `DIR`, and `clai attach NAME`
 returns to a session (without a name and with several sessions, it opens the
 session list). Leaving only detaches: the session keeps running.
 
+The model's answers start with `●`; tool calls are one line each, with
+short names (`read`, `ls`, `search`, `edit`, `write`, `run`) and their
+result.
+
 | Key | Action |
 |-----|--------|
 | `Enter` | Send the message; also while a turn runs (it is queued). |
@@ -116,7 +120,7 @@ session list). Leaving only detaches: the session keeps running.
 | `Ctrl-N` / `Ctrl-P` | Attach to the next / previous session. |
 | `Tab` | Switch to the conversation: `Up` / `Down` select, `Enter` expands a tool call, `o` opens it in a view with all of it (`/` search, `y` copy, `w` wrap), `y` copies the entry, `Y` its code block, `?` shows help. |
 | `Ctrl-Y` / `Ctrl-T` | Copy the last answer / show or hide the tool calls of the last turn. |
-| Mouse | Drag to select and copy (wrapped lines joined, markers left out), double click a word, triple click a line; click a tool call to expand it. `Shift`-drag uses the terminal's selection. |
+| Mouse | Drag to select and copy (wrapped lines joined, markers left out), double click a word, triple click a line; click a tool call for a short look, double click it for the whole result. `Shift`-drag uses the terminal's selection. |
 
 A tool call that needs permission opens a prompt: `y` yes, `a` always (`Tab`
 widens the rule, `Enter` confirms), `n` no, `e` no with a message to the model,
@@ -212,7 +216,7 @@ a decision: a permission or limit question, or a question from the model.
 
 When a choice is yours (which design, which database), the model can ask
 with the `ask_user` tool: one to four questions with options, answered in
-a box in the TUI or as numbered lines in `clai chat` and `clai run`; you
+the TUI in the place of the input (what you typed is kept) or as numbered lines in `clai chat` and `clai run`; you
 can always type your own answer instead. The turn goes on with the answer.
 `ask_user = "deny"` in `[permissions]` turns it off.
 

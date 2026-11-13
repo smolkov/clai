@@ -1,8 +1,7 @@
 # Conversation layout: markers, short tool names, clicks, questions
 
 - RFC: 0022
-- Status: accepted
-- Progress: step 4 of 5 done (short tool names; the answer marker; clicks; questions at the bottom)
+- Status: done
 - Milestone: none; it extends the conversation of RFC 0001 and RFC 0016
 - Spec: [`spec/tui.md`](../spec/tui.md), "Layout", "Conversation entries",
   "Keys", "Copy", "Appearance", "Questions from the model";
@@ -351,11 +350,15 @@ Written into the spec when the RFC is accepted:
        conversation does not move them to it. The wheel over the
        conversation scrolls the conversation.
 5. **Spec and readme**
-   - Status: todo
+   - Status: done
    - Files: `spec/tui.md`, `spec/tools.md`, `readme.md`, `todo.md`, this
      RFC
    - Result: the spec describes the new look; status `done`.
    - Tests: `ci/check.sh`, `ci/test.sh`.
+   - Built: `spec/tui.md` ("Layout", "Conversation entries", "Keys",
+     "Copy", "Appearance", "Questions from the model", the examples) and
+     `spec/tools.md` ("Display"); the readme's TUI section; `todo.md`.
+     The check in a real terminal (see "Testing") is left in `todo.md`.
 
 ## Alternatives
 

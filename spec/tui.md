@@ -26,15 +26,15 @@ Statements marked **(assumption)** need a decision from the user.
 ```
 > fix the failing test
 
-The test fails because `parse` drops the last line. Let me look.
+● The test fails because `parse` drops the last line. Let me look.
 
-▸ read_file src/parse.rs                                          ✓ 120 lines
-▾ edit_file src/parse.rs                                                ? ask
+▸ read src/parse.rs                                               ✓ 120 lines
+▾ edit src/parse.rs                                                     ? ask
   - for i in 0..lines.len() - 1 {
   + for i in 0..lines.len() {
 
 ──────────────────────────────────────────────────────────────────────────────
-edit_file: src/parse.rs  asks: default for edit_file
+edit: src/parse.rs  asks: default for edit_file
 [y] yes  [a] always  [n] no  [e] explain  [Esc] cancel
 ──────────────────────────────────────────────────────────────────────────────
 > _
@@ -51,7 +51,7 @@ plain lines set off the prompt bar and the input. From top to bottom:
 | Conversation   | Scrollable history of the session: user messages, model text, tool calls. |
 | Activity line  | Shown only while the session works: what it does, for how long, and the tokens so far. See [Activity line](#activity-line). |
 | Prompt bar     | Shown only while a question (permission or limit) is open; replaces nothing else. |
-| Input          | Multi-line editor for the next user message, with a line above and below it. |
+| Input          | Multi-line editor for the next user message, with a line above and below it. Covered while a question from the model is open: the question takes its rows (see [Questions from the model](#questions-from-the-model)). |
 | Status row     | Current state (idle, waiting for model, running tool, asking), turn counters, key hints. |
 | Session row    | Session name, workspace path, provider and model (`anthropic/sonnet`), position among all sessions (`1/3`), number of other sessions waiting for an answer (`●1`), context usage (tokens used / limit; only the tokens if the server does not list the model, nothing until the first count), tokens the session has used (`in 45.1k out 3.2k`). |
 
@@ -59,7 +59,7 @@ While the session works and no question is open, the activity line takes the
 last row of the conversation area, with an empty row above it:
 
 ```
-▸ read_file src/parse.rs                                          ✓ 120 lines
+▸ read src/parse.rs                                               ✓ 120 lines
 
 ✻ Prestidigitating… (14s · ↓ 1.2k tokens · Esc cancel)
 ──────────────────────────────────────────────────────────────────────────────
@@ -310,12 +310,22 @@ Changing the model of a running session:
 | Entry          | Display |
 |----------------|---------|
 | User message   | Prefixed with `>`, in the user colour. |
-| Model text     | Rendered Markdown: headings, emphasis, lists, inline code, code blocks with syntax highlighting. Streams in as it arrives. |
-| Tool call      | One summary line: marker, tool name, main argument, state. |
+| Model text     | `●` (`*` in ASCII, in the accent colour) before its first row; the other rows indented by two columns, so the text forms one column. Rendered Markdown: headings, emphasis, lists, inline code, code blocks with syntax highlighting. Streams in as it arrives, with the marker from its first row. An answer cut by tool calls gets the marker on each part. |
+| Tool call      | One summary line: marker, the tool's short name, main argument, state. |
 | Tool preview   | Below the summary of a finished edit, write or command, and of a failed call: see below. |
 | Tool details   | Below the summary when expanded: diff for edits, file excerpt for reads, command and output for commands. |
 | Error          | Red line with the error message; the session continues. |
 | Notice         | Dim line for events such as "turn cancelled" or "limit reached". |
+
+The tools are shown by short names: `read` (`read_file`), `ls`
+(`list_files`), `search` (`search_files`), `edit` (`edit_file`), `write`
+(`write_file`), `run` (`run_command`); other tools by their own name. The
+short name is on the summary line, in the prompt bar of a permission
+question and in the title of the details view. Where the user reads or
+types a name the configuration uses, the real name stays: the rule text of
+a question (`asks: default for edit_file`), the rules `a` proposes, the
+status box, the settings and configuration errors (see
+[`tools.md`](tools.md), "Display").
 
 Tool call state is one of: running (spinner, moved by the frame tick of
 [Performance](#performance)), done (`✓` plus a short result,
@@ -329,12 +339,12 @@ available in the expanded entry and the [details view](#details-view). See
 [`config.md`](config.md), "TUI".
 
 ```
-▸ read_file src/parse.rs                                          ✓ 120 lines
-▾ edit_file src/parse.rs                                          ✓ edited …
+▸ read src/parse.rs                                               ✓ 120 lines
+▾ edit src/parse.rs                                               ✓ edited …
   @@ -12,3 +12,3 @@
   - for i in 0..lines.len() - 1 {
   + for i in 0..lines.len() {
-▾ run_command cargo test parse                                    ✓ exit code 0
+▾ run cargo test parse                                            ✓ exit code 0
   $ cargo test parse
   … 38 lines
   test parse::last_line ... ok
@@ -492,25 +502,50 @@ The prompt takes keys only for the prompt bar, as for permission prompts.
 ## Questions from the model
 
 A question from the model (`ask_user`, see [`tools.md`](tools.md),
-"ask_user") opens as a box over the conversation instead of the prompt
-bar, because it is larger. The tool call line shows `? ask_user Database`;
-the session row counts the question in `●`, as for other questions.
+"ask_user") opens at the bottom of the screen, in the place of the input,
+where the user's eyes are when they type. The tool call line shows
+`ask_user Database` waiting; the session row counts the question in `●`,
+as for other questions.
 
 ```
-┌ Question ─ 1/2 Database ─────────────────────────────────────────────────────┐
-│ Both work with the current code; the choice decides the migration.           │
-│                                                                              │
-│ Which database should the cache use?                                         │
-│                                                                              │
-│ ▶ 1 SQLite (recommended)                                                     │
-│       One file next to the binary, no server.                                │
-│   2 Postgres                                                                 │
-│       Shared with the API; needs the server running.                         │
-│   3 Type an answer                                                           │
-│                                                                              │
-│ Up Down choose ─ Enter next ─ Tab question ─ Esc skip ─ Ctrl-C cancel turn   │
-└──────────────────────────────────────────────────────────────────────────────┘
+● Both work with the current code; the choice decides the migration.
+
+▾ ask_user Database                                                     ? ask
+── Question ─ 1/2 Database ───────────────────────────────────────────────────
+Both work with the current code; the choice decides the migration.
+
+Which database should the cache use?
+
+▶ 1 SQLite (recommended)
+      One file next to the binary, no server.
+  2 Postgres
+      Shared with the API; needs the server running.
+  3 Type an answer
+
+Up Down choose ─ Enter next ─ Tab question ─ Esc skip ─ Ctrl-C cancel turn
+──────────────────────────────────────────────────────────────────────────────
+  asking · /help · Ctrl-D detach
+  project · ~/ws/project · anthropic/sonnet · 1/3 ●1 · 12.3k/200k · in 45.1k out 3.2k
 ```
+
+- It takes the rows of the input and the rules around it, directly above
+  the status row: a rule with the title on top, a rule below, no side
+  borders, the full width of the terminal.
+- **The input is covered** while the question is open: it is not drawn and
+  takes no keys. Its text, cursor and history position are kept, and come
+  back as they were when the question closes (answered, skipped, cancelled,
+  or answered by another client).
+- **Height:** as many rows as the question needs, keeping 3 rows of the
+  conversation above it (fewer on screens below 13 rows, none at the
+  smallest, 10 rows). A taller question scrolls inside its place; its keys
+  line stays its last row.
+- **The conversation** takes the rows above and follows its end, so the
+  call that asks is the last line above the question. The mouse wheel over
+  it scrolls it; over the question, it scrolls the question.
+- The activity line is hidden while the question is open; the status row
+  says `asking`.
+- The boxes that open over a question (`Ctrl-S`, the model picker) lie over
+  everything; when they close, the question is at the bottom again.
 
 | Key | Action |
 |-----|--------|
@@ -519,7 +554,7 @@ the session row counts the question in `●`, as for other questions.
 | `Space` | With `multiple`: tick or untick the option. Without: choose it. On the text row: type. |
 | `Enter` | On an option: choose it (with `multiple`, go on with the ticked ones, or this one if none is ticked) and go to the next question. On the text row: type; `Enter` again keeps the text and goes on, `Esc` goes back. |
 | `Tab` / `Shift-Tab` | Next or previous question, keeping what was chosen; after the last, the review page. |
-| `PgUp` / `PgDn` | Scroll the box when it is taller than the screen. |
+| `PgUp` / `PgDn` | Scroll the question when it is taller than its place. |
 | `Esc` | Skip: answers `decline`; asks `[y] yes  [n] no` first when something was chosen. |
 | `Ctrl-C` | Cancel the turn (`cancel`). |
 
@@ -531,12 +566,12 @@ the session row counts the question in `●`, as for other questions.
 - A text on the row of a question that has a choice is sent with it ("The
   user added").
 - `context` and the model's `text` are drawn as Markdown.
-- While the box is open the keys belong to it. `Ctrl-N` / `Ctrl-P`,
+- While the question is open the keys belong to it. `Ctrl-N` / `Ctrl-P`,
   `Ctrl-S` and `Ctrl-D` (when no text is typed) work as during a permission
   prompt; the question stays open. What was chosen is kept while the TUI
   stays on the session; switching to another session drops it.
-- A rejected answer shows `not accepted: …` at the top of the box.
-- When another client answers, the box closes and the conversation shows
+- A rejected answer shows `not accepted: …` at the top of the question.
+- When another client answers, the question closes and the conversation shows
   `answered by clai chat: reply`.
 
 ## Input editor
@@ -712,7 +747,8 @@ the diff.
 | `?` (conversation focus) | Show help. |
 | `Ctrl-Y`             | Copy the last answer, as `/copy`. |
 | `Ctrl-T`             | Show or hide the previews of the tool calls of the last turn. |
-| Click on a tool call | Expand or collapse it, as `Enter`; the focus does not move. A click on its `… N lines` row opens the details view. |
+| Click on a tool call | On its summary line: closed → short view (the preview, or for a call without one its details cut at `tui.tool_output_lines`); short or full → closed. A call whose preview `tui.tool_preview` shows counts as short. The focus does not move. A click on its `… N lines` row opens the details view. |
+| Double click on a tool call | On its summary line: the whole result, or closed when it was whole. The first click acts at once and the second one, on the same row within 400 ms, turns the call to whole, so a single click never waits. A third click acts as a single click. |
 
 `Ctrl-Z` does nothing for now: the TUI does not suspend.
 
@@ -720,7 +756,11 @@ While new output arrives, the view follows the end of the conversation,
 unless the user scrolled up; then it stays put and the status line shows
 "↓ new output". `Ctrl-End` resumes following.
 
-Mouse wheel scrolls the conversation, a drag selects text and copies it (see
+`Enter` on a selected call keeps its own cycle: closed, expanded, whole
+result (when cut), closed.
+
+Mouse wheel scrolls the conversation (over a question from the model, the
+question), a drag selects text and copies it (see
 [Copy](#copy)). Mouse capture can be turned off with `tui.mouse = false` so
 the terminal's own text selection works (see [`config.md`](config.md), "TUI");
 with it on, `Shift`-drag uses the terminal's selection in most terminals.
@@ -734,23 +774,24 @@ when a call is selected, and `y copy`, `? help` and, with the mouse on,
 ```
 > fix the failing test
 
-The test fails because `parse` drops the last line. Let me look.
-for i in 0..lines.len() {            ← selected text in reverse colours
-▸ read_file src/parse.rs                                          ✓ 120 lines
+● The test fails because `parse` drops the last line. Let me look.
+  for i in 0..lines.len() {          ← selected text in reverse colours
+▸ read src/parse.rs                                               ✓ 120 lines
 ```
 
 - **Selection:** with `tui.mouse = true`, a left-button drag in the
   conversation or the details view selects text, shown in reverse colours;
   the release copies it. The selection stays shown until `Esc`, a key or a
   click clears it; `Esc` then does nothing else. A double click selects and
-  copies a word (letters, digits and `_-./:~@#%+`, without a `.` or `:` at
+  copies a word (on a call's summary line it opens the call instead, see
+  [Keys](#keys)) (letters, digits and `_-./:~@#%+`, without a `.` or `:` at
   its end), a triple click the line with its wrapped rows. Dragging above or
   below the area scrolls it, so a selection can be longer than the screen.
   While the view follows the end, a selection stops the following until it is
   cleared, so the text does not move under the mouse.
 - **What is copied** is the text as it is read, not as it is drawn: rows the
-  TUI wrapped are joined again; the markers of the TUI (`▸ ▾`, the `> ` of a
-  message, quote marks, indentation, the state of a call, `… N more lines`,
+  TUI wrapped are joined again; the markers of the TUI (`▸ ▾`, the `●` and indent
+  of an answer, the `> ` of a message, quote marks, indentation, the state of a call, `… N more lines`,
   rules) are left out; list markers stay; trailing spaces go. Code blocks are
   drawn without fences, so their rows copy as their source.
 - **`y`** copies the selected entry: a message or answer as its Markdown
@@ -784,7 +825,7 @@ for i in 0..lines.len() {            ← selected text in reverse colours
 view over the whole screen:
 
 ```
-┌ edit_file src/parse.rs ─ ✓ edited src/parse.rs: replaced 1 occurrence ─────┐
+┌ edit src/parse.rs ─ ✓ edited src/parse.rs: replaced 1 occurrence ──────────┐
 │ @@ -12,3 +12,3 @@                                                          │
 │      let lines: Vec<&str> = text.lines().collect();                        │
 │ -    for i in 0..lines.len() - 1 {                                         │
@@ -1129,8 +1170,8 @@ picker.
   the built-in `dark` and `light`, or a custom theme. `NO_COLOR` turns
   colours off. Themes and all other TUI settings: [`config.md`](config.md),
   "TUI".
-- Unicode symbols (`✓ ✗ ▸ ▾`) fall back to ASCII (`+ x > v`) when the locale
-  is not UTF-8, or always with `tui.symbols = "ascii"`.
+- Unicode symbols (`✓ ✗ ▸ ▾ ●`) fall back to ASCII (`+ x > v *`) when the
+  locale is not UTF-8, or always with `tui.symbols = "ascii"`.
 - Resizing the terminal re-wraps all text; no content is lost.
 
 ### Syntax highlighting

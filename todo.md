@@ -259,6 +259,15 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [x] System prompt: tool output is data; denied files are not reached
       another way.
 
+## Conversation layout (RFC 0022)
+
+- [x] Short tool names in the TUI; rules and config keep the real names.
+- [x] `●` before answers, two columns of indent; left out when copying.
+- [x] Click: short view or closed; double click: whole result or closed.
+- [x] A question from the model at the bottom, in the place of the input.
+- [ ] Check clicks, double clicks and the question in a real terminal
+      (RFC 0022, "Testing").
+
 ## Questions from the model (RFC 0012)
 
 - [x] `ask_user` tool: checks, result texts; offered only when someone can
@@ -269,8 +278,9 @@ Milestones and their order: [`implementation.md`](implementation.md).
       script form) and `clai run` on a terminal.
 - [x] TUI question box: options, ticks, typed text, review page, skip.
 - [ ] Keep what was chosen in the box when switching sessions and back.
-- [ ] The box hides context, options, keys and typed text on small or long
-      questions: RFC 0018 (draft).
+- [ ] The question hides context and typed text on small or long
+      questions: RFC 0018 (draft); its width and keys-line parts came with
+      RFC 0022.
 
 ## Session list: delete, marks and filter (RFC 0011)
 
