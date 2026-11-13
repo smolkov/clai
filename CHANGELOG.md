@@ -7,6 +7,11 @@ notes are taken from that section by `ci/notes.sh`.
 
 ## Unreleased
 
+## 0.2.0 - 2026-11-13
+
+First published release; the same code as 0.1.0, whose release did not
+complete. See 0.1.0 for the features.
+
 ## 0.1.0 - 2026-11-13
 
 First release.
