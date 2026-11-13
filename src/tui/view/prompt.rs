@@ -81,7 +81,15 @@ fn choices(out: &mut Vec<Line<'static>>, prompt: &Prompt, width: usize, look: &L
                     look.styles.warning,
                 ));
             } else {
-                head.push((format!("{}  ", question.summary), look.styles.text));
+                // `edit: src/parse.rs`; the rule text keeps `edit_file`.
+                let tool = p.call.tool.name();
+                let summary = match question.summary.strip_prefix(tool) {
+                    Some(rest) if rest.starts_with(':') => {
+                        format!("{}{rest}", p.call.tool.label())
+                    }
+                    _ => question.summary.clone(),
+                };
+                head.push((format!("{summary}  "), look.styles.text));
                 head.push((format!("asks: {}", p.reason_text), look.styles.dim));
             }
             for choice in &question.choices {

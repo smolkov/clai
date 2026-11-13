@@ -2,7 +2,7 @@
 source: src/tui/tests.rs
 expression: "screen(&mut app, 80, 24)"
 ---
-┌ run_command cargo test parse ─ ✓ exit code 0 ────────────────────────────────┐
+┌ run cargo test parse ─ ✓ exit code 0 ────────────────────────────────────────┐
 │ $ cargo test parse                                                           │
 │ line 1                                                                       │
 │ line 2                                                                       │

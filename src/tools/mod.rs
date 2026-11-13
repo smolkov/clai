@@ -37,6 +37,15 @@ pub use ask_user::{AskOption, AskQuestion, UserAnswer};
 pub use output::{FULL_BYTES, ToolOutput, cut_for_model, group};
 pub use question::{Details, PathDetails, Text};
 
+/// The name the TUI shows for a tool call: the short label of a built-in
+/// tool (`edit` for `edit_file`), else the name itself.
+pub fn label(name: &str) -> &str {
+    match Tool::from_name(name) {
+        Some(tool) => tool.label(),
+        None => name,
+    }
+}
+
 /// Receives the output of a running command as it arrives, at most every
 /// 100 ms.
 pub type Progress = tokio::sync::mpsc::UnboundedSender<String>;

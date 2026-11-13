@@ -6,10 +6,10 @@ expression: "screen(&mut app, 80, 24)"
                                                                                 
 The test fails because parse drops the last line. Let me look.                  
                                                                                 
-▸ read_file src/parse.rs                                               ✓ 2 lines
-▸ run_command cargo test                                                       ⠋
-▸ edit_file src/parse.rs                                                       ⠋
-▸ edit_file src/parse.rs                                                       ⠋
+▸ read src/parse.rs                                                    ✓ 2 lines
+▸ run cargo test                                                               ⠋
+▸ edit src/parse.rs                                                            ⠋
+▸ edit src/parse.rs                                                            ⠋
                                                                                 
                                                                                 
                                                                                 

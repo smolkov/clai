@@ -76,6 +76,20 @@ impl Tool {
         }
     }
 
+    /// The short name the TUI shows (RFC 0022): `edit` for `edit_file`.
+    /// Rules, the config and the model keep [`Tool::name`].
+    pub fn label(self) -> &'static str {
+        match self {
+            Tool::ReadFile => "read",
+            Tool::ListFiles => "ls",
+            Tool::SearchFiles => "search",
+            Tool::EditFile => "edit",
+            Tool::WriteFile => "write",
+            Tool::RunCommand => "run",
+            Tool::Lsp => "lsp",
+        }
+    }
+
     pub fn from_name(name: &str) -> Option<Tool> {
         Tool::ALL.into_iter().find(|t| t.name() == name)
     }
@@ -803,6 +817,22 @@ fn expand_dir(dir: &str, home: Option<&Path>) -> Result<PathBuf, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_tool_has_a_short_label_of_its_own() {
+        let labels: Vec<&str> = Tool::ALL.iter().map(|t| t.label()).collect();
+        assert_eq!(
+            labels,
+            ["read", "ls", "search", "edit", "write", "run", "lsp"]
+        );
+        let mut unique = labels.clone();
+        unique.sort_unstable();
+        unique.dedup();
+        assert_eq!(unique.len(), labels.len());
+        assert_eq!(crate::tools::label("run_command"), "run");
+        assert_eq!(crate::tools::label("ask_user"), "ask_user");
+        assert_eq!(crate::tools::label("mcp_thing"), "mcp_thing");
+    }
 
     #[test]
     fn session_rule_syntax() {

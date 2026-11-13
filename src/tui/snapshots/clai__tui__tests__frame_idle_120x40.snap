@@ -6,7 +6,7 @@ expression: "screen(&mut app, 120, 40)"
                                                                                                                         
 The test fails because parse drops the last line. Let me look.                                                          
                                                                                                                         
-▸ read_file src/parse.rs                                                                                       ✓ 3 lines
+▸ read src/parse.rs                                                                                            ✓ 3 lines
                                                                                                                         
                                                                                                                         
                                                                                                                         

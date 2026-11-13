@@ -2,7 +2,7 @@
 source: src/tui/tests.rs
 expression: "screen(&mut app, 80, 30)"
 ---
-▾ run_command cargo test                                             ✓ output 30
+▾ run cargo test                                                     ✓ output 30
   $ cargo test                                                                  
   output 1                                                                      
   output 2                                                                      

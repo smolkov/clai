@@ -4,8 +4,8 @@ expression: text
 ---
 > fix the failing test                                                          
                                                                                 
-> read_file src/parse.rs                                               + 2 lines
-v edit_file src/parse.rs                                                   ? ask
+> read src/parse.rs                                                    + 2 lines
+v edit src/parse.rs                                                        ? ask
   @@ -1,1 +1,1 @@                                                               
   -for i in 0..lines.len() - 1 {                                                
   +for i in 0..lines.len() {                                                    
@@ -19,7 +19,7 @@ v edit_file src/parse.rs                                                   ? ask
                                                                                 
                                                                                 
 --------------------------------------------------------------------------------
-Allow edit of src/parse.rs?  asks: default for edit_file                        
+edit: src/parse.rs (line 1)  asks: default for edit_file                        
 [y] yes  [a] always  [n] no  [e] explain  [Esc] cancel                          
 --------------------------------------------------------------------------------
 >                                                                               

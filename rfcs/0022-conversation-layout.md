@@ -1,7 +1,8 @@
 # Conversation layout: markers, short tool names, clicks, questions
 
 - RFC: 0022
-- Status: draft
+- Status: accepted
+- Progress: step 1 of 5 done (short tool names)
 - Milestone: none; it extends the conversation of RFC 0001 and RFC 0016
 - Spec: [`spec/tui.md`](../spec/tui.md), "Layout", "Conversation entries",
   "Keys", "Copy", "Appearance", "Questions from the model";
@@ -283,13 +284,22 @@ Written into the spec when the RFC is accepted:
 ## Implementation plan
 
 1. **Short tool names**
-   - Status: todo
+   - Status: done
    - Files: `src/tools/mod.rs`, `src/tui/conversation.rs`,
      `src/tui/view/` (prompt bar, details view), `src/tui/tests.rs`,
      snapshots
    - Result: `read`, `ls`, `search`, `edit`, `write`, `run` on screen; the
      real names in rules and config texts.
    - Tests: label table, snapshots.
+   - Built: `Tool::label` and `tools::label` (any other name, such as
+     `ask_user` or `lsp`, is shown as it is); the summary line, the details
+     view title, `/diff` headings and the prompt bar use it. Choices made
+     while building it:
+     - The prompt bar replaces only the leading `edit_file:` of the
+       question's summary; the summary itself, as sent by the server and
+       shown by `clai chat`, keeps the real name.
+     - The activity line already says `Editing …`, `Running …`; it is
+       unchanged.
 2. **The answer marker**
    - Status: todo
    - Files: `src/tui/conversation.rs`, `src/tui/view/conversation.rs`,
@@ -342,13 +352,11 @@ Written into the spec when the RFC is accepted:
 3. ~~`write_file` shown as `write`~~: answered, yes (see "Short tool names").
 4. ~~Names in the permission question~~: answered, the real name in its
    rule text (see "Short tool names").
-5. Should `Enter` follow the clicks (closed → short → closed, and another
-   key for full), or keep its cycle (proposal)?
+5. ~~`Enter` and the clicks~~: answered, `Enter` keeps its cycle.
 6. ~~`clai chat`~~: answered, it keeps the long names (see "Scope").
 7. ~~Where the question of `ask_user` opens~~: answered, at the bottom,
    covering the input (see "Questions at the bottom").
-8. How many conversation rows stay above a tall question: 3 (proposal),
-   or none, so the question may take the whole screen?
+8. ~~Rows above a tall question~~: answered, 3.
 
 ## Answers
 
@@ -359,5 +367,14 @@ Written into the spec when the RFC is accepted:
 4. The rule texts of a permission question keep the real tool name, chosen
    by the user.
 6. `clai chat` and `clai run` keep the long names, chosen by the user.
+5. `Enter` on a selected call keeps its cycle (closed, expanded, full),
+   chosen by the user.
 7. A question from the model opens at the bottom and covers the input
    while it is open, chosen by the user.
+8. 3 conversation rows stay above a question taller than the screen,
+   chosen by the user.
+
+The other proposals were accepted as written: `●` in the accent colour,
+no setting for the long names, a triple click on a summary line as a
+double click and the next click, and the question drawn like the prompt
+bar.

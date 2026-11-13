@@ -13,7 +13,7 @@ use unicode_width::UnicodeWidthStr;
 use crate::agent::{CallResult, CallState, ToolCallEvent};
 use crate::config::ToolPreview;
 use crate::text::{main_argument, short_result};
-use crate::tools::{Details, group};
+use crate::tools::{Details, group, label};
 
 use super::highlight;
 use super::markdown;
@@ -506,7 +506,7 @@ impl Conversation {
             .unwrap_or_else(|| main_argument(&call.arguments));
         let summary = summary.lines().next().unwrap_or_default().to_owned();
         let rule = self.look.symbols.rule;
-        let title = format!("{} {summary} {rule} {mark}", call.name);
+        let title = format!("{} {summary} {rule} {mark}", label(&call.name));
         Some(super::details::Details::new(
             title,
             render.body(call),
@@ -533,7 +533,7 @@ impl Conversation {
                 .clone()
                 .unwrap_or_else(|| main_argument(&call.arguments));
             lines.push(vec![(
-                format!("{} {summary}", call.name),
+                format!("{} {summary}", label(&call.name)),
                 self.look.styles.heading,
             )]);
             lines.extend(render.body(call));
@@ -885,7 +885,7 @@ impl Render<'_> {
             .summary
             .clone()
             .unwrap_or_else(|| main_argument(&call.arguments));
-        let name = fit(&call.name, width, symbols.more);
+        let name = fit(label(&call.name), width, symbols.more);
         let head_width = marker.width() + 1 + name.width();
         let room = width.saturating_sub(head_width + mark.width() + 2);
         let summary = fit(

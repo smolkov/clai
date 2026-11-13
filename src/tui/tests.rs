@@ -226,7 +226,7 @@ fn permission() -> Question {
             requests: 1,
             tool_calls: 1,
         },
-        summary: "Allow edit of src/parse.rs?".to_owned(),
+        summary: "edit_file: src/parse.rs (line 1)".to_owned(),
         choices: PERMISSION_CHOICES.to_vec(),
         kind: QuestionKind::Permission(Box::new(Permission {
             call: CallInfo {
@@ -774,12 +774,12 @@ fn long_command(lines: usize) -> App {
 fn tool_calls_are_collapsed_until_selected_and_toggled() {
     let mut app = long_command(3);
     let text = screen(&mut app, 80, 24);
-    assert!(text.contains("▸ run_command cargo test"), "{text}");
+    assert!(text.contains("▸ run cargo test"), "{text}");
     assert!(!text.contains("output 1"));
     select_last(&mut app);
     app.update(key(KeyCode::Enter));
     let text = screen(&mut app, 80, 24);
-    assert!(text.contains("▾ run_command"), "{text}");
+    assert!(text.contains("▾ run"), "{text}");
     assert!(text.contains("$ cargo test") && text.contains("output 3"));
     app.update(key(KeyCode::Enter));
     assert!(!screen(&mut app, 80, 24).contains("output 1"));
@@ -922,9 +922,14 @@ fn a_permission_question_opens_the_prompt_and_takes_the_keys() {
     let mut app = asked();
     assert!(app.prompt.is_some());
     let text = screen(&mut app, 80, 24);
-    assert!(text.contains("▾ edit_file"), "{text}");
+    assert!(text.contains("▾ edit"), "{text}");
     assert!(text.contains("+for i in 0..lines.len() {"), "{text}");
-    assert!(text.contains("asks: default for edit_file"), "{text}");
+    // The short name in the summary; the rule text keeps the real one.
+    assert!(
+        text.contains("edit: src/parse.rs (line 1)  asks: default for edit_file"),
+        "{text}"
+    );
+    assert!(!text.contains("edit_file: "), "{text}");
     // A key that answers nothing goes nowhere.
     app.update(ch('x'));
     assert!(app.editor.is_empty());
@@ -1059,7 +1064,7 @@ fn the_call_collapses_after_the_question() {
         "edited",
     ))));
     let text = screen(&mut app, 80, 24);
-    assert!(text.contains("▸ edit_file"), "{text}");
+    assert!(text.contains("▸ edit"), "{text}");
     assert!(!text.contains("+for i"), "{text}");
 }
 
@@ -1084,7 +1089,7 @@ fn a_long_diff_is_shown_in_full_from_its_start_and_can_be_scrolled() {
     app.update(live(SessionEvent::Question(Box::new(question))));
     let text = screen(&mut app, 80, 24);
     // The summary line is in view, and no "more lines": nothing is cut.
-    assert!(text.contains("▾ edit_file"), "{text}");
+    assert!(text.contains("▾ edit"), "{text}");
     assert!(!text.contains("more lines"), "{text}");
     assert!(!app.follow);
     // Scrolling works while the prompt is open, and is no answer.
@@ -1334,7 +1339,7 @@ fn reconnecting_rebuilds_the_conversation_and_keeps_the_view() {
     // The call stays expanded.
     app.update(press(KeyCode::Home, KeyModifiers::CONTROL));
     let text = screen(&mut app, 80, 24);
-    assert!(text.contains("▾ read_file"), "{text}");
+    assert!(text.contains("▾ read"), "{text}");
 }
 
 #[test]
@@ -3465,7 +3470,7 @@ fn applied_settings_change_the_conversation() {
         SessionEvent::ToolCall(done(call("c1", "run_command", CallState::Running), &long)),
     ]);
     let before = screen(&mut app, 80, 40);
-    assert!(before.contains("▸ run_command"), "{before}");
+    assert!(before.contains("▸ run"), "{before}");
     let effects = app.apply(tui_with(|t| {
         t.tool_preview = crate::config::ToolPreview::All;
         t.tool_output_lines = 5;
@@ -3474,7 +3479,7 @@ fn applied_settings_change_the_conversation() {
     }));
     assert!(effects.is_empty());
     let after = screen(&mut app, 80, 40);
-    assert!(after.contains("v run_command"), "{after}");
+    assert!(after.contains("v run"), "{after}");
     assert!(after.contains("25 more lines"), "{after}");
     assert!(after.is_ascii(), "{after}");
     assert_eq!(app.settings.scroll_lines, 7);
@@ -5205,7 +5210,7 @@ fn frame_tool_previews() {
 fn tool_preview_none_keeps_calls_on_one_line() {
     let mut app = app_with(edited());
     let text = screen(&mut app, 80, 20);
-    assert!(text.contains("▸ edit_file"), "{text}");
+    assert!(text.contains("▸ edit"), "{text}");
     assert!(!text.contains("+for i"), "{text}");
     // `Ctrl-T` shows the previews of the last turn, and hides them again.
     app.update(ctrl('t'));
@@ -5228,7 +5233,7 @@ fn enter_on_a_preview_expands_and_a_collapsed_call_stays_collapsed() {
     app.update(key(KeyCode::Enter));
     app.update(key(KeyCode::Enter));
     let text = screen(&mut app, 80, 60);
-    assert!(text.contains("▸ run_command"), "{text}");
+    assert!(text.contains("▸ run"), "{text}");
 }
 
 #[test]
@@ -5403,12 +5408,12 @@ fn double_and_triple_clicks() {
 #[test]
 fn a_click_toggles_a_call_and_the_focus_stays() {
     let mut app = app_with(edited());
-    let row = row_of(&mut app, "▸ edit_file");
+    let row = row_of(&mut app, "▸ edit");
     app.update(mouse(MouseEventKind::Down(MouseButton::Left), 10, row));
     app.update(mouse(MouseEventKind::Up(MouseButton::Left), 10, row));
     assert_eq!(app.focus, Focus::Input);
     let text = screen(&mut app, 80, 30);
-    assert!(text.contains("▾ edit_file"), "{text}");
+    assert!(text.contains("▾ edit"), "{text}");
     typed(&mut app, "x");
     assert_eq!(app.editor.text(), "x");
 }
