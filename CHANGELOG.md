@@ -7,6 +7,8 @@ notes are taken from that section by `ci/notes.sh`.
 
 ## Unreleased
 
+## 0.1.0 - 2026-11-13
+
 First release.
 
 - `clai`, `clai new`, `clai attach`: sessions with the TUI, in a background
@@ -21,5 +23,9 @@ First release.
   server asks.
 - Providers: `anthropic` and `openai-compatible`.
 - Themes, settings, syntax highlighting, status and statistics views.
+- Model picker with context windows; `Space` makes a model the default,
+  `/model NAME --default`, `clai models --set-default`.
+- Conversation layout: short tool names, `●` before answers, clicks on
+  tool calls, questions from the model at the bottom.
 - Static Linux binaries (x86_64, aarch64), macOS binaries, Debian
   packages.
