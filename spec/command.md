@@ -178,6 +178,11 @@ Runs one task without the TUI and exits when it is done.
   the workspace boundary still apply (see [`config.md`](config.md),
   "Permissions"). It does not answer limit questions.
 - `--no-ask` never asks, even on a terminal: `ask` is denied as above.
+- Language servers (see [`tools.md`](tools.md), "lsp"): the start question
+  is asked like other questions, with `y`, `n`, `e` or `c`; `--yes` starts
+  servers without asking. Where no one can answer, the `lsp` tool is left
+  out unless `[lsp] start = "allow"`. The servers run in the `clai run`
+  process and stop when the turn ends.
 
 | Option | Meaning |
 |--------|---------|
@@ -360,6 +365,10 @@ The test passes now.
   `/stats [7d|30d|all]` prints the statistics over all sessions of the TUI's
   Global tab as text: Totals, Models, and one line per day with its tokens and
   a bar (see [`tui.md`](tui.md), "Global tab"),
+  `/lsp` lists the language servers of the server (name, root, state, the
+  sessions that use them, and for a failed one its last stderr line),
+  `/lsp restart NAME` and `/lsp stop NAME` restart or stop one (see
+  [`tui.md`](tui.md), "Language servers"),
   `/detach` leaves, `/kill` ends the session and leaves, `/help` lists them.
   A `retry` event prints `clai: retrying (1/3): …`.
 - Sessions: `/sessions` prints the table of `clai ls`, the attached session

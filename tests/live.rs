@@ -10,6 +10,15 @@
 //! `claude-haiku-5-5`); `CLAI_LIVE_OPENAI_KEY_ENV` names the variable with
 //! the key for the openai-compatible server, if it needs one. A test whose
 //! variables are not set prints why and passes.
+//!
+//! `rust_analyzer` runs `clai run` with a scripted model against
+//! rust-analyzer on a small crate (RFC 0019); it needs `rust-analyzer` on
+//! `PATH` (`rustup component add rust-analyzer`), or its path in
+//! `CLAI_LIVE_RUST_ANALYZER`:
+//!
+//! ```sh
+//! cargo test --test live rust_analyzer -- --ignored
+//! ```
 
 #![allow(
     clippy::unwrap_used,
@@ -25,6 +34,8 @@ use futures_util::StreamExt;
 use indexmap::IndexMap;
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
+
+mod support;
 
 use clai::config::{self, Api, KeySource};
 use clai::provider::{
@@ -228,4 +239,111 @@ async fn tls_reaches_anthropic() {
         [Err(e)] => assert_eq!(e.kind, clai::provider::ErrorKind::Auth, "{}", e.message),
         other => panic!("{other:?}"),
     }
+}
+
+/// The program that runs rust-analyzer, if it runs.
+fn rust_analyzer() -> Option<String> {
+    let program = std::env::var("CLAI_LIVE_RUST_ANALYZER").unwrap_or("rust-analyzer".into());
+    let works = std::process::Command::new(&program)
+        .arg("--version")
+        .output()
+        .is_ok_and(|out| out.status.success());
+    if works {
+        Some(program)
+    } else {
+        eprintln!("skipped: {program} --version fails; rustup component add rust-analyzer");
+        None
+    }
+}
+
+/// The text of the tool result for call `id` in the last request.
+fn tool_result(requests: &[serde_json::Value], id: &str) -> String {
+    let last = requests.last().unwrap();
+    last["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["role"] == "tool" && m["tool_call_id"] == id)
+        .map(|m| m["content"].as_str().unwrap_or("").to_owned())
+        .unwrap_or_else(|| panic!("no result for {id}"))
+}
+
+/// Definition, references, and the errors after a broken edit, from a real
+/// rust-analyzer, through `clai run`.
+#[test]
+#[ignore = "needs rust-analyzer"]
+fn rust_analyzer_through_clai_run() {
+    use support::{Server, call, say, stderr};
+
+    let Some(program) = rust_analyzer() else {
+        return;
+    };
+    let server = Server::start(vec![
+        call(
+            "c1",
+            "lsp",
+            json!({"operation": "definition", "path": "src/lib.rs", "line": 6, "symbol": "add"}),
+        ),
+        call(
+            "c2",
+            "lsp",
+            json!({"operation": "references", "path": "src/lib.rs", "line": 1, "symbol": "add"}),
+        ),
+        call(
+            "c3",
+            "edit_file",
+            json!({"path": "src/lib.rs", "old_text": "    a + b\n", "new_text": "    let c: u32 = \"one\";\n    a + b + c\n"}),
+        ),
+        say("Done."),
+    ]);
+    let command = serde_json::to_string(&program).unwrap();
+    let env = support::Env::new(
+        "rust-analyzer",
+        &server,
+        &format!(
+            "[lsp]\nstart = \"allow\"\n\n[lsp.servers.rust-analyzer]\ncommand = [{command}]\n"
+        ),
+    );
+    let work = env.work();
+    std::fs::create_dir_all(work.join("src")).unwrap();
+    // `[workspace]`: not a member of a workspace above the temporary directory.
+    std::fs::write(
+        work.join("Cargo.toml"),
+        "[package]\nname = \"live\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[workspace]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        work.join("src/lib.rs"),
+        "pub fn add(a: u32, b: u32) -> u32 {\n    a + b\n}\n\npub fn twice(a: u32) -> u32 {\n    add(a, a)\n}\n",
+    )
+    .unwrap();
+
+    let out = env.run(&["run", "--yes", "look", "at", "add"]);
+    let log = stderr(&out);
+    assert_eq!(out.status.code(), Some(0), "{log}");
+    let requests = server.requests();
+    assert_eq!(requests.len(), 4, "{log}");
+    let tools: Vec<&str> = requests[0]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|t| t["function"]["name"].as_str())
+        .collect();
+    assert!(tools.contains(&"lsp"), "{tools:?}");
+
+    let definition = tool_result(&requests, "c1");
+    assert!(
+        definition.starts_with("1 definition of add:\nsrc/lib.rs:1:8: pub fn add"),
+        "{definition}\n{log}"
+    );
+    let references = tool_result(&requests, "c2");
+    assert!(
+        references.starts_with("1 reference to add:\nsrc/lib.rs:6:5: add(a, a)"),
+        "{references}\n{log}"
+    );
+    let edit = tool_result(&requests, "c3");
+    assert!(
+        edit.contains("rust-analyzer reports") && edit.contains("src/lib.rs:2:"),
+        "{edit}\n{log}"
+    );
 }

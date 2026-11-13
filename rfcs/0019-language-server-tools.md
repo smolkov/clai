@@ -1,8 +1,7 @@
 # Language server tools
 
 - RFC: 0019
-- Status: accepted
-- Progress: step 5 of 6 done (transport and one server; configuration and pool; the tool; diagnostics after edits; clients)
+- Status: done
 - Milestone: none; it adds a tool, a configuration table and a question
 - Spec: [`spec/tools.md`](../spec/tools.md);
   [`spec/config.md`](../spec/config.md), "Permissions", "Project files";
@@ -616,12 +615,24 @@ No new `tokio` features: `process` and `io-util` are on.
        server process (step 6's live test).
 
 6. **Spec, readme and a live test**
-   - Status: todo
+   - Status: done
    - Files: the spec files above, `readme.md`, `todo.md`,
      `tests/live.rs`
    - Result: the spec says what the code does; the readme explains
      `[lsp]` and the start question.
    - Tests: `cargo fmt`, `clippy`, `test`; the live test by hand.
+   - Built: `spec/tools.md` ("lsp", "Errors after an edit"),
+     `spec/config.md` ("LSP"), and the other spec files above; a
+     "Language servers" section in the readme;
+     `tests/live.rs::rust_analyzer_through_clai_run`, which runs
+     `clai run --yes` with a scripted model against rust-analyzer on a
+     small crate: definition, references, and the errors after a broken
+     edit. Choices made while building it:
+     - The live test goes through `clai run`, not the `lsp` module, so it
+       also covers the pool, the tool texts and the edit hook. It skips
+       when `rust-analyzer --version` fails (the rustup proxy without the
+       component); `CLAI_LIVE_RUST_ANALYZER` names another program.
+     - `spec/architecture.md` said protocol `6`; it says `8` now.
 
 ## Alternatives
 

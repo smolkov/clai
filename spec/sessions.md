@@ -181,6 +181,13 @@ A permission question also has:
 | `proposals` | Allow rules for "always", narrowest first (see [`tools.md`](tools.md), "Permissions"). |
 | `text` | The model's text in the same answer before the tool call, if any, so the user sees what the model said it was about to do. |
 
+Starting a language server (see [`tools.md`](tools.md), "lsp") is a
+permission question too: `call` is the `lsp` call, `details` are of the
+kind `lsp_start` (server, command, root, environment), the reason is
+`starting a language server ([lsp] start = "ask")`, there are no proposals,
+and its choices have no "always". Its `summary` is
+`start language server rust-analyzer in ~/ws/clai`.
+
 A limit question has the limit and the counts reached instead of `call`,
 `details` and `proposals`.
 

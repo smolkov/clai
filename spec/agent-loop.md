@@ -159,6 +159,16 @@ data and not instructions to follow, that a file denied for reading must not be 
 another way (e.g. with a command), and that the final answer is shown to
 the user as Markdown.
 
+When the `lsp` tool is offered (see [`tools.md`](tools.md), "lsp"), the
+prompt has one more bullet, before the one about focused changes, naming
+the file types of the servers in use:
+
+```
+- For definitions, references, types and callers of a symbol in .rs and .go
+  files, use lsp before search_files. After an edit, errors the language
+  server reports are added to the result; fix them before you go on.
+```
+
 Project instructions (e.g. an `AGENTS.md` file) and anything else that
 grows the prompt belong to `context.md` (planned). **(assumption)**
 

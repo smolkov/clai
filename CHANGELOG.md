@@ -16,6 +16,9 @@ First release.
   `commit`, `completion`.
 - Tools behind permission rules: read, list, search, edit and write files,
   run commands, ask the user.
+- Language servers (`lsp` tool, `[lsp]`, `/lsp`): definitions, references,
+  types, callers, symbols and errors; errors added after edits. Starting a
+  server asks.
 - Providers: `anthropic` and `openai-compatible`.
 - Themes, settings, syntax highlighting, status and statistics views.
 - Static Linux binaries (x86_64, aarch64), macOS binaries, Debian

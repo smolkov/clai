@@ -1,7 +1,7 @@
 # Tools
 
 Tools are the actions the model may ask `clai` to run: read, list and
-search files, change files, run commands. The model sends a tool call with
+search files, change files, run commands, ask a language server. The model sends a tool call with
 JSON arguments; `clai` checks the permission (see [`config.md`](config.md),
 "Permissions"), runs the tool, and sends the result back to the model.
 
@@ -13,6 +13,7 @@ JSON arguments; `clai` checks the permission (see [`config.md`](config.md),
 | [`edit_file`](#edit_file) | Replace exact text in a file. | `ask` |
 | [`write_file`](#write_file) | Create a file, or replace one. | `ask` |
 | [`run_command`](#run_command) | Run a shell command in the workspace. | `ask` |
+| [`lsp`](#lsp) | Ask a language server: definitions, references, types, callers, symbols, errors. | `allow`; starting a server asks; only offered when a server is configured or found |
 | [`ask_user`](#ask_user) | Ask the user questions with options. | `allow`; only offered when someone can answer |
 
 Statements marked **(assumption)** need a decision from the user.
@@ -79,6 +80,7 @@ checks, and which rule `a` ("always") proposes in the TUI prompt.
 | `edit_file` | `path` | — | `edit_file(PATH)`, `edit_file(DIR/**)`, `edit(DIR/**)` |
 | `write_file` | `path` | — | `write_file(PATH)`, `write_file(DIR/**)`, `edit(DIR/**)` |
 | `run_command` | each part of the command; redirection targets as `write_file` / `read_file` | — | each part not yet allowed, with all its words; then fewer words, down to the first word, e.g. `run_command(cargo test parse)`, `run_command(cargo test)`, `run_command(cargo)` |
+| `lsp` | `path` (the workspace for `workspace_symbols` without one) | each location in the result, with the `read_file` rules | `lsp(PATH)`, `lsp(DIR/**)` |
 
 `DIR` is the directory of `PATH`, and wider steps go up one directory at a
 time, up to the workspace (`./**`); a file in the workspace itself is
@@ -107,6 +109,9 @@ would not:
   also when nothing matched. Directories that a `read_file` `deny` rule
   matches are not entered; their files are not counted. A symbolic link
   to a file is checked where it points, including the workspace boundary.
+- `lsp` leaves out locations, callers and symbols in files whose
+  `read_file` check is `deny` or `ask`, and counts them:
+  `(2 locations skipped by permission rules)`.
 - Entries left out this way are not counted in the 1000-entry and 200-match
   limits.
 
@@ -131,6 +136,8 @@ whether it is in the workspace or in an `extra_dirs` entry.
 | `edit_file` | Unified diff with 3 lines of context, changed line range, number of occurrences replaced; file size and modification time, used to check again before writing. |
 | `write_file` | Whether the file exists; for a new file the full content and its line count, for `overwrite` a unified diff against the old content; directories that will be created. |
 | `run_command` | The command line exactly as it will run; working directory; `timeout_s`; the environment variables `clai` adds; the parts of the command, each with its own decision (`allow`, `ask`, `deny`) and the rule that decided; redirection targets with their resolved paths. |
+| `lsp` | The path (none for `workspace_symbols` without one), the operation, the server's name and its project root. |
+| `lsp_start` (starting a language server, see [lsp](#lsp)) | The server's name, its command, its project root (the working directory, with `~`), and its extra environment variables. |
 
 For `run_command`, the parts that ask are marked, so the user sees which part
 of `cargo build && ./deploy.sh` needs the answer. The proposals for "always"
@@ -323,7 +330,9 @@ Replaces exact text in an existing file.
   permissions are kept.
 
 Result: `edited src/parse.rs: replaced 1 occurrence (line 12)`, or with
-`replace_all`, `replaced 3 occurrences (lines 12, 40, 41)`.
+`replace_all`, `replaced 3 occurrences (lines 12, 40, 41)`. When a
+language server reports errors for the file, they follow (see
+[Errors after an edit](#errors-after-an-edit)).
 
 Errors:
 
@@ -365,7 +374,8 @@ Creates a file, or replaces one completely.
   a replaced file are kept, a new file gets the default permissions.
 
 Result: `created tests/parse_single_line.rs (12 lines)` or
-`replaced src/a.rs (40 lines, was 38)`.
+`replaced src/a.rs (40 lines, was 38)`, and the errors a language server
+reports, as for `edit_file`.
 
 Errors: path is a directory, existing file without `overwrite`, a parent
 path is a file (`src is a file, not a directory`), permission denied by the
@@ -428,6 +438,198 @@ Shown: the command; expanded: command, working directory and output.
 Permission: each part of the command line, and the targets of its
 redirections (see [Permissions](#permissions) and [`config.md`](config.md),
 "Commands with several parts").
+
+## lsp
+
+Asks a language server about the code: where a symbol is defined, where it
+is used, what type it has, who calls a function, which symbols a file or
+the workspace has, and which errors a file has. One tool with an
+`operation`, so the model sees one tool, not ten. The servers, and when
+they run, are in [`config.md`](config.md), "LSP".
+
+```json
+{
+  "operation": "references",
+  "path": "src/parse.rs",
+  "line": 3,
+  "symbol": "parse"
+}
+```
+
+| Argument | Required | Meaning |
+|----------|----------|---------|
+| `operation` | yes | One of the operations below. |
+| `path` | for all but `workspace_symbols` | The file. |
+| `line` | for position operations | Line, counted from 1, as `read_file` shows it. |
+| `symbol` | for position operations, unless `column` | The name on that line to ask about. |
+| `occurrence` | no | Which occurrence of `symbol` on the line, from 1. Default 1. |
+| `column` | no | Column in characters, from 1, instead of `symbol`. |
+| `query` | for `workspace_symbols` | Name or part of it. |
+| `include_declaration` | no | `references`: also list the definition. Default `false`. |
+
+The model names a symbol, not a column: models count characters badly,
+and the name is on the line it just read. `clai` finds the symbol as a
+whole word on the line and converts the column to the server's encoding
+(UTF-16 unless the server offers UTF-8).
+
+| Operation | Position | Asks the server for | Result |
+|-----------|----------|---------------------|--------|
+| `definition` | yes | `textDocument/definition` | Locations. |
+| `type_definition` | yes | `textDocument/typeDefinition` | Locations. |
+| `implementation` | yes | `textDocument/implementation` | Locations. |
+| `references` | yes | `textDocument/references` | Locations. |
+| `hover` | yes | `textDocument/hover` | The type and docs, as text. |
+| `incoming_calls` | yes | `textDocument/prepareCallHierarchy`, `callHierarchy/incomingCalls` | Callers, with the line of each call. |
+| `outgoing_calls` | yes | `textDocument/prepareCallHierarchy`, `callHierarchy/outgoingCalls` | Called functions, with the lines they are called on. |
+| `document_symbols` | no | `textDocument/documentSymbol` | The outline of the file. |
+| `workspace_symbols` | no | `workspace/symbol` | Matching symbols. |
+| `diagnostics` | no | `textDocument/diagnostic` when the server offers pulling; else the published diagnostics of the file's version, waited for up to 3 s | Errors and warnings of the file. |
+
+`workspace_symbols` without `path` works when one server is in use; with
+more, it needs a file of the language to pick the server.
+
+**Results.** Paths are shown as in the other tools; lines and columns are
+counted from 1.
+
+Locations are sorted by path and line, without duplicates, with the line's
+text cut to 200 characters:
+
+```
+3 references to parse:
+src/main.rs:17:17: let lines = parse(&text);
+src/lib.rs:4:9: pub use parse::parse;
+tests/parse.rs:8:5: parse("a\nb");
+```
+
+- At most 100 locations; more end with
+  `… 240 more in 31 files; ask about a narrower symbol`.
+- A location outside the workspace and the `extra_dirs` (a dependency's
+  source, the standard library) shows its path and line, not the text:
+  `~/.cargo/registry/src/…/serde-1.0.229/src/de/mod.rs:540 (outside the workspace)`.
+  The model learns where it is, but cannot read it this way, as with
+  `read_file`.
+- A location in a file that the `read_file` rules deny or ask for is left
+  out and counted (see [Permissions](#permissions)).
+- No location: `(none found)`.
+
+`hover`: the server's text, Markdown kept, cut to 4 000 characters;
+`(no information)` when there is none. It comes from the file asked about,
+so it is shown also when the symbol is defined in a denied file.
+
+`document_symbols`: an indented outline with kinds and line ranges, at most
+500 entries, `(no symbols)` when empty:
+
+```
+struct Parser   12-40
+  fn new        18-22
+  fn parse      24-39
+fn parse        43-47
+```
+
+`workspace_symbols`: one line per symbol, `kind name  path:line:column`, at
+most 100, then `… 12 more; use a longer query`.
+
+`incoming_calls`: `N callers of parse:`, then one line per call,
+`path:line:column: kind name: text`. `outgoing_calls`: `N calls from
+parse:`, then one line per callee, `kind name  path:line:column; called on
+line 14, 20`. At most 100 lines each.
+
+`diagnostics`: one line per diagnostic, errors first, then by line, at most
+50:
+
+```
+src/parse.rs:12:5: error[E0308]: mismatched types: expected `Vec<Line>`, found `()`
+src/parse.rs:30:9: warning: unused variable: `rest`
+```
+
+`(no errors or warnings)` when there are none. It never starts a check of
+the whole project; it reports what the server has for this file.
+
+**Errors.**
+
+| Case | Error result |
+|------|--------------|
+| `[lsp]` off, or the tool not offered in this session | `language servers are off in this session` |
+| No server for the file's language | `no language server for .toml files; servers: rust-analyzer (.rs), gopls (.go)` |
+| Starting was denied | `language server not started: denied by the user`, with the user's message if any |
+| Server failed to start or crashed | `rust-analyzer failed: <last line of its stderr>; use search_files instead`; after the second crash in 5 minutes it adds that the server stays stopped until `/lsp restart` |
+| Still indexing when the request times out | `rust-analyzer is still indexing (42 %); try again later, or use search_files` |
+| No answer within `request_timeout_s` otherwise | `rust-analyzer: no answer within 20 s; try again later, or use search_files` |
+| Operation the server does not offer | `pyright does not offer implementation; it offers definition, references, …` |
+| Symbol not on the line | `"parse" is not on line 3 of src/parse.rs: <the line>` |
+| Request failed | `rust-analyzer: <the server's message>` |
+
+A path that is a directory or does not exist, a missing `line`, `symbol`
+or `query`, and a line after the end of the file are argument errors.
+
+**Starting a server.** A language server runs code of the project:
+rust-analyzer runs build scripts and procedural macros, gopls runs
+`go list`, the TypeScript server loads plugins from `tsconfig.json`. So the
+first call that needs a server in a session asks, after the call's own
+permission check:
+
+```
+Start language server rust-analyzer in ~/ws/clai?
+command: rust-analyzer  It may run build scripts and macros of the project.
+[y] yes  [n] no  [e] explain  [Esc] cancel
+```
+
+- The question is a permission question with the details `lsp_start`
+  (see [Questions](#questions)); its reason is
+  `starting a language server ([lsp] start = "ask")`, and it has no
+  "always" and no proposals: "yes" already lasts for the session.
+- `y` starts the server (or uses it, when another session runs it) and
+  lets this session use it until the session ends; it is not saved, so a
+  resumed session asks again. `n` and `e` give the "denied by the user"
+  result, and later calls of the same turn for the same server get it at
+  once; the next turn asks again. `Esc` cancels the turn.
+- When the server already runs for another session, the question is still
+  asked: the permission belongs to the session, as session rules do.
+- `[lsp] start = "allow"` skips the question, and so does `--yes` in
+  `clai run`. With `"deny"`, or where no one can answer and starting is not
+  allowed, the tool is not offered.
+
+**When it is offered.** The tool is in the request when `[lsp]` is on, at
+least one server is in use (configured, or built in and found on `PATH`),
+`start` is not `deny`, and starting is allowed or someone can answer (see
+[`ask_user`](#ask_user)). The system prompt then has a bullet for it (see
+[`agent-loop.md`](agent-loop.md), "System prompt").
+
+### Errors after an edit
+
+When `diagnostics_after_edit` is on and a server this session started (or
+used) runs for the file, the result of a successful `edit_file` and
+`write_file` gets the file's errors:
+
+```
+edited src/parse.rs: replaced 1 occurrence (line 13)
+
+rust-analyzer reports 1 error in src/parse.rs:
+src/parse.rs:13:9: error[E0425]: cannot find value `lnes` in this scope
+(and 2 warnings or notes; lsp diagnostics lists them)
+```
+
+- The server gets the new text at once: `didChange` (and `didSave` when it
+  asks for it) for an open file, `didOpen` for one it does not have open.
+- `clai` waits up to 3 s for diagnostics published after the edit, of the
+  new version or later when both sides count versions; a server that
+  offers pulling is asked with `textDocument/diagnostic` within the same
+  3 s. Nothing comes in time: nothing is added.
+- Errors only, at most 10; warnings, notes and hints are counted. With only
+  warnings, nothing is added.
+- An edit never starts a server and never asks: the question would come in
+  the middle of a change. A server that runs only for another session does
+  not count.
+- The edit stays a success; the errors are information.
+
+Shown: `lsp`, the operation, the symbol and `path:line`
+(`lsp references parse src/parse.rs:3`, `lsp document_symbols src/parse.rs`,
+`lsp workspace_symbols Parser`); when done, a count (`3 references`,
+`1 error, 2 warnings`, `12 symbols`, `none found`); expanded: the result.
+
+Permission: `path` with the `lsp` rules (`lsp` is in the `read` group),
+then the start question; locations in the result with the `read_file`
+rules (see [Permissions](#permissions)).
 
 ## ask_user
 

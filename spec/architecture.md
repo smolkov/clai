@@ -32,6 +32,7 @@ Statements marked **(assumption)** need a decision from the user.
                                                │   └────────────────────────────────┘ │     sh -c
                                                │   ┌─ session "docs" ─┐  …            │
                                                │   └──────────────────┘               │
+                                               │ lsp pool (shared by sessions) ───────┼──▶ language servers
                                                │ config (loaded, watched, reloaded)   │
                                                └──────────────────────────────────────┘
 
@@ -45,12 +46,13 @@ Statements marked **(assumption)** need a decision from the user.
 | Config | The loaded user and project configuration; validation; reloading. | — | [`config.md`](config.md) |
 | Provider | Shared request, message, event and error types; retries. | Config | [`providers.md`](providers.md) |
 | Adapters | Encoding and decoding for one API type (`anthropic`, `openai-compatible`). | Provider types, HTTP | [`providers.md`](providers.md), "Adapters" |
-| Tools | The six tools: arguments, execution, results, question details. | Permissions (per-entry checks), file system, `sh` | [`tools.md`](tools.md) |
+| Tools | The tools: arguments, execution, results, question details. | Permissions (per-entry checks), file system, `sh`, LSP | [`tools.md`](tools.md) |
+| LSP | Language server processes: the pool, one process per server and root, shared by sessions; JSON-RPC over standard input and output; files in sync; diagnostics. | Config | [`config.md`](config.md), "LSP"; [`tools.md`](tools.md), "lsp" |
 | Permissions | Rule matching, path resolution, command splitting, the decision and its reason. | Config | [`config.md`](config.md), "Permissions" |
 | Context | System prompt, project instructions, history size and truncation. | Config | `context.md` (planned) |
 | Agent loop | One turn: requests, streaming, tool calls, limits, cancellation, questions. | Provider, tools, permissions, context | [`agent-loop.md`](agent-loop.md) |
 | Session | State (`idle`, `working`, `waiting`), history, model, session rules, open question, event log, message queue. | Agent loop | [`sessions.md`](sessions.md) |
-| Server | Socket, session registry, start on demand, idle exit, config reload. | Session, protocol | [`sessions.md`](sessions.md), "Server" |
+| Server | Socket, session registry, start on demand, idle exit, config reload; the LSP pool. | Session, protocol, LSP | [`sessions.md`](sessions.md), "Server" |
 | Protocol | Client–server messages, framing, version handshake. | — | [Protocol](#protocol) |
 | Client | Connecting, starting the server, request/response, event stream. | Protocol | [`sessions.md`](sessions.md) |
 | TUI | View state: layout, scroll, expanded entries, input editor, prompts. | Client | [`tui.md`](tui.md) |
@@ -117,6 +119,15 @@ clai/
 │   │       models.rs, commit.rs, server.rs, completion.rs
 │   │   └── chat/               clai chat: mod.rs (options, --list, script form),
 │   │                           talk.rs (conversation), questions.rs (--questions)
+│   ├── lsp/                    language servers (config.md, "LSP")
+│   │   ├── mod.rs              `lsp::Error`
+│   │   ├── transport.rs        Content-Length framing, JSON-RPC, cancellation
+│   │   ├── server.rs           one process: start, initialize, progress, requests, stop
+│   │   ├── docs.rs             open files, versions, positions in UTF-8 and UTF-16
+│   │   ├── config.rs           built-in servers, `[lsp]` merged, project roots
+│   │   ├── pool.rs             servers by name and root; idle stop, crashes
+│   │   ├── fake.rs             a language server in the process, for tests
+│   │   └── tests.rs
 │   ├── commit/                 commit messages (commit.md)
 │   │   ├── mod.rs              prepare, request, clean, describe
 │   │   ├── git.rs              running git: root, state, staged files, subjects
@@ -129,6 +140,7 @@ clai/
 │   │   ├── permissions.rs      loading and merging `[permissions]`
 │   │   ├── secret.rs           API keys, never shown
 │   │   ├── tui.rs              `[tui]` and `[themes]`
+│   │   ├── lsp.rs              `[lsp]` and its checks
 │   │   └── example.toml        example printed when no config exists
 │   ├── provider/               Provider and adapters (providers.md)
 │   │   ├── mod.rs              `Provider` trait
@@ -152,6 +164,7 @@ clai/
 │   │   ├── mod.rs              specs, `prepare`, `PreparedCall::run`
 │   │   ├── read_file.rs, list_files.rs, search_files.rs,
 │   │   │   edit_file.rs, write_file.rs, run_command.rs
+│   │   ├── lsp.rs              the `lsp` tool, the start question, errors after edits
 │   │   ├── question.rs         details of permission questions
 │   │   ├── walk.rs             directory walking for list and search
 │   │   ├── text.rs             binary files, safe writing, similar names
@@ -190,6 +203,7 @@ clai/
 │   │   ├── editor.rs           the input editor
 │   │   ├── prompt.rs           the open question and the keys that answer it
 │   │   ├── picker.rs           the model picker: models, filter, selected row
+│   │   ├── lsp.rs              the `/lsp` box: servers, selection
 │   │   ├── keys.rs             key to action, by focus
 │   │   ├── style.rs            styles and symbols (Unicode or ASCII, NO_COLOR)
 │   │   ├── view/               drawing only: conversation, prompt bar, input,
@@ -234,6 +248,7 @@ need the network. Build output goes to `target/`, the spec book to
 | Configuration | Server (one-shot: its process) | A snapshot, taken by each session when it is created and replaced on reload for new requests. |
 | History, model, session rules, open question, limits | The session | Events; the full event log on attach. Saved to `$XDG_STATE_HOME/clai/sessions/` as it changes (see [`sessions.md`](sessions.md), "Persistence"). |
 | Session list and names | Server registry | `clai ls`, the TUI session list. |
+| Language server processes | The server's LSP pool (one-shot: its process) | `/lsp` (`lsp_status`). Which servers a session may use is the session's: the start question is asked per session. |
 | Scroll position, expanded entries, unsent input, theme | Each TUI | Nobody. |
 | API keys | Provider, in memory, after first use | Nobody; never logged or sent to clients. |
 
@@ -251,7 +266,7 @@ need the network. Build output goes to `target/`, the spec book to
 Clients and the server exchange JSON messages over the Unix socket, one
 message per line (at most 16 MiB). Every message is an object with a
 `type`. The first message in each direction is `hello` with the protocol
-version (now `6`); on a mismatch the server sends `error` and closes the
+version (now `8`); on a mismatch the server sends `error` and closes the
 connection, and the message tells the user to restart the server with
 `clai server stop` (see [`sessions.md`](sessions.md), "Server"). The code
 is in `src/protocol/`.
@@ -261,7 +276,7 @@ Message kinds:
 | Direction | Kind | Content |
 |-----------|------|---------|
 | client → server | `hello` | Protocol version; client kind (`tui`, `chat`, `cli`, `bridge`) and name (e.g. `tui pts/3`, `clai chat`), which is shown as who answered; whether it answers questions. |
-| client → server | `request` | An id and a command: `new`, `list`, `kill`, `rename`, `attach`, `detach`, `send` (message), `set_model`, `cancel`, `answer`, `export`, `import`, `status`, `session_status`, `global_stats`, `models`, `stop`. Each gets exactly one `response`. Sessions are named by their current name; `attach`, `send` and `set_model` resume a saved session. |
+| client → server | `request` | An id and a command: `new`, `list`, `kill`, `rename`, `attach`, `detach`, `send` (message), `set_model`, `cancel`, `answer`, `export`, `import`, `status`, `session_status`, `global_stats`, `models`, `lsp_status`, `lsp_restart`, `lsp_stop`, `stop`. Each gets exactly one `response`. Sessions are named by their current name; `attach`, `send` and `set_model` resume a saved session. |
 | server → client | `hello` | Protocol version and the server's PID. |
 | server → client | `response` | The request's id and its `result`: `ok` with a payload (`done`, a session, the session list, the status, a session's status, the global statistics, the models; a session is its id, name, workspace, model, state, created and last updated time, turns, queued messages, open question and token totals) or `error` with a message, marked `usage` when the request itself was wrong (the command then exits `2`). |
 | server → client | `event` | Something that happened in an attached session, with the session's id, and `replay` when it is part of the log sent on attach (see below). |
@@ -337,6 +352,17 @@ the input and output tokens of each day of the range, empty days included;
 the tokens without a date; the logs skipped; and the server's clock. Weeks and
 months for a chart are made by the client. It came with protocol 7.
 
+The `lsp_status` request answers with the language servers of the pool
+(see [`config.md`](config.md), "LSP"): each with its name, its root
+(absolute), its state (`starting`, `indexing` with the last percentage,
+`ready`, `stopped`, `failed` with the reason), the names of the sessions
+that used it, and the last lines of its standard error. `lsp_restart`
+(name and root) stops a server, forgets its crashes and starts it again;
+`lsp_stop` stops it, and it starts again when the model uses it. Both
+answer like `lsp_status`. A deleted session is removed from the servers'
+lists. They came with protocol 8, as the `lsp_start` details of a
+permission question (see [`tools.md`](tools.md), "Questions").
+
 The session list has the state `saved` besides `idle`, `working` and
 `waiting`: a session on disk, not loaded. `status` reports the sessions,
 how many run, and how many are busy (`working` or `waiting`).
@@ -394,6 +420,7 @@ version is a bug, not an expected case; a new kind needs a new version.
 | User config file | Yes | Validation only. |
 | Project config file | No: comes with the repository | May only make permissions stricter; no providers, models or `[tui]` (see [`config.md`](config.md), "Files"). |
 | Model output (text, tool calls) | No | Argument checks, workspace boundary, permission rules including the built-in rules for secret files (see [`config.md`](config.md), "Built-in rules"), questions (see [`tools.md`](tools.md)). |
+| Language servers | No: they run code of the project (build scripts, macros, plugins) | Started only after the start question, or with `[lsp] start = "allow"` in the user file; a project file may only turn them off. Their answers are data: locations are filtered with the `read_file` rules, text outside the workspace is not shown, and a `workspace/applyEdit` is never applied. A malformed message fails the server, not the session. |
 | Tool output (file contents, command output) | No | Sent to the model as data, and the system prompt says so; never interpreted by `clai`, never logged. |
 | Clients | Yes, same user | Socket directory mode `0700`; the server never listens on the network. |
 | A later web UI | Only through a bridge the user starts and authenticates | Same protocol and same answer checks as any client (see [`sessions.md`](sessions.md), "Clients"). |

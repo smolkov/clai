@@ -221,7 +221,9 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [x] The `lsp` tool, the start question, protocol `8`.
 - [x] Diagnostics after `edit_file` and `write_file`.
 - [x] Clients: tool lines, the start prompt, `/lsp`.
-- [ ] Spec, readme and a live test with rust-analyzer.
+- [x] Spec, readme and a live test with rust-analyzer.
+- [ ] Run the live test with rust-analyzer installed
+      (`cargo test --test live rust_analyzer -- --ignored`).
 
 ## Copy text and see tool details (RFC 0016)
 
@@ -327,8 +329,8 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [ ] Commit: the TUI `/commit` dialog (`clai commit` is built, RFC 0013)
 - [ ] Context management (history trimming of old tool results: RFC 0008,
       draft; the rest needs `spec/context.md`)
-- [ ] Language server tools: `lsp` tool, `[lsp]`, diagnostics after edits
-      (RFC 0019, accepted; see its section)
+- [x] Language server tools: `lsp` tool, `[lsp]`, diagnostics after edits
+      (RFC 0019; see its section)
 - [ ] Release (RFC 0020): scripts, pipelines, Debian packages and crate
       metadata are built; left to do on the forges:
   - [ ] First push: `ci.yml` and `.gitlab-ci.yml` green.

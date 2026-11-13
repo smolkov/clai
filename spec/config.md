@@ -66,6 +66,7 @@ search_files   = "allow"
 edit_file      = "ask"
 write_file     = "ask"
 run_command    = "ask"
+lsp            = "allow"
 
 # Directories outside the workspace the file tools may use. Absolute, or
 # starting with ~/. Default: none.
@@ -135,11 +136,12 @@ the group. Groups are only allowed in rules, not as tool keys.
 
 | Group | Tools |
 |-------|-------|
-| `read` | `read_file`, `list_files`, `search_files` |
+| `read` | `read_file`, `list_files`, `search_files`, `lsp` |
 | `edit` | `edit_file`, `write_file` |
 
 So `read = ["secrets/**"]` in `[permissions.deny]` keeps files below
-`secrets/` out of reading, listing and searching alike.
+`secrets/` out of reading, listing, searching and language server questions
+alike.
 
 ### Rules
 
@@ -406,6 +408,8 @@ repository:
   naming the file and key.
 - Its rules are added to the user file's rules; for a tool key, the stricter
   value wins (`deny` over `ask` over `allow`).
+- Its `[lsp]` may only have `enabled = false` and `start = "deny"`; any other
+  key or value is an error naming it (see [LSP](#lsp)).
 
 An `except` in a project file only narrows that file's own rule; it cannot
 lift a rule of the user file.
@@ -435,6 +439,110 @@ Both keys are 1–10000. A project file may set them too; for each key the
 lower of the user and the project value is used. What they count and what
 happens at the limit: [`agent-loop.md`](agent-loop.md), "Limits".
 **(assumption)**
+
+## LSP
+
+Language servers for the `lsp` tool (see [`tools.md`](tools.md), "lsp").
+In the user file; a project file may only turn them off (see below).
+
+```toml
+[lsp]
+enabled = true                # false: no lsp tool, no servers
+builtin = true                # the built-in servers below, if on PATH
+start = "ask"                 # starting a server: ask, allow or deny
+diagnostics_after_edit = true # errors of a running server after edits
+start_timeout_s = 60          # waiting for initialize, 1–3600
+request_timeout_s = 20        # waiting for each answer, 1–600
+
+[lsp.servers.rust-analyzer]
+# Sent as initializationOptions, and in answer to workspace/configuration.
+settings = { checkOnSave = false }
+
+[lsp.servers.ruff]
+command    = ["ruff", "server"]
+extensions = ["py", "pyi"]
+roots      = ["pyproject.toml", "ruff.toml"]
+env        = { RUFF_CACHE_DIR = "/tmp/ruff" }
+```
+
+| Key | Meaning |
+|-----|---------|
+| `command` | Program and arguments; the program is looked for on `PATH` or absolute. Talks over standard input and output. |
+| `extensions` | File extensions it serves, without the dot. |
+| `roots` | Names of files or directories that mark a project root, looked for upwards from the file, stopping at the workspace (or the extra directory the file is in). Relative, no `..`, not starting with `/` or `~`. None, or none found: the workspace is the root. |
+| `settings` | A table, sent as `initializationOptions`. For `workspace/configuration`, a section named in it gets that part, any other section the whole table. |
+| `env` | Extra environment variables. |
+
+Server names have letters, digits, `.`, `_` and `-`.
+
+**Built-in servers.** With `builtin = true`, these are used when their
+program is an executable file in an absolute `PATH` entry:
+
+| Server | Command | Extensions | Roots |
+|--------|---------|------------|-------|
+| rust-analyzer | `rust-analyzer` | `rs` | `Cargo.toml` |
+| gopls | `gopls` | `go` | `go.mod` |
+| clangd | `clangd` | `c`, `h`, `cc`, `cpp`, `hpp` | `compile_commands.json`, `.clangd` |
+| pyright | `pyright-langserver --stdio` | `py`, `pyi` | `pyproject.toml`, `setup.py` |
+| typescript-language-server | `typescript-language-server --stdio` | `ts`, `tsx`, `js`, `jsx` | `package.json`, `tsconfig.json` |
+
+- A table named like a built-in server changes it: the keys it leaves out
+  come from the built-in one, so `[lsp.servers.rust-analyzer]` with only
+  `settings` is enough. `command = []` turns a built-in server off, and is
+  allowed only for built-in names.
+- Any other server needs `command` and `extensions`. Its program is not
+  looked for on `PATH` when loading; a missing program is a start error.
+- One extension has one server: two user servers for one extension are a
+  load error. A built-in server gives up only the extensions a user server
+  takes, so with `ruff` on `py`, `pyright` still serves `pyi`.
+
+**Permissions.** `lsp` is a tool key, default `allow`, and in the `read`
+group; its rules match the file asked about. Starting a server is a
+question of its own, because a language server runs code of the project
+(build scripts, macros, plugins), as `cargo build` does:
+
+- `start = "ask"` (the default) asks once per server and session (see
+  [`tools.md`](tools.md), "lsp"). Where no one can answer (`clai run`
+  without a terminal, `--no-ask`), the tool is not offered.
+- `"allow"` starts servers without asking; `--yes` in `clai run` does too.
+- `"deny"` never starts servers; the tool is not offered.
+
+**Project files.** A server is a command that runs, so a project file may
+set only `enabled = false` and `start = "deny"` in `[lsp]`, and nothing
+else; any other key or value is a load error naming it.
+
+**Processes.** The clai server (or the `clai run` process) owns one process
+per server and project root, shared by its sessions:
+
+- It starts on the first call that needs it, after the start question,
+  in the root, in a process group of its own, with the environment of the
+  clai server plus `env`; `initialize` gets the root, the client
+  capabilities `clai` handles and `settings`.
+- A request waits for the `initialize` answer, up to `start_timeout_s`.
+  While the server reports work in progress (indexing), a request without
+  an answer within `request_timeout_s` gives the "still indexing" error.
+- A server without requests for 10 minutes is stopped (`shutdown`, `exit`,
+  then its process group is killed after 2 s). All stop when the clai
+  server stops, after a `clai run` turn, and when `[lsp]` changes on
+  reload.
+- A crashed or failed server starts again on the next call; after the
+  second crash in 5 minutes it stays failed until `/lsp restart` or a
+  reload that changes `[lsp]`.
+- Its standard error goes to the log at `debug`; the last 50 lines are kept
+  for `/lsp` and error results.
+- Files asked about are opened with their text from disk and kept in sync:
+  before each request, an open file that changed on disk gets `didChange`
+  with the full text. At most 50 files stay open; the least recently used
+  is closed. Files outside the workspace and `extra_dirs` are never opened.
+  Other files the server watches itself.
+- Requests from the server: `workspace/configuration` gets `settings`;
+  `window/workDoneProgress/create` and `client/registerCapability` are
+  acknowledged; `window/showMessageRequest` gets no choice;
+  `workspace/applyEdit` is answered with `applied: false`; anything else
+  gets "method not found".
+- A malformed message fails the server, never the session: a header
+  without `Content-Length`, a header line over 1 KiB, a body over 64 MiB or
+  a body that is not JSON-RPC.
 
 ## Commit
 
@@ -704,7 +812,15 @@ It is an error when:
   `run_command`, has `paths` for `run_command` or `commands` for file tools,
   or has a `message` with `action = "allow"`;
 - a path pattern ends in `/`;
-- an `extra_dirs` entry is not absolute or `~/`, or has an unknown `access`.
+- an `extra_dirs` entry is not absolute or `~/`, or has an unknown `access`;
+- `[lsp]` has a server name with other characters than letters, digits,
+  `.`, `_` and `-`, a server without `command` or `extensions` that is not
+  built in, `command = []` for a server that is not built in, an extension
+  written with its dot, a root that is absolute or has `..`, an `env` name
+  that is not a variable name, two servers for one extension, or
+  `lsp.start_timeout_s` outside 1–3600 or `lsp.request_timeout_s` outside
+  1–600; or a project file's `[lsp]` has more than `enabled = false` and
+  `start = "deny"`.
 
 All errors found are reported, one per line; a TOML syntax error stops at
 the first one.
@@ -751,3 +867,5 @@ an editor that replaces the file is noticed the same way.
   changed in the configuration; its next model change must pick a model that
   exists. The TUI marks such a model as "not in config".
 - The project file is read when a session is created in that workspace.
+- When `[lsp]` differs from the one before, all language servers stop and
+  their crashes are forgotten; they start again on the next call.

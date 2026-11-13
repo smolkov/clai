@@ -2,8 +2,8 @@
 
 `clai` is an AI coding agent for the terminal, written in Rust. You describe
 a task in plain language; `clai` sends it to a large language model, runs the
-tool calls the model asks for (read and edit files, run commands) behind
-permission rules, and shows every change and command.
+tool calls the model asks for (read and edit files, run commands, ask a
+language server) behind permission rules, and shows every change and command.
 
 > Status: in development. The TUI (`clai`, `clai new`, `clai attach`), `clai run`
 > (one task, without the TUI), sessions in the background server, saved and
@@ -125,7 +125,7 @@ widens the rule, `Enter` confirms), `n` no, `e` no with a message to the model,
 Commands: `/help`, `/model [PROVIDER/MODEL]` (without one, choose it as with
 `Ctrl-O`; with `--default` also make it the default of new sessions), `/sessions`, `/new [NAME]` (a session in the same workspace; the model
 picker starts on `default_model`, so `Enter` takes it), `/attach [NAME]`,
-`/rename NAME`, `/status [NAME]`, `/stats [7d|30d|all]`, `/settings`, `/theme [NAME]`, `/kill`, `/copy [N|code]`
+`/rename NAME`, `/status [NAME]`, `/stats [7d|30d|all]`, `/lsp` (the language servers; `r` restart, `k` stop), `/settings`, `/theme [NAME]`, `/kill`, `/copy [N|code]`
 (the last answer, the one N back, or its last code block), `/diff` (the changes of the last turn), `/detach`, `/quit`. `/` in the empty input lists them:
 type to search, `Up` / `Down` select, `Enter` runs, `Tab` completes, `Esc` closes
 the list and keeps the text. After `/attach ` and `/model ` a list offers the
@@ -330,6 +330,54 @@ the model read one, add it to `builtin_except` in your own config file:
 [permissions]
 builtin_except = ["deploy/certs/*.pem"]
 ```
+
+## Language servers
+
+With a language server the model finds definitions, references, types and
+callers of a symbol instead of guessing with a regex, and sees at once when
+an edit broke the build. The `lsp` tool asks the server for `definition`,
+`type_definition`, `implementation`, `references`, `hover`,
+`incoming_calls`, `outgoing_calls`, `document_symbols`,
+`workspace_symbols` and `diagnostics`. After `edit_file` and `write_file`,
+the errors a running server reports for the changed file are added to the
+result.
+
+These servers are used when their program is on `PATH`: rust-analyzer
+(`.rs`), gopls (`.go`), clangd (C and C++), pyright (`.py`) and
+typescript-language-server (`.ts`, `.js`). `clai` installs none; with
+rustup, `rustup component add rust-analyzer`. Add or change servers in the
+user file:
+
+```toml
+[lsp]
+start = "ask"                 # ask, allow or deny
+
+[lsp.servers.rust-analyzer]   # keys left out come from the built-in one
+settings = { checkOnSave = false }
+
+[lsp.servers.ruff]            # serves .py instead of pyright
+command    = ["ruff", "server"]
+extensions = ["py"]
+roots      = ["pyproject.toml"]
+```
+
+**Starting a server asks.** A language server runs code of the project
+(rust-analyzer runs build scripts and procedural macros), as `cargo build`
+does, so the first `lsp` call of a session for a server asks:
+
+```
+Start language server rust-analyzer in ~/ws/clai?
+command: rust-analyzer  It may run build scripts and macros of the project.
+[y] yes  [n] no  [e] explain  [Esc] cancel
+```
+
+`y` lasts for the session; `n` for the turn. `start = "allow"` (or
+`clai run --yes`) skips the question, `start = "deny"` or `enabled = false`
+turns the tool off. A project's `.clai/config.toml` can only turn it off.
+Sessions on the same project share one server; it stops after 10 minutes
+without use. `/lsp` shows the servers, their state and last error lines,
+and restarts or stops one. Details: [`spec/tools.md`](spec/tools.md),
+"lsp", and [`spec/config.md`](spec/config.md), "LSP".
 
 ## Limits
 

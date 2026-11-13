@@ -459,6 +459,17 @@ The TUI:
 Edits are shown as a unified diff with added lines green and removed lines
 red. Commands are shown exactly as they will run, with the working directory.
 
+Starting a language server (see [`tools.md`](tools.md), "lsp") is asked in
+the same prompt bar, below the `lsp` call's own details:
+
+```
+Start language server rust-analyzer in ~/project?
+command: rust-analyzer  It may run build scripts and macros of the project.
+[y] yes  [n] no  [e] explain  [Esc] cancel
+```
+
+It has no `a`: "yes" already lasts for the session.
+
 ## Limit prompt
 
 When a turn reaches its limit of model requests or tool calls, the session
@@ -555,6 +566,7 @@ the session row counts the question in `●`, as for other questions.
 | `/rename NAME` | Rename the attached session. |
 | `/status [NAME]` | Open the status box: the full status of the attached session, or of session `NAME`, running or saved, and its statistics. See [Status box](#status-box). |
 | `/stats [RANGE]` | Open the status box on its Global tab: statistics over all sessions of the server, for `7d` (the default), `30d` or `all`. See [Global tab](#global-tab). |
+| `/lsp` | Open the language server box: the servers of the clai server, their state and the sessions using them; restart or stop one. See [Language servers](#language-servers). |
 | `/settings` | Open the settings box: the `[tui]` settings, changed with a preview and saved into the user file. See [Settings](#settings). |
 | `/theme [NAME]` | Open the theme list; with a name, switch to that theme. Either way the theme is saved as the default. See [Theme list](#theme-list). |
 | `/kill`, `/delete` | Delete the attached session, after the confirmation of [Delete](#delete), and open the session list. |
@@ -1075,6 +1087,40 @@ picker.
 - With `CLAI_THEME` set, the title says so. A theme taken in the list wins over
   it for the rest of the run, and is saved for later runs.
 - With `NO_COLOR` the title says that colours are off.
+
+## Language servers
+
+`/lsp` opens a box with the language servers of the clai server (see
+[`config.md`](config.md), "LSP"), one row each:
+
+```
+┌ Language servers ─────────────────────────────────────────────────────────┐
+│ ▶ rust-analyzer  .         ready  ─ clai, fix                             │
+│   pyright        ../docs   failed: exited with status 1                   │
+│                                                                           │
+│ Last lines of rust-analyzer:                                              │
+│ INFO waiting for flycheck                                                 │
+│                                                                           │
+│ r restart ─ k stop ─ Up Down choose ─ Esc close                           │
+└───────────────────────────────────────────────────────────────────────────┘
+```
+
+- A row has the server's name, its root (relative to the session's
+  workspace, else absolute), its state (`starting`, `indexing 42 %`,
+  `ready`, `stopped`, `failed: <reason>`) and the sessions that used it, by
+  name. A failed server is red.
+- Below the rows: the last lines of the selected server's standard error.
+- `r` restarts the selected server (it forgets its crashes), `k` stops it
+  (it starts again when the model uses it); the box shows the new list, or
+  the error. `Enter` or `F5` asks again. `Up` / `Down` select; `Esc`, `q`
+  and `Ctrl-C` close.
+- With no server yet: "No language server has run. One starts when the
+  model uses lsp."
+
+`lsp` calls in the conversation show the operation, symbol and place
+(`lsp references parse src/parse.rs:3`) and, when done, a count
+(`✓ 3 references`, `✓ 1 error, 2 warnings`, `✓ 12 symbols`); see
+[`tools.md`](tools.md), "lsp".
 
 ## Appearance
 
