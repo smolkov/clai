@@ -5977,3 +5977,124 @@ fn a_double_click_on_text_still_selects_a_word() {
     let effects = app.update(mouse(MouseEventKind::Down(MouseButton::Left), 3, row));
     assert_eq!(copies(&effects), ["hello"]);
 }
+
+// Questions at the bottom (RFC 0022).
+
+#[test]
+fn a_question_takes_the_place_of_the_input_and_keeps_its_text() {
+    let mut app = idle_session();
+    typed(&mut app, "half a thought");
+    let mut app = ask(app, false);
+    let text = screen(&mut app, 80, 24);
+    assert!(!text.contains("half a thought"), "{text}");
+    assert!(text.contains("── Question ─ Database ──"), "{text}");
+    // The rows of the input and its rules: the question ends above the footer.
+    let rows: Vec<&str> = text.lines().collect();
+    assert!(rows[20].starts_with("Up Down choose"), "{text}");
+    assert!(rows[21].starts_with("────"), "{text}");
+    // Answered elsewhere: the input comes back as it was.
+    app.update(live(SessionEvent::QuestionClosed {
+        id: "q3".into(),
+        closed: Closed::Answered {
+            answer: Answer::Decline,
+            by: "tui pts/4".into(),
+        },
+    }));
+    assert!(app.prompt.is_none());
+    assert_eq!(app.editor.text(), "half a thought");
+    assert!(screen(&mut app, 80, 24).contains("> half a thought"));
+}
+
+#[test]
+fn the_input_comes_back_after_an_answer_a_skip_and_a_cancel() {
+    for keys in [&[KeyCode::Enter][..], &[KeyCode::Esc][..]] {
+        let mut app = idle_session();
+        typed(&mut app, "kept");
+        let mut app = ask(app, false);
+        for code in keys {
+            app.update(key(*code));
+        }
+        // The answer goes to the server; the question closes when it is
+        // accepted.
+        app.update(live(SessionEvent::QuestionClosed {
+            id: "q3".into(),
+            closed: Closed::Answered {
+                answer: Answer::Decline,
+                by: "tui pts/3".into(),
+            },
+        }));
+        assert_eq!(app.editor.text(), "kept");
+    }
+    let mut app = idle_session();
+    typed(&mut app, "kept");
+    let mut app = ask(app, false);
+    app.update(ctrl('c'));
+    assert_eq!(app.editor.text(), "kept");
+}
+
+#[test]
+fn frame_a_tall_question_keeps_three_rows_of_conversation() {
+    let mut app = ask(idle_session(), true);
+    app.update(key(KeyCode::Enter));
+    let text = screen(&mut app, 80, 14);
+    let rows: Vec<&str> = text.lines().collect();
+    // 3 rows of conversation, then the titled rule.
+    assert!(rows[3].starts_with("── Question"), "{text}");
+    // The keys line stays the last row of the question.
+    assert!(rows[10].starts_with("Space tick"), "{text}");
+    insta::assert_snapshot!(text);
+}
+
+#[test]
+fn frame_a_question_on_the_smallest_screen() {
+    let mut app = ask(idle_session(), false);
+    let text = screen(&mut app, 40, 10);
+    let rows: Vec<&str> = text.lines().collect();
+    assert!(rows[0].starts_with("── Question"), "{text}");
+    insta::assert_snapshot!(text);
+}
+
+#[test]
+fn the_wheel_scrolls_the_question_under_it_and_the_conversation_above() {
+    let mut app = ask(idle_session(), true);
+    app.update(key(KeyCode::Enter));
+    screen(&mut app, 80, 14);
+    let wheel = |app: &mut App, kind, row| {
+        app.update(mouse(kind, 10, row));
+        screen(app, 80, 14)
+    };
+    let before = app.prompt.as_ref().unwrap().ask.as_ref().unwrap().top;
+    wheel(&mut app, MouseEventKind::ScrollDown, 6);
+    let after = app.prompt.as_ref().unwrap().ask.as_ref().unwrap().top;
+    assert!(after > before, "{before} {after}");
+    // Never further than the question's end.
+    for _ in 0..20 {
+        wheel(&mut app, MouseEventKind::ScrollDown, 6);
+    }
+    let most = app.prompt.as_ref().unwrap().ask.as_ref().unwrap().top;
+    wheel(&mut app, MouseEventKind::ScrollUp, 6);
+    assert!(app.prompt.as_ref().unwrap().ask.as_ref().unwrap().top < most);
+    // Over the conversation, the conversation scrolls, not the question.
+    let asked = app.prompt.as_ref().unwrap().ask.as_ref().unwrap().top;
+    assert!(app.follow);
+    wheel(&mut app, MouseEventKind::ScrollUp, 1);
+    assert!(!app.follow);
+    assert_eq!(
+        app.prompt.as_ref().unwrap().ask.as_ref().unwrap().top,
+        asked
+    );
+}
+
+#[test]
+fn the_picker_opens_over_a_question_and_the_question_comes_back() {
+    let mut app = ask(idle_session(), false);
+    app.update(ctrl('s'));
+    app.update(sessions_answer(three()));
+    assert!(app.session_list.is_some());
+    let text = screen(&mut app, 80, 24);
+    assert!(text.contains("Sessions") || text.contains("docs"), "{text}");
+    app.update(key(KeyCode::Esc));
+    assert!(app.session_list.is_none());
+    let text = screen(&mut app, 80, 24);
+    assert!(text.contains("── Question ─ Database"), "{text}");
+}

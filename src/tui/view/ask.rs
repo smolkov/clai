@@ -1,6 +1,7 @@
-//! The box of a question from the model (see `spec/tui.md`, "Questions
-//! from the model"): context, the question, its options and the text row;
-//! after several questions, the review page.
+//! A question from the model (see `spec/tui.md`, "Questions from the
+//! model"), at the bottom of the screen in the place of the input (RFC
+//! 0022): context, the question, its options and the text row; after
+//! several questions, the review page.
 
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -17,16 +18,8 @@ use crate::tui::prompt::Prompt;
 use crate::tui::style::Look;
 use crate::tui::wrap::{Piece, plain, wrap};
 
-use super::popup;
-
-/// The box's width, if the screen has room for it.
-const WIDTH: u16 = 78;
 /// Before an option's description.
 const DESCRIPTION: &str = "      ";
-
-fn cells(size: Rect) -> u16 {
-    WIDTH.min(size.width.saturating_sub(4))
-}
 
 /// The open question from the model, if there is one.
 fn open(app: &App) -> Option<(&Prompt, &AskUser, &Ask)> {
@@ -84,6 +77,8 @@ struct Body {
     /// The row of the selected option, to keep it in view.
     selected: usize,
     cursor: Option<(usize, usize)>,
+    /// The first row of the keys line, which stays the last row shown.
+    keys: usize,
 }
 
 fn question(body: &mut Body, a: &AskUser, ask: &Ask, width: usize, look: &Look) {
@@ -246,6 +241,7 @@ fn review(body: &mut Body, a: &AskUser, ask: &Ask, width: usize, look: &Look) {
 
 /// The keys, or the question before declining.
 fn keys_line(body: &mut Body, ask: &Ask, keys: String, width: usize, look: &Look) {
+    body.keys = body.lines.len();
     if ask.confirm_decline {
         body.lines.extend(plain(
             "Skip the questions and drop what you chose? [y] yes  [n] no",
@@ -257,25 +253,64 @@ fn keys_line(body: &mut Body, ask: &Ask, keys: String, width: usize, look: &Look
     }
 }
 
-pub fn draw(app: &App, frame: &mut Frame<'_>, size: Rect) {
+/// The rows the open question needs at `width`; `None` without one.
+pub fn height(app: &App, width: usize) -> Option<usize> {
+    let (prompt, a, ask) = open(app)?;
+    Some(lines(prompt, a, ask, width, &app.settings.look).lines.len())
+}
+
+/// How far the open question can scroll in `area`.
+pub fn max_top(app: &App, area: Rect) -> usize {
+    let Some((prompt, a, ask)) = open(app) else {
+        return 0;
+    };
+    let body = lines(prompt, a, ask, usize::from(area.width), &app.settings.look);
+    let total = body.lines.len();
+    let height = usize::from(area.height);
+    // As in `draw`: with the keys kept at the bottom, the rows above scroll.
+    let (scrolled, keys) = if body.keys > 0 && body.keys < total && total > height {
+        (body.keys, total - body.keys)
+    } else {
+        (total, 0)
+    };
+    let room = height.saturating_sub(keys).max(1);
+    scrolled.saturating_sub(room)
+}
+
+/// Draws the question into `area`, with the titled rule above it and a
+/// rule below.
+pub fn draw(app: &App, frame: &mut Frame<'_>, area: Rect) {
     let Some((prompt, a, ask)) = open(app) else {
         return;
     };
     let look = &app.settings.look;
-    let cells = cells(size);
-    let width = usize::from(cells);
+    let width = usize::from(area.width);
     let body = lines(prompt, a, ask, width, look);
-    let wanted = u16::try_from(body.lines.len()).unwrap_or(u16::MAX);
-    let area = popup::open(frame, size, &title(a, ask, look), cells, wanted, look);
-    let room = usize::from(area.height).max(1);
-    let max_top = body.lines.len().saturating_sub(room);
-    // Scrolled by `PgUp` / `PgDn`; otherwise the selected row is in view.
+    let full = Rect::new(area.x, area.y, area.width, area.height);
+    let title = title(a, ask, look);
+    let buffer = frame.buffer_mut();
+    super::titled_rule(buffer, full, area.y - 1, &title, look);
+    super::rule(buffer, full, area.y + area.height, look);
+    let mut lines = body.lines;
+    // The keys stay at the bottom; the rows above them scroll.
+    let keys = if body.keys > 0 && body.keys < lines.len() && lines.len() > usize::from(area.height)
+    {
+        lines.split_off(body.keys)
+    } else {
+        Vec::new()
+    };
+    let room = usize::from(area.height).saturating_sub(keys.len()).max(1);
+    let max_top = lines.len().saturating_sub(room);
+    // Scrolled by `PgUp` / `PgDn` or the wheel; otherwise the selected row
+    // is in view.
     let top = if ask.top > 0 {
         ask.top.min(max_top)
     } else {
         (body.selected + 1).saturating_sub(room).min(max_top)
     };
-    let shown: Vec<Line<'static>> = body.lines.into_iter().skip(top).take(room).collect();
+    let mut shown: Vec<Line<'static>> = lines.into_iter().skip(top).take(room).collect();
+    shown.resize(room, Line::raw(""));
+    shown.extend(keys);
     frame.render_widget(Paragraph::new(shown).style(Style::default()), area);
     if let Some((row, cell)) = body.cursor
         && row >= top

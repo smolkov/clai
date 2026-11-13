@@ -7,22 +7,22 @@ v ask_user Database, Features                                              ? ask
                                                                                 
                                                                                 
                                                                                 
-+ Question - 1/2 Database -----------------------------------------------------+
-| Both work with the current code; the choice decides the migration.           |
-|                                                                              |
-| Which database should the cache use?                                         |
-|                                                                              |
-| > 1 SQLite (recommended)                                                     |
-|       One file next to the binary, no server.                                |
-|   2 Postgres                                                                 |
-|       Shared with the API; needs the server running.                         |
-|   3 Type an answer                                                           |
-|                                                                              |
-| Up Down choose - Enter next - Tab question - Esc skip - Ctrl-C cancel turn   |
-+------------------------------------------------------------------------------+
                                                                                 
---------------------------------------------------------------------------------
->                                                                               
+                                                                                
+                                                                                
+                                                                                
+-- Question - 1/2 Database -----------------------------------------------------
+Both work with the current code; the choice decides the migration.              
+                                                                                
+Which database should the cache use?                                            
+                                                                                
+> 1 SQLite (recommended)                                                        
+      One file next to the binary, no server.                                   
+  2 Postgres                                                                    
+      Shared with the API; needs the server running.                            
+  3 Type an answer                                                              
+                                                                                
+Up Down choose - Enter next - Tab question - Esc skip - Ctrl-C cancel turn      
 --------------------------------------------------------------------------------
   asking - /help - Ctrl-D detach                                                
   project - ~/ws/project - anthropic/sonnet - 1/1 - 0/200k

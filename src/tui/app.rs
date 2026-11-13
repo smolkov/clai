@@ -357,6 +357,8 @@ pub struct App {
     /// Where the conversation and the details view are, from the last
     /// layout.
     pub conversation_area: Rect,
+    /// Where a question from the model is, from the last layout.
+    pub ask_area: Option<Rect>,
     pub details_area: Rect,
     /// The current time; the shell sets it before each input.
     pub now: Instant,
@@ -427,6 +429,7 @@ impl App {
             last_click: None,
             last_call_click: None,
             conversation_area: Rect::default(),
+            ask_area: None,
             details_area: Rect::default(),
             now,
             last_interrupt: None,
@@ -2256,6 +2259,21 @@ impl App {
             MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
                 let by = isize::try_from(step).unwrap_or(3);
                 let up = mouse.kind == MouseEventKind::ScrollUp;
+                // Over a question from the model, the wheel scrolls it.
+                let over_ask = self.ask_area.is_some_and(|a| {
+                    a.contains(ratatui::layout::Position::new(mouse.column, mouse.row))
+                });
+                if over_ask
+                    && self.details.is_none()
+                    && let Some(ask) = self.prompt.as_mut().and_then(|p| p.ask.as_mut())
+                {
+                    ask.top = if up {
+                        ask.top.saturating_sub(step)
+                    } else {
+                        ask.top + step
+                    };
+                    return vec![Effect::Redraw];
+                }
                 match &mut self.details {
                     Some(details) => details.scroll(if up { -by } else { by }),
                     None if up => self.scroll_up(step),
@@ -2464,6 +2482,13 @@ impl App {
         let width = usize::from(areas.conversation.width);
         self.view_height = usize::from(areas.conversation.height);
         self.conversation_area = areas.conversation;
+        self.ask_area = areas.ask;
+        if let Some(area) = areas.ask {
+            let max_top = view::ask_max_top(self, area);
+            if let Some(ask) = self.prompt.as_mut().and_then(|p| p.ask.as_mut()) {
+                ask.top = ask.top.min(max_top);
+            }
+        }
         self.details_area = view::details_area(self, size);
         if let Some(details) = &mut self.details {
             details.layout(

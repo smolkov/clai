@@ -1,0 +1,18 @@
+---
+source: src/tui/tests.rs
+expression: text
+---
+                                                                                
+▸ read src/parse.rs                                                    ✓ 3 lines
+▾ ask_user Database, Features                                              ? ask
+── Question ─ 2/2 Features ─────────────────────────────────────────────────────
+Both work with the current code; the choice decides the migration.              
+                                                                                
+Which features should the first version have?                                   
+                                                                                
+▶ 1 [ ] Search                                                                  
+  2 [ ] Export                                                                  
+Space tick ─ Enter next ─ Tab question ─ Esc skip ─ Ctrl-C cancel turn          
+────────────────────────────────────────────────────────────────────────────────
+  asking · /help · Ctrl-D detach                                                
+  project · ~/ws/project · anthropic/sonnet · 1/3 ●1 · 12.3k/200k · in 12k out …

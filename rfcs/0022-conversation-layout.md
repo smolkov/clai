@@ -2,7 +2,7 @@
 
 - RFC: 0022
 - Status: accepted
-- Progress: step 3 of 5 done (short tool names; the answer marker; clicks)
+- Progress: step 4 of 5 done (short tool names; the answer marker; clicks; questions at the bottom)
 - Milestone: none; it extends the conversation of RFC 0001 and RFC 0016
 - Spec: [`spec/tui.md`](../spec/tui.md), "Layout", "Conversation entries",
   "Keys", "Copy", "Appearance", "Questions from the model";
@@ -330,12 +330,26 @@ Written into the spec when the RFC is accepted:
        full before the double click.
      - `Enter` keeps `Conversation::toggle`.
 4. **Questions at the bottom**
-   - Status: todo
+   - Status: done
    - Files: `src/tui/view/mod.rs` (layout areas), `src/tui/view/ask.rs`,
      `src/tui/app.rs` (wheel), `src/tui/tests.rs`, snapshots
    - Result: the question in the place of the input; the input covered
      and kept; the conversation above it.
    - Tests: snapshots and App tests above.
+   - Built: `Areas::ask` in `view::areas`; `view::ask::height`,
+     `max_top` and `draw` into that area, with `titled_rule`; `App::ask_area`
+     for the wheel. Choices made while building it:
+     - The input's text, cursor and history were already kept while a
+       question is open, and the activity line already hidden; only the
+       layout changed.
+     - The 3 rows above a tall question shrink on screens below 13 rows,
+       to none at the smallest one (10 rows).
+     - When the question scrolls, its keys line (one or more rows) stays
+       at the bottom; the wheel and `PgUp` / `PgDn` scroll the rows above
+       it, never past the end.
+     - `PgUp` / `PgDn` scroll the question, as before; a click into the
+       conversation does not move them to it. The wheel over the
+       conversation scrolls the conversation.
 5. **Spec and readme**
    - Status: todo
    - Files: `spec/tui.md`, `spec/tools.md`, `readme.md`, `todo.md`, this

@@ -30,6 +30,7 @@ use ratatui::widgets::{Paragraph, Wrap};
 use super::app::{ACTIVITY_MIN_HEIGHT, App};
 use super::style::Look;
 use super::wrap::fit;
+use unicode_width::UnicodeWidthStr;
 
 /// The smallest terminal that shows more than a message.
 pub const MIN_WIDTH: u16 = 40;
@@ -39,6 +40,8 @@ pub const MIN_HEIGHT: u16 = 10;
 const FOOTER: u16 = 2;
 /// Cells before the footer text, in line with the text of the input.
 const FOOTER_INDENT: u16 = 2;
+/// Rows of the conversation kept above a tall question from the model.
+const KEEP_ABOVE_ASK: u16 = 3;
 
 /// Where the parts of the screen go.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,6 +50,10 @@ pub struct Areas {
     /// The activity line, with an empty row above it.
     pub activity: Option<Rect>,
     pub prompt: Option<Rect>,
+    /// A question from the model, in the place of the input (RFC 0022):
+    /// its rows between the rule with its title and the rule below.
+    pub ask: Option<Rect>,
+    /// No rows while a question from the model covers it.
     pub input: Rect,
     pub status: Rect,
     pub info: Rect,
@@ -55,6 +62,11 @@ pub struct Areas {
 /// How far the status box can scroll on a screen of `size`.
 pub fn status_max_top(app: &App, size: Rect) -> usize {
     status_box::max_top(app, size)
+}
+
+/// How far the question from the model can scroll in `area`.
+pub fn ask_max_top(app: &App, area: Rect) -> usize {
+    ask::max_top(app, area)
 }
 
 /// Where the details view shows its text on a screen of `size`.
@@ -84,6 +96,25 @@ pub fn areas(app: &App, size: Rect) -> Option<Areas> {
         height: 1,
         ..footer
     };
+    if let Some(rows) = ask::height(app, usize::from(width)) {
+        // The question takes the rows of the input and the rules around
+        // it; 3 rows of the conversation stay above, but not on the
+        // smallest screens.
+        let keep = KEEP_ABOVE_ASK.min(size.height - MIN_HEIGHT);
+        let most = (footer.y - size.y).saturating_sub(2 + keep).max(1);
+        let height = u16::try_from(rows).unwrap_or(most).clamp(1, most);
+        let ask = Rect::new(x, footer.y - 1 - height, width, height);
+        let conversation = Rect::new(x, size.y, width, (ask.y - 1).saturating_sub(size.y));
+        return Some(Areas {
+            conversation,
+            activity: None,
+            prompt: None,
+            ask: Some(ask),
+            input: Rect::new(x, ask.y, width, 0),
+            status,
+            info,
+        });
+    }
     // At most a quarter of the height each, so that the conversation stays.
     let most = (size.height / 4).max(2);
     let input_rows = u16::try_from(input::height(app, width)).unwrap_or(most);
@@ -109,6 +140,7 @@ pub fn areas(app: &App, size: Rect) -> Option<Areas> {
         conversation,
         activity,
         prompt,
+        ask: None,
         input,
         status,
         info,
@@ -139,9 +171,15 @@ pub fn draw(app: &App, frame: &mut Frame<'_>) {
             buffer.set_line(area.x, y, line, area.width);
         }
     }
-    rule(buffer, size, areas.input.y - 1, look);
-    input::draw(app, buffer, areas.input);
-    rule(buffer, size, areas.input.y + areas.input.height, look);
+    if let Some(area) = areas.ask {
+        ask::draw(app, frame, area);
+    } else {
+        let buffer = frame.buffer_mut();
+        rule(buffer, size, areas.input.y - 1, look);
+        input::draw(app, buffer, areas.input);
+        rule(buffer, size, areas.input.y + areas.input.height, look);
+    }
+    let buffer = frame.buffer_mut();
     footer_row(buffer, areas.status, &status::text(app), look);
     footer_row(buffer, areas.info, &info::text(app), look);
     match cursor(app, &areas) {
@@ -162,8 +200,6 @@ pub fn draw(app: &App, frame: &mut Frame<'_>) {
     }
     commands::draw(app, frame, areas.conversation, areas.input.y - 1);
     popup::draw(app, frame, size);
-    // Under the boxes `Ctrl-S` and the picker open over a question.
-    ask::draw(app, frame, size);
     sessions::draw(app, frame, size);
     picker::draw(app, frame, size);
     settings::draw(app, frame, size);
@@ -209,6 +245,21 @@ fn too_small(frame: &mut Frame<'_>, size: Rect) {
     let y = size.height / 2;
     let area = Rect::new(size.x, size.y + y, size.width, size.height - y);
     frame.render_widget(paragraph, area);
+}
+
+/// A plain line across the screen with a title near its start:
+/// `── Question ─ 1/2 Database ──────`.
+fn titled_rule(buffer: &mut Buffer, size: Rect, y: u16, title: &str, look: &Look) {
+    rule(buffer, size, y, look);
+    let lead = look.symbols.rule.repeat(2);
+    let x = size.x + u16::try_from(lead.width()).unwrap_or(2);
+    let room = usize::from(size.width).saturating_sub(lead.width());
+    buffer.set_string(
+        x,
+        y,
+        fit(title, room, look.symbols.more),
+        look.styles.heading,
+    );
 }
 
 /// A plain line across the screen.
