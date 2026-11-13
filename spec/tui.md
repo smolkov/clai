@@ -664,7 +664,7 @@ none: it opens when the agent asks a question.
 After `/attach `, `/model `, `/stats `, `/status ` and `/theme ` (typed, or
 completed with `Tab`), a list of values lies in the same place: `/attach` offers
 the other sessions, with their workspace and state, `/model` the server's
-models, with their id, `/stats` the ranges, `/status` the sessions,
+models, with their id and which one is `current` and `default`, `/stats` the ranges, `/status` the sessions,
 `/theme` the themes, with where they come from. Typing searches them like
 commands, by name, and models also by id. `Up` / `Down` select, `Tab` completes
 the selected value, `Enter` runs the command with it, and with no match

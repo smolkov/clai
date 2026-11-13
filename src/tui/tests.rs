@@ -3435,6 +3435,37 @@ fn model_offers_the_models_from_the_server() {
 }
 
 #[test]
+fn the_model_list_marks_the_current_and_the_default_model() {
+    let mut app = app();
+    typed(&mut app, "/model ");
+    app.update(models_answer(model_list()));
+    let described = |app: &App| -> Vec<String> {
+        app.arguments()
+            .into_iter()
+            .map(|v| format!("{} {}", v.value, v.description))
+            .collect()
+    };
+    assert_eq!(
+        described(&app),
+        [
+            "anthropic/sonnet claude-sonnet-5-5  current, default",
+            "anthropic/opus claude-opus-5-5",
+            "local/qwen qwen3-coder:30b",
+        ]
+    );
+    // A new default (saved here or elsewhere) shows with the next answer.
+    app.update(models_answer(default_opus()));
+    assert_eq!(
+        described(&app)[..2],
+        [
+            "anthropic/sonnet claude-sonnet-5-5  current",
+            "anthropic/opus claude-opus-5-5  default",
+        ]
+    );
+    assert!(screen(&mut app, 80, 24).contains("claude-opus-5-5  default"));
+}
+
+#[test]
 fn with_no_match_enter_runs_the_text() {
     let mut app = among_three();
     typed(&mut app, "/attach zzz");

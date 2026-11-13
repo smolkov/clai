@@ -2021,12 +2021,28 @@ impl App {
                 })
                 .collect()
         } else {
+            // The id, and as in the picker which one is the session's and
+            // which one new sessions get.
             self.models
                 .iter()
-                .map(|m| commands::Value {
-                    value: m.model.clone(),
-                    description: m.id.clone(),
-                    search_description: true,
+                .map(|m| {
+                    let mut marks = Vec::new();
+                    if m.model == self.session.model {
+                        marks.push("current");
+                    }
+                    if m.default {
+                        marks.push("default");
+                    }
+                    let description = if marks.is_empty() {
+                        m.id.clone()
+                    } else {
+                        format!("{}  {}", m.id, marks.join(", "))
+                    };
+                    commands::Value {
+                        value: m.model.clone(),
+                        description,
+                        search_description: true,
+                    }
                 })
                 .collect()
         };
