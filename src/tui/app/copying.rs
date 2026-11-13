@@ -8,6 +8,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent,
 use ratatui::layout::Rect;
 
 use crate::config::Clipboard;
+use crate::tui::conversation::Expansion;
 use crate::tui::keys::Focus;
 use crate::tui::selection::{self, Selection, Surface};
 
@@ -291,6 +292,28 @@ impl App {
                     _ => 1,
                 };
                 self.last_click = Some((self.now, mouse.column, mouse.row, clicks));
+                if clicks > 1
+                    && surface == Surface::Conversation
+                    && let Some(entry) = self.summary_at(at.0)
+                {
+                    // On a call's summary: the view, not a word or line.
+                    if clicks == 2 {
+                        let before = match self.last_call_click {
+                            Some((clicked, before)) if clicked == entry => before,
+                            _ => self
+                                .conversation
+                                .view(entry)
+                                .unwrap_or(Expansion::Collapsed),
+                        };
+                        if self.conversation.double_click(entry, before) {
+                            self.reveal = Some(entry);
+                        }
+                        self.last_call_click = None;
+                    } else {
+                        self.click(at.0);
+                    }
+                    return vec![Effect::Redraw];
+                }
                 if clicks > 1 {
                     return self.select_by_clicks(surface, at, clicks);
                 }
@@ -350,8 +373,16 @@ impl App {
         }
     }
 
-    /// A click on a row of the conversation: a call's summary toggles it,
-    /// its `… N more lines` opens its details. The focus stays.
+    /// The call entry whose summary line is `row` of the conversation.
+    fn summary_at(&self, row: usize) -> Option<usize> {
+        let found = self.conversation.rows(row, 1).first().copied()?;
+        let entry = found.entry?;
+        (found.first && self.conversation.call(entry).is_some()).then_some(entry)
+    }
+
+    /// A click on a row of the conversation: a call's summary opens its
+    /// short view or closes it (RFC 0022), its `… N more lines` opens its
+    /// details. The focus stays.
     fn click(&mut self, row: usize) {
         let Some(found) = self.conversation.rows(row, 1).first().copied() else {
             return;
@@ -363,7 +394,8 @@ impl App {
             return;
         }
         if found.first {
-            if self.conversation.toggle(entry) {
+            if let Some(before) = self.conversation.click(entry) {
+                self.last_call_click = Some((entry, before));
                 self.reveal = Some(entry);
             }
             if self.focus == Focus::Conversation {

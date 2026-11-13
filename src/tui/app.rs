@@ -351,6 +351,9 @@ pub struct App {
     /// The last click and how many came in a row, for double and triple
     /// clicks.
     last_click: Option<(Instant, u16, u16, u8)>,
+    /// The call the last click turned, and its view before, so that the
+    /// second click of a double click knows where it started.
+    last_call_click: Option<(usize, crate::tui::conversation::Expansion)>,
     /// Where the conversation and the details view are, from the last
     /// layout.
     pub conversation_area: Rect,
@@ -422,6 +425,7 @@ impl App {
             details: None,
             selection: None,
             last_click: None,
+            last_call_click: None,
             conversation_area: Rect::default(),
             details_area: Rect::default(),
             now,

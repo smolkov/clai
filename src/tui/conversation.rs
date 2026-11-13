@@ -391,6 +391,44 @@ impl Conversation {
         true
     }
 
+    /// How much of a call entry is shown; `None` if it is no call.
+    pub fn view(&self, entry: usize) -> Option<Expansion> {
+        let call = self.call(entry)?;
+        Some(self.render().expansion(call))
+    }
+
+    /// A click on a call's summary (RFC 0022): closed → short (its preview,
+    /// or for a call without one its details cut at `tool_output_lines`);
+    /// any other view → closed. Returns the view before.
+    pub fn click(&mut self, entry: usize) -> Option<Expansion> {
+        let call = self.call(entry)?;
+        let render = self.render();
+        let before = render.expansion(call);
+        let next = match before {
+            Expansion::Collapsed if render.has_preview(call) => Expansion::Preview,
+            Expansion::Collapsed => Expansion::Expanded,
+            Expansion::Preview | Expansion::Expanded | Expansion::Full => Expansion::Collapsed,
+        };
+        self.choose(entry, next);
+        Some(before)
+    }
+
+    /// The second click of a double click, after [`Conversation::click`]
+    /// turned the view from `before`: the whole result, or closed when it
+    /// was whole before. `false` if the entry is no call.
+    pub fn double_click(&mut self, entry: usize, before: Expansion) -> bool {
+        if self.call(entry).is_none() {
+            return false;
+        }
+        let next = if before == Expansion::Full {
+            Expansion::Collapsed
+        } else {
+            Expansion::Full
+        };
+        self.choose(entry, next);
+        true
+    }
+
     fn choose(&mut self, entry: usize, expansion: Expansion) {
         if let Some(entry) = self.entries.get_mut(entry)
             && let Kind::Call(call) = &entry.kind

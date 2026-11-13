@@ -2,7 +2,7 @@
 
 - RFC: 0022
 - Status: accepted
-- Progress: step 2 of 5 done (short tool names; the answer marker)
+- Progress: step 3 of 5 done (short tool names; the answer marker; clicks)
 - Milestone: none; it extends the conversation of RFC 0001 and RFC 0016
 - Spec: [`spec/tui.md`](../spec/tui.md), "Layout", "Conversation entries",
   "Keys", "Copy", "Appearance", "Questions from the model";
@@ -316,10 +316,19 @@ Written into the spec when the RFC is accepted:
      - An empty answer (the first moment of a stream) is one row with the
        marker.
 3. **Clicks**
-   - Status: todo
+   - Status: done
    - Files: `src/tui/app.rs`, `src/tui/conversation.rs`, `src/tui/tests.rs`
    - Result: click short / closed, double click full / closed.
    - Tests: App tests.
+   - Built: `Conversation::click`, `double_click` and `view`; the click
+     handling in `src/tui/app/copying.rs`. Choices made while building it:
+     - A single click still acts on the release, so a drag that starts on
+       a summary line selects text; the second click of a double click
+       acts on its press.
+     - The App keeps the call the last click turned and its view before
+       (`last_call_click`), so the second click knows whether the call was
+       full before the double click.
+     - `Enter` keeps `Conversation::toggle`.
 4. **Questions at the bottom**
    - Status: todo
    - Files: `src/tui/view/mod.rs` (layout areas), `src/tui/view/ask.rs`,

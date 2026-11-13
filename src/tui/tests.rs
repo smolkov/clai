@@ -17,7 +17,7 @@ use super::app::{
     App, Attachment, Dialog, Effect, Exit, Input, LOST, RECONNECT_FOR, Settings, clock,
 };
 use super::commands::COMMANDS;
-use super::conversation::Kind;
+use super::conversation::{Expansion, Kind};
 use super::keys::Focus;
 use super::prompt::Mode;
 use super::style::Look;
@@ -5867,4 +5867,113 @@ fn a_selection_leaves_out_the_answer_marker_and_indent() {
     assert!(copied.ends_with("Fixed."), "{copied:?}");
     assert!(!copied.contains('●'), "{copied:?}");
     assert!(!copied.contains("\n  "), "{copied:?}");
+}
+
+// Clicks on a tool call (RFC 0022).
+
+/// One click at `row`, after the double-click time of the last one.
+fn click_on(app: &mut App, row: u16) {
+    app.now += Duration::from_secs(1);
+    app.update(mouse(MouseEventKind::Down(MouseButton::Left), 10, row));
+    app.update(mouse(MouseEventKind::Up(MouseButton::Left), 10, row));
+}
+
+/// Two clicks at `row` within the double-click time.
+fn double_click_on(app: &mut App, row: u16) {
+    click_on(app, row);
+    app.now += Duration::from_millis(100);
+    app.update(mouse(MouseEventKind::Down(MouseButton::Left), 10, row));
+    app.update(mouse(MouseEventKind::Up(MouseButton::Left), 10, row));
+}
+
+fn view_of(app: &App, id: &str) -> Expansion {
+    let entry = app.conversation.entry_of_call(id).unwrap();
+    app.conversation.view(entry).unwrap()
+}
+
+#[test]
+fn a_click_opens_the_short_view_and_the_next_closes_it() {
+    let mut app = app_with(command_run("r1", 40));
+    let row = row_of(&mut app, "▸ run");
+    assert_eq!(view_of(&app, "r1"), Expansion::Collapsed);
+    click_on(&mut app, row);
+    assert_eq!(view_of(&app, "r1"), Expansion::Preview);
+    let text = screen(&mut app, 80, 30);
+    assert!(text.contains("line 40"), "{text}");
+    assert!(!text.contains("line 20 "), "{text}");
+    click_on(&mut app, row);
+    assert_eq!(view_of(&app, "r1"), Expansion::Collapsed);
+    // A call without a preview shows its details, cut.
+    let mut app = app_with(vec![SessionEvent::ToolCall(done(
+        call("c1", "read_file", CallState::Running),
+        "one\ntwo",
+    ))]);
+    let row = row_of(&mut app, "▸ read");
+    click_on(&mut app, row);
+    assert_eq!(view_of(&app, "c1"), Expansion::Expanded);
+    click_on(&mut app, row);
+    assert_eq!(view_of(&app, "c1"), Expansion::Collapsed);
+}
+
+#[test]
+fn a_call_with_a_preview_closes_on_the_first_click() {
+    let mut app = previewing(command_run("r1", 40));
+    assert_eq!(view_of(&app, "r1"), Expansion::Preview);
+    let row = row_of(&mut app, "▾ run");
+    click_on(&mut app, row);
+    assert_eq!(view_of(&app, "r1"), Expansion::Collapsed);
+}
+
+#[test]
+fn a_double_click_opens_the_whole_result_and_closes_it() {
+    // From closed.
+    let mut app = app_with(command_run("r1", 40));
+    let row = row_of(&mut app, "▸ run");
+    double_click_on(&mut app, row);
+    assert_eq!(view_of(&app, "r1"), Expansion::Full);
+    let text = screen(&mut app, 80, 60);
+    assert!(text.contains("line 1 "), "{text}");
+    assert!(app.selection.is_none());
+    // From full: closed.
+    double_click_on(&mut app, row);
+    assert_eq!(view_of(&app, "r1"), Expansion::Collapsed);
+    // From short.
+    let mut app = previewing(command_run("r1", 40));
+    let row = row_of(&mut app, "▾ run");
+    double_click_on(&mut app, row);
+    assert_eq!(view_of(&app, "r1"), Expansion::Full);
+}
+
+#[test]
+fn a_slow_second_click_is_a_single_click() {
+    let mut app = app_with(command_run("r1", 40));
+    let row = row_of(&mut app, "▸ run");
+    click_on(&mut app, row);
+    click_on(&mut app, row);
+    assert_eq!(view_of(&app, "r1"), Expansion::Collapsed);
+}
+
+#[test]
+fn a_triple_click_on_a_summary_opens_the_whole_result_then_closes() {
+    let mut app = app_with(command_run("r1", 40));
+    let row = row_of(&mut app, "▸ run");
+    double_click_on(&mut app, row);
+    app.now += Duration::from_millis(100);
+    let effects = app.update(mouse(MouseEventKind::Down(MouseButton::Left), 10, row));
+    app.update(mouse(MouseEventKind::Up(MouseButton::Left), 10, row));
+    assert_eq!(view_of(&app, "r1"), Expansion::Collapsed);
+    assert!(copies(&effects).is_empty());
+}
+
+#[test]
+fn a_double_click_on_text_still_selects_a_word() {
+    let mut app = app_with(vec![SessionEvent::TextDone {
+        text: "hello world".into(),
+    }]);
+    let row = row_of(&mut app, "hello world");
+    app.update(mouse(MouseEventKind::Down(MouseButton::Left), 3, row));
+    app.update(mouse(MouseEventKind::Up(MouseButton::Left), 3, row));
+    app.now += Duration::from_millis(100);
+    let effects = app.update(mouse(MouseEventKind::Down(MouseButton::Left), 3, row));
+    assert_eq!(copies(&effects), ["hello"]);
 }
