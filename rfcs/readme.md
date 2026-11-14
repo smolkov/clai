@@ -145,3 +145,4 @@ Sections that do not apply may be left out.
 | [0021](0021-default-model-from-the-picker.md) | Default model from the model picker | done |
 | [0022](0022-conversation-layout.md) | Conversation layout: markers, short tool names, clicks, questions | done |
 | [0023](0023-skills.md) | Skills | done |
+| [0024](0024-boxes-at-the-bottom.md) | Boxes at the bottom, settings on the whole screen | draft |
