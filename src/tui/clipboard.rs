@@ -217,8 +217,13 @@ mod tests {
         assert!(!plan.osc52);
         assert_eq!(plan.command.unwrap(), ["xsel", "--clipboard", "--input"]);
         let none = Plan::new(Clipboard::Command, env(&[]), |_: &str| true);
-        assert_eq!(none.command, None);
-        assert!(copy(&none, "x").is_err());
+        if cfg!(target_os = "macos") {
+            // macOS always has `pbcopy`.
+            assert_eq!(none.command, Some(vec!["pbcopy".to_owned()]));
+        } else {
+            assert_eq!(none.command, None);
+            assert!(copy(&none, "x").is_err());
+        }
         let off = Plan::new(Clipboard::Off, env(&x11), |_: &str| true);
         assert_eq!(
             off,

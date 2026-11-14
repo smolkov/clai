@@ -187,8 +187,13 @@ fn read_file_errors() {
         f.failed("read_file", json!({"path": "bin"})),
         "bin is a binary file"
     );
+    // The resolved path: `/etc` is a link to `/private/etc` on macOS.
+    let passwd = fs::canonicalize("/etc/passwd").unwrap();
     let e = f.denied("read_file", json!({"path": "/etc/passwd"}));
-    assert_eq!(e, "denied: /etc/passwd is outside the workspace");
+    assert_eq!(
+        e,
+        format!("denied: {} is outside the workspace", passwd.display())
+    );
     f.write(".env", "KEY=1");
     let e = f.denied("read_file", json!({"path": ".env"}));
     assert_eq!(e, "denied by permission rule: deny read(.env*)");

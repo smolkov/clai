@@ -288,6 +288,9 @@ async fn references_show_lines_and_hide_what_the_model_may_not_read() {
     f.write("secret.rs", "parse(KEY)\n");
     let outside = f.outside.join("de.rs");
     fs::write(&outside, "fn parse() {}\n").unwrap();
+    // Resolved like the workspace's paths: the temporary directory is a
+    // link on macOS.
+    let outside = outside.canonicalize().unwrap();
     f.answer(
         "textDocument/references",
         json!([

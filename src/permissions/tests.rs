@@ -147,8 +147,13 @@ fn reasons_and_denials() {
         "denied by permission rule: deny read(config/*.key): Keys stay private."
     );
     assert_eq!(d.message(), Some("Keys stay private."));
+    // The resolved path: `/etc` is a link to `/private/etc` on macOS.
+    let passwd = fs::canonicalize("/etc/passwd").unwrap();
     let d = f.path(Tool::ReadFile, "/etc/passwd");
-    assert_eq!(d.denial(), "denied: /etc/passwd is outside the workspace");
+    assert_eq!(
+        d.denial(),
+        format!("denied: {} is outside the workspace", passwd.display())
+    );
 }
 
 #[test]
