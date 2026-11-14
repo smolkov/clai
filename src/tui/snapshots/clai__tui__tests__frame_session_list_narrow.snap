@@ -1,17 +1,17 @@
 ---
 source: src/tui/tests.rs
-assertion_line: 3032
+assertion_line: 3263
 expression: text
 ---
+── Sessions ────────────────────────────────
+      NAME       MODEL             STATE    
+    ✓ project    anthropic/sonnet  working  
+▶     project-2  local/qwen        idle     
+      docs       anthropic/opus    ● waiting
+      old        anthropic/sonnet  saved    
                                             
-┌ Sessions ────────────────────────────────┐
-│       NAME       MODEL             STATE │
-│     ✓ project    anthropic/sonnet  work… │
-│ ▶     project-2  local/qwen        idle  │
-│       docs       anthropic/opus    ● wa… │
-│       old        anthropic/sonnet  saved │
-│                                          │
-│                                          │
-│ Enter attach ─ Space mark ─ d delete ─ … │
-└──────────────────────────────────────────┘
+                                            
+Enter attach ─ Space mark ─ d delete ─ / fi…
+────────────────────────────────────────────
+  idle · /help · Ctrl-D detach              
   project · ~/ws/project · anthropic/sonnet…

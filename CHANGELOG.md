@@ -7,6 +7,11 @@ notes are taken from that section by `ci/notes.sh`.
 
 ## Unreleased
 
+- Boxes at the bottom (RFC 0024): the model picker, session list, skills,
+  status, language servers, themes and help open in the place of the
+  input, at the full width, with the conversation above; the settings
+  take the whole screen.
+
 ## 0.3.1 - 2026-11-14
 
 The release of 0.3.0 did not complete: the arm64 Debian package failed its

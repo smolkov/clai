@@ -13,10 +13,6 @@ use crate::tui::picker::{Picker, Purpose};
 use crate::tui::style::Look;
 use crate::tui::wrap::fit;
 
-use super::popup;
-
-/// The box's width, if the screen has room for it.
-const WIDTH: u16 = 76;
 /// The rows of the box that are not models: filter, a blank line; then a
 /// blank line, the default tick and its note, a blank line and the keys.
 const CHROME: usize = 7;
@@ -171,7 +167,18 @@ fn no_models(picker: &Picker, look: &Look) -> Vec<Line<'static>> {
     lines
 }
 
-pub fn draw(app: &App, frame: &mut Frame<'_>, size: Rect) {
+/// The rows the box wants at `width` cells (RFC 0024).
+pub fn wanted(app: &App, width: usize) -> usize {
+    let Some(picker) = &app.picker else {
+        return 0;
+    };
+    if !picker.has_models() {
+        return no_models(picker, &app.settings.look).len();
+    }
+    list(app, picker, width).0.len().max(1) + CHROME
+}
+
+pub fn draw(app: &App, frame: &mut Frame<'_>, area: Rect) {
     let Some(picker) = &app.picker else {
         return;
     };
@@ -180,18 +187,13 @@ pub fn draw(app: &App, frame: &mut Frame<'_>, size: Rect) {
         Purpose::Change => format!(" Model for \"{}\" ", app.session.name),
         Purpose::New { .. } => " Model for a new session ".to_owned(),
     };
-    let cells = WIDTH.min(size.width.saturating_sub(4));
-    let width = usize::from(cells);
+    let width = usize::from(area.width);
+    let area = super::open_panel(frame, area, (Line::raw(title), None), look);
     if !picker.has_models() {
-        let lines = no_models(picker, look);
-        let rows = u16::try_from(lines.len()).unwrap_or(u16::MAX);
-        let area = popup::open(frame, size, &title, cells, rows, look);
-        frame.render_widget(Paragraph::new(lines), area);
+        frame.render_widget(Paragraph::new(no_models(picker, look)), area);
         return;
     }
     let (rows, selected) = list(app, picker, width);
-    let wanted = u16::try_from(rows.len().max(1) + CHROME).unwrap_or(u16::MAX);
-    let area = popup::open(frame, size, &title, cells, wanted, look);
     let room = usize::from(area.height).saturating_sub(CHROME).max(1);
     let first = (selected + 1).saturating_sub(room);
 

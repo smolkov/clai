@@ -370,6 +370,8 @@ pub struct App {
     pub conversation_area: Rect,
     /// Where a question from the model is, from the last layout.
     pub ask_area: Option<Rect>,
+    /// Where a box at the bottom is, from the last layout (RFC 0024).
+    pub panel_area: Option<Rect>,
     pub details_area: Rect,
     /// The current time; the shell sets it before each input.
     pub now: Instant,
@@ -446,6 +448,7 @@ impl App {
             last_call_click: None,
             conversation_area: Rect::default(),
             ask_area: None,
+            panel_area: None,
             details_area: Rect::default(),
             now,
             last_interrupt: None,
@@ -2417,6 +2420,18 @@ impl App {
                 let over_ask = self.ask_area.is_some_and(|a| {
                     a.contains(ratatui::layout::Position::new(mouse.column, mouse.row))
                 });
+                // Over the status box at the bottom, the wheel scrolls it;
+                // over the conversation above, the conversation.
+                let over_panel = self.panel_area.is_some_and(|a| {
+                    a.contains(ratatui::layout::Position::new(mouse.column, mouse.row))
+                });
+                if over_panel
+                    && self.details.is_none()
+                    && let Some(open) = &mut self.status_box
+                {
+                    open.scroll(if up { -by } else { by });
+                    return vec![Effect::Redraw];
+                }
                 if over_ask
                     && self.details.is_none()
                     && let Some(ask) = self.prompt.as_mut().and_then(|p| p.ask.as_mut())
@@ -2650,6 +2665,7 @@ impl App {
         self.view_height = usize::from(areas.conversation.height);
         self.conversation_area = areas.conversation;
         self.ask_area = areas.ask;
+        self.panel_area = areas.panel;
         if let Some(area) = areas.ask {
             let max_top = view::ask_max_top(self, area);
             if let Some(ask) = self.prompt.as_mut().and_then(|p| p.ask.as_mut()) {

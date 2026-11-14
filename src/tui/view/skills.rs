@@ -13,10 +13,6 @@ use crate::tui::skills::{Row, SkillsBox};
 use crate::tui::style::Look;
 use crate::tui::wrap::fit;
 
-use super::popup;
-
-/// The box's width, if the screen has room for it.
-const WIDTH: u16 = 78;
 /// The rows that are not skills: filter and a blank line; the full
 /// description, the status line and the keys.
 const CHROME: usize = 5;
@@ -184,24 +180,31 @@ fn no_skills(app: &App, skills: &SkillsBox, width: usize, look: &Look) -> Vec<Li
     lines
 }
 
-pub fn draw(app: &App, frame: &mut Frame<'_>, size: Rect) {
+/// The rows the box wants at `width` cells (RFC 0024).
+pub fn wanted(app: &App, width: usize) -> usize {
+    let Some(skills) = &app.skills_box else {
+        return 0;
+    };
+    if !skills.has_skills() {
+        return no_skills(app, skills, width, &app.settings.look).len();
+    }
+    list(app, skills, width).0.len().max(1) + CHROME
+}
+
+pub fn draw(app: &App, frame: &mut Frame<'_>, area: Rect) {
     let Some(skills) = &app.skills_box else {
         return;
     };
     let look = &app.settings.look;
     let title = format!(" Skills for \"{}\" ", app.session.name);
-    let cells = WIDTH.min(size.width.saturating_sub(4));
-    let width = usize::from(cells);
+    let width = usize::from(area.width);
+    let area = super::open_panel(frame, area, (Line::raw(title), None), look);
     if !skills.has_skills() {
         let lines = no_skills(app, skills, width, look);
-        let rows = u16::try_from(lines.len()).unwrap_or(u16::MAX);
-        let area = popup::open(frame, size, &title, cells, rows, look);
         frame.render_widget(Paragraph::new(lines), area);
         return;
     }
     let (rows, selected) = list(app, skills, width);
-    let wanted = u16::try_from(rows.len().max(1) + CHROME).unwrap_or(u16::MAX);
-    let area = popup::open(frame, size, &title, cells, wanted, look);
     let room = usize::from(area.height).saturating_sub(CHROME).max(1);
     let first = (selected + 1).saturating_sub(room);
 

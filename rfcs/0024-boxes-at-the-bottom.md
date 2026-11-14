@@ -1,7 +1,7 @@
 # Boxes at the bottom, settings on the whole screen
 
 - RFC: 0024
-- Status: draft
+- Status: done
 - Milestone: none; it changes the layout of RFC 0001 and follows RFC 0022,
   "Questions at the bottom"
 - Spec: [`spec/tui.md`](../spec/tui.md), "Layout", "Sessions", "Model
@@ -67,7 +67,7 @@ Out:
 | Theme list | `/theme` | bottom |
 | Help | `/help` | bottom |
 | Delete confirmation | `/kill`, `/delete` | bottom |
-| Details view | `o`, `/diff`, double click | bottom **(proposal)**, see "Open questions" |
+| Details view | `o`, `/diff`, double click | whole screen, as it already is (see "Answers") |
 | Settings | `/settings` | whole screen |
 
 ### At the bottom
@@ -202,7 +202,7 @@ Written into the spec when the RFC is accepted:
 ## Implementation plan
 
 1. **The bottom area**
-   - Status: todo
+   - Status: done
    - Files: `src/tui/view/mod.rs`, `src/tui/view/popup.rs`,
      `src/tui/view/ask.rs`, `src/tui/app.rs`
    - Result: `Areas::panel`, `view::panel` with the rules and the title;
@@ -210,7 +210,7 @@ Written into the spec when the RFC is accepted:
    - Tests: the layout tests; the question snapshots unchanged.
 
 2. **The boxes at the bottom**
-   - Status: todo
+   - Status: done
    - Files: `src/tui/view/picker.rs`, `sessions.rs`, `skills.rs`,
      `status_box.rs`, `lsp.rs`, `themes.rs`, `popup.rs` (help, delete),
      `details.rs`, `src/tui/app.rs` (wheel over the box)
@@ -218,13 +218,13 @@ Written into the spec when the RFC is accepted:
    - Tests: TUI tests and the box snapshots.
 
 3. **Settings on the whole screen**
-   - Status: todo
+   - Status: done
    - Files: `src/tui/view/settings.rs`, `src/tui/view/mod.rs`
    - Result: `/settings` takes the screen; the help wraps.
    - Tests: TUI tests and snapshots.
 
 4. **Spec and readme**
-   - Status: todo
+   - Status: done
    - Files: `spec/tui.md`, `readme.md`, `todo.md`
    - Result: the spec and readme describe the new places.
    - Tests: `ci/check.sh`, `ci/test.sh`.
@@ -246,6 +246,8 @@ Written into the spec when the RFC is accepted:
 
 ## Open questions
 
+All answered; see "Answers".
+
 1. The details view (`o`, `/diff`) shows a whole tool result or diff:
    at the bottom like the other boxes (proposal), or on the whole screen
    like the settings, since it is a reader?
@@ -259,3 +261,37 @@ Written into the spec when the RFC is accepted:
    screen?
 5. Help (`/help`) is long: at the bottom and scrolling (proposal), or on
    the whole screen?
+
+## Answers
+
+1. The details view stays on the whole screen. It already takes the
+   whole screen (`view::details`), which the draft did not take into
+   account; at the bottom it would get fewer rows, though it is the view
+   for reading a whole result. Like the settings, it is a full-screen view.
+2. to 5. The user asked to build it, so the proposals hold: the status
+   box at the bottom; the preview of a theme on the settings screen
+   itself; 3 rows of conversation kept above a box; help at the bottom.
+
+## Notes from building
+
+- **Layout:** `view::areas` gives the box that takes the keys
+  (`view::panel`: status, lsp, themes, picker, skills, sessions, dialog,
+  in the order `App` routes keys) its rows as `Areas::panel`, the way it
+  gave a question its rows; `Areas::screen` holds the settings. Each box
+  module has `wanted(app, width)` for its rows, and its `draw` takes the
+  area; `view::open_panel` clears it and draws the two rules with the
+  title, the right title too. `popup::open` and `open_titled` are gone.
+- **A minimum height:** on a small screen a box gets at least 8 rows (or
+  what it needs) before rows are kept for the conversation; with 3 rows
+  kept, a 12-row screen left the picker 6 rows, too few for its filter,
+  the selected model and the keys.
+- **The wheel:** over the conversation it scrolls the conversation, as
+  before; over the status box it scrolls the box. The lists (sessions,
+  models, skills, themes) move with their selection, not the wheel.
+- **Help does not scroll:** a help taller than the box is cut at the
+  bottom, as it was cut by the screen before. Scrolling it needs state the
+  dialog does not have; it is in `todo.md`.
+- **One box at a time:** a box under another (the session list under the
+  picker opened from it) is not drawn while the other is open.
+- Snapshots: all box snapshots changed, each checked by eye; a narrow
+  session list now shows all its rows.

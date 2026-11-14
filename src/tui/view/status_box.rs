@@ -17,10 +17,8 @@ use crate::tui::status::{OLD, Tab};
 use crate::tui::style::Look;
 use crate::tui::wrap::fit;
 
-use super::{day_chart, popup};
+use super::day_chart;
 
-/// The box's width, if the screen has room for it.
-const WIDTH: u16 = 76;
 /// The rows that are not status: a blank line and the keys.
 const CHROME: usize = 2;
 
@@ -189,15 +187,17 @@ fn keys(app: &App) -> Line<'static> {
     Line::styled(text, look.styles.dim)
 }
 
-fn cells(size: Rect) -> u16 {
-    WIDTH.min(size.width.saturating_sub(4))
+/// The rows the box wants at `width` cells (RFC 0024).
+pub fn wanted(app: &App, width: usize) -> usize {
+    if app.status_box.is_none() {
+        return 0;
+    }
+    lines(app, width).len().max(1) + CHROME
 }
 
-/// The rows of status the box shows on a screen of `size`, for `lines`.
-fn room(size: Rect, lines: usize) -> usize {
-    let wanted = lines.max(1) + CHROME;
-    let inner = usize::from(size.height.saturating_sub(2));
-    wanted.min(inner).saturating_sub(CHROME).max(1)
+/// The rows of status the box shows in its area of `height` rows.
+fn room(height: u16) -> usize {
+    usize::from(height).saturating_sub(CHROME).max(1)
 }
 
 /// The largest first line, for `App::layout`.
@@ -205,8 +205,11 @@ pub fn max_top(app: &App, size: Rect) -> usize {
     if app.status_box.is_none() {
         return 0;
     }
-    let count = lines(app, usize::from(cells(size))).len();
-    count.saturating_sub(room(size, count))
+    let Some(area) = super::areas(app, size).and_then(|a| a.panel) else {
+        return 0;
+    };
+    let count = lines(app, usize::from(area.width)).len();
+    count.saturating_sub(room(area.height))
 }
 
 /// `7 days`, `30 days`, `all`.
@@ -286,16 +289,15 @@ fn title(app: &App, cells: u16) -> (Line<'static>, Option<Line<'static>>) {
     }
 }
 
-pub fn draw(app: &App, frame: &mut Frame<'_>, size: Rect) {
+pub fn draw(app: &App, frame: &mut Frame<'_>, area: Rect) {
     let Some(open) = &app.status_box else {
         return;
     };
     let look = &app.settings.look;
-    let cells = cells(size);
+    let cells = area.width;
     let all = lines(app, usize::from(cells));
-    let room = room(size, all.len());
-    let wanted = u16::try_from(all.len().max(1) + CHROME).unwrap_or(u16::MAX);
-    let area = popup::open_titled(frame, size, title(app, cells), cells, wanted, look);
+    let room = room(area.height);
+    let area = super::open_panel(frame, area, title(app, cells), look);
     let mut shown: Vec<Line<'static>> = all.into_iter().skip(open.top).take(room).collect();
     shown.resize(usize::from(area.height.saturating_sub(1)), Line::raw(""));
     shown.push(keys(app));

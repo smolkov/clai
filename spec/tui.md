@@ -51,7 +51,7 @@ plain lines set off the prompt bar and the input. From top to bottom:
 | Conversation   | Scrollable history of the session: user messages, model text, tool calls. |
 | Activity line  | Shown only while the session works: what it does, for how long, and the tokens so far. See [Activity line](#activity-line). |
 | Prompt bar     | Shown only while a question (permission or limit) is open; replaces nothing else. |
-| Input          | Multi-line editor for the next user message, with a line above and below it. Covered while a question from the model is open: the question takes its rows (see [Questions from the model](#questions-from-the-model)). |
+| Input          | Multi-line editor for the next user message, with a line above and below it. Covered while a question from the model or a box is open: they take its rows (see [Questions from the model](#questions-from-the-model), [Boxes](#boxes)). |
 | Status row     | Current state (idle, waiting for model, running tool, asking), turn counters, key hints. |
 | Session row    | Session name, workspace path, provider and model (`anthropic/sonnet`), position among all sessions (`1/3`), number of other sessions waiting for an answer (`●1`), context usage (tokens used / limit; only the tokens if the server does not list the model, nothing until the first count), tokens the session has used (`in 45.1k out 3.2k`). |
 
@@ -69,6 +69,56 @@ last row of the conversation area, with an empty row above it:
 The conversation area takes all remaining height. If the terminal is smaller
 than 40 × 10 cells, `clai` shows only a "terminal too small" message until it
 is resized.
+
+### Boxes
+
+The boxes that commands open lie at the bottom of the screen, in the place
+of the input, as a question from the model does (RFC 0024): the model
+picker, the session list, the skills box, the status box (both tabs), the
+language servers, the theme list, help and the delete confirmation.
+
+```
+● The parser drops the last line; the fix is in src/parse.rs.
+
+▸ edit src/parse.rs (line 12)
+── Model for "project" ────────────────────────────────────────────────────────
+Filter: _
+
+anthropic
+▶ sonnet  claude-sonnet-5-5  200k  ✓ current, default
+  opus    claude-opus-5-5    200k
+
+[ ] Also make it the default for new sessions
+
+Enter select ─ Space default ─ Esc cancel
+──────────────────────────────────────────────────────────────────────────────
+  idle · /help · Ctrl-D detach
+  project · ~/ws/project · anthropic/sonnet · 1/3 · 12.3k/200k
+```
+
+- A box takes the rows of the input and of the rules around it, directly
+  above the status row: a rule with its title on top, a rule below, no
+  side borders, the full width of the terminal. A title at the right (the
+  ranges of the Global tab) is at the right end of the top rule.
+- The input is covered and takes no keys while a box is open; its text,
+  cursor and history position come back when the box closes. The
+  activity line is hidden; the status row still shows the state.
+- **Height:** as many rows as the box needs, up to the screen less the two
+  footer rows, the two rules and 3 rows of conversation, which stay above
+  it. On a small screen a box gets at least 8 rows (or the rows it needs)
+  before rows are kept for the conversation. A box that needs more rows
+  than it gets scrolls inside, as before; its keys line stays its last row.
+- The conversation takes the rows above and keeps its place. The wheel
+  over it scrolls it; the wheel over the status box scrolls the status
+  box.
+- One box is at the bottom at a time: the one that takes the keys. A box
+  opened over a question (the session list with `Ctrl-S`) takes the
+  question's place until it closes. A question that opens closes the
+  boxes.
+- The sketches of the box sections below show their rows; the frame is
+  the one above.
+- The settings and the details view take the whole screen instead (see
+  [Settings](#settings), [Details view](#details-view)).
 
 ## Sessions
 
@@ -544,8 +594,9 @@ Up Down choose ─ Enter next ─ Tab question ─ Esc skip ─ Ctrl-C cancel tu
   it scrolls it; over the question, it scrolls the question.
 - The activity line is hidden while the question is open; the status row
   says `asking`.
-- The boxes that open over a question (`Ctrl-S`, the model picker) lie over
-  everything; when they close, the question is at the bottom again.
+- A box that opens over a question (`Ctrl-S`, the model picker) takes the
+  question's place at the bottom (see [Boxes](#boxes)); when it closes, the
+  question is there again.
 
 | Key | Action |
 |-----|--------|
@@ -1033,26 +1084,35 @@ all sessions, whichever is attached.
 
 ## Settings
 
-`/settings` opens a box with the `[tui]` keys of the user file
-([`config.md`](config.md), "TUI"):
+`/settings` shows the `[tui]` keys of the user file
+([`config.md`](config.md), "TUI") on the whole screen, all rows but the
+two footer rows (RFC 0024); the conversation and the input are not drawn
+while it is open, and the input's text is kept:
 
 ```
-┌ Settings ─ ~/.config/clai/config.toml ───────────────────────────────────────┐
-│   theme              terminal  Colour theme                                  │
-│   symbols            auto      Unicode or ASCII symbols                      │
-│ ▶ mouse             *on        Capture the mouse: wheel, drag copies         │
-│   tool_output_lines  20        Lines of tool output before it is cut         │
-│   tool_preview       changes   What finished tool calls show                 │
-│   clipboard          auto      How copied text reaches the clipboard         │
-│   syntax_highlight   on        Colour code by its language                   │
-│   timestamps         off       Time of each entry                            │
-│   scroll_lines       3         Lines per mouse-wheel step                    │
-│   max_fps            30        Redraw limit                                  │
-│   activity           playful   Line while the session works                  │
-│ mouse: on: the wheel scrolls, a drag selects and copies, a click opens a cal…│
-│ Enter change ─ Left/Right value ─ d default ─ s save ─ Esc close             │
-└──────────────────────────────────────────────────────────────────────────────┘
+── Settings ─ ~/.config/clai/config.toml ──────────────────────────────────────
+  theme              terminal  Colour theme
+  symbols            auto      Unicode or ASCII symbols
+▶ mouse             *on        Capture the mouse: wheel, drag copies
+  tool_output_lines  20        Lines of tool output before it is cut
+  tool_preview       changes   What finished tool calls show
+  clipboard          auto      How copied text reaches the clipboard
+  syntax_highlight   on        Colour code by its language
+  timestamps         off       Time of each entry
+  scroll_lines       3         Lines per mouse-wheel step
+  max_fps            30        Redraw limit
+  activity           playful   Line while the session works
+
+mouse: on: the wheel scrolls, a drag selects and copies, a click opens a call;
+off: the terminal selects
+Enter change ─ Left/Right value ─ d default ─ s save ─ Esc close
+──────────────────────────────────────────────────────────────────────────────
+  idle · /help · Ctrl-D detach
+  project · ~/ws/project · anthropic/sonnet · 1/3 · 12.3k/200k
 ```
+
+- The help of the selected key is word wrapped above the keys line. The
+  theme list opened from the settings lies at the bottom of this screen.
 
 - One row per key, with the value and a description; the line under the list
   explains the selected key. A key the file does not set shows its default,

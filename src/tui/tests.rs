@@ -6411,3 +6411,106 @@ fn frame_skills_box_without_skills() {
     let mut app = choosing_skills(info);
     insta::assert_snapshot!(screen(&mut app, 80, 24));
 }
+
+// Boxes at the bottom (RFC 0024).
+
+#[test]
+fn a_box_covers_the_input_and_keeps_the_conversation_above_it() {
+    let mut app = idle_session();
+    typed(&mut app, "half a message");
+    app.update(ctrl('o'));
+    app.update(models_answer(model_list()));
+    let size = Rect::new(0, 0, 100, 30);
+    let areas = view::areas(&app, size).unwrap();
+    let panel = areas.panel.unwrap();
+    assert_eq!(panel.width, 100, "the full width");
+    assert_eq!(areas.input.height, 0);
+    assert_eq!(areas.activity, None);
+    // Directly above the footer, and the conversation ends above its rule.
+    assert_eq!(panel.y + panel.height + 1, areas.status.y);
+    assert_eq!(
+        areas.conversation.y + areas.conversation.height + 1,
+        panel.y
+    );
+    assert!(areas.conversation.height >= 3);
+    let text = screen(&mut app, 100, 30);
+    assert!(!text.contains("half a message"), "{text}");
+    assert!(
+        text.contains("Let me look."),
+        "the last answer stays in sight: {text}"
+    );
+    // The input comes back as it was.
+    app.update(key(KeyCode::Esc));
+    assert!(app.picker.is_none());
+    assert_eq!(app.editor.text(), "half a message");
+    let areas = view::areas(&app, size).unwrap();
+    assert_eq!(areas.panel, None);
+    assert!(areas.input.height > 0);
+    assert!(screen(&mut app, 100, 30).contains("half a message"));
+}
+
+#[test]
+fn a_tall_box_leaves_three_rows_of_conversation() {
+    let mut app = app();
+    app.update(ctrl('o'));
+    let many: Vec<ModelInfo> = (0..60)
+        .map(|i| model("p", &format!("m{i}"), &format!("id-{i}"), 1000))
+        .collect();
+    app.update(models_answer(many));
+    let areas = view::areas(&app, Rect::new(0, 0, 80, 24)).unwrap();
+    assert_eq!(areas.conversation.height, 3);
+    // Footer, the two rules and the three rows: the rest is the box.
+    assert_eq!(areas.panel.unwrap().height, 24 - 2 - 2 - 3);
+}
+
+#[test]
+fn a_box_over_a_question_gives_it_back() {
+    let mut app = with_prompt(idle_session());
+    app.update(ctrl('s'));
+    app.update(sessions_answer(vec![info()]));
+    assert!(app.session_list.is_some());
+    let areas = view::areas(&app, Rect::new(0, 0, 80, 24)).unwrap();
+    assert!(areas.panel.is_some());
+    assert_eq!(areas.prompt, None);
+    app.update(key(KeyCode::Esc));
+    let areas = view::areas(&app, Rect::new(0, 0, 80, 24)).unwrap();
+    assert_eq!(areas.panel, None);
+    assert!(areas.prompt.is_some(), "the permission question is back");
+}
+
+#[test]
+fn settings_take_the_whole_screen() {
+    let mut app = idle_session();
+    command(&mut app, "/settings");
+    assert!(app.settings_box.is_some());
+    let areas = view::areas(&app, Rect::new(0, 0, 80, 24)).unwrap();
+    let screen_area = areas.screen.unwrap();
+    assert_eq!(areas.conversation.height, 0);
+    assert_eq!(areas.input.height, 0);
+    assert_eq!((screen_area.y, screen_area.height), (1, 24 - 2 - 2));
+    let text = screen(&mut app, 80, 24);
+    assert!(!text.contains("Let me look."), "{text}");
+    assert!(text.starts_with("── Settings"), "{text}");
+}
+
+#[test]
+fn the_wheel_scrolls_the_status_box_under_it_and_the_conversation_above() {
+    let mut app = idle_session();
+    command(&mut app, "/status");
+    app.update(status_answer(status_of(State::Working)));
+    screen(&mut app, 80, 24);
+    let panel = app.panel_area.unwrap();
+    let wheel = |row: u16| {
+        Input::Mouse(MouseEvent {
+            kind: MouseEventKind::ScrollDown,
+            column: 5,
+            row,
+            modifiers: KeyModifiers::NONE,
+        })
+    };
+    app.update(wheel(panel.y + 1));
+    assert!(app.status_box.as_ref().unwrap().top > 0);
+    let before = app.status_box.as_ref().unwrap().top;
+    app.update(wheel(0));
+    assert_eq!(app.status_box.as_ref().unwrap().top, before);
+}

@@ -12,10 +12,6 @@ use crate::tui::settings::{Row, SettingsBox, get, rows, shown};
 use crate::tui::style::{Colouring, Look};
 use crate::tui::wrap::fit;
 
-use super::popup;
-
-/// The box's width, if the screen has room for it.
-const WIDTH: u16 = 76;
 /// The rows of the box that are not settings: a blank line, the help line, the
 /// keys.
 const CHROME: usize = 3;
@@ -61,7 +57,7 @@ fn keys(settings: &SettingsBox, look: &Look) -> Line<'static> {
     Line::styled(text, style)
 }
 
-pub fn draw(app: &App, frame: &mut Frame<'_>, size: Rect) {
+pub fn draw(app: &App, frame: &mut Frame<'_>, area: Rect) {
     let Some(settings) = &app.settings_box else {
         return;
     };
@@ -74,12 +70,23 @@ pub fn draw(app: &App, frame: &mut Frame<'_>, size: Rect) {
         _ => file,
     };
     let title = format!(" Settings {} {file} ", symbols.rule);
-    let cells = WIDTH.min(size.width.saturating_sub(4));
-    let width = usize::from(cells);
+    let width = usize::from(area.width);
     let rows = rows();
-    let wanted = u16::try_from(rows.len() + CHROME).unwrap_or(u16::MAX);
-    let area = popup::open(frame, size, &title, cells, wanted, look);
-    let room = usize::from(area.height).saturating_sub(CHROME).max(1);
+    let area = super::open_panel(frame, area, (Line::raw(title), None), look);
+    // The help of the selected setting, word wrapped (RFC 0024).
+    let help: Vec<Line<'static>> = match (&settings.message, settings.row()) {
+        (Some(message), _) => vec![Line::styled(
+            fit(message, width, symbols.more),
+            look.styles.warning,
+        )],
+        (None, Some(row)) => {
+            let text = format!("{}: {}", row.key, row.help);
+            crate::tui::wrap::plain(&text, width, look.styles.dim)
+        }
+        (None, None) => Vec::new(),
+    };
+    let chrome = CHROME - 1 + help.len().max(1);
+    let room = usize::from(area.height).saturating_sub(chrome).max(1);
     let first = (settings.selected() + 1).saturating_sub(room);
     let key_width = rows.iter().map(|r| r.key.len()).max().unwrap_or(0);
     let values: Vec<String> = rows
@@ -122,16 +129,15 @@ pub fn draw(app: &App, frame: &mut Frame<'_>, size: Rect) {
         lines.push(Line::styled(fit(&text, width, symbols.more), style));
     }
     lines.push(Line::raw(""));
-    let help = match (&settings.message, settings.row()) {
-        (Some(message), _) => Line::styled(fit(message, width, symbols.more), look.styles.warning),
-        (None, Some(row)) => {
-            let text = format!("{}: {}", row.key, row.help);
-            Line::styled(fit(&text, width, symbols.more), look.styles.dim)
-        }
-        (None, None) => Line::raw(""),
-    };
-    lines.resize(usize::from(area.height).saturating_sub(2), Line::raw(""));
-    lines.push(help);
+    let below = help.len().max(1) + 1;
+    lines.resize(
+        usize::from(area.height).saturating_sub(below),
+        Line::raw(""),
+    );
+    if help.is_empty() {
+        lines.push(Line::raw(""));
+    }
+    lines.extend(help);
     lines.push(keys(settings, look));
     frame.render_widget(Paragraph::new(lines), area);
     if let Some((cell, row)) = cursor

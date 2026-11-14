@@ -10,10 +10,6 @@ use crate::tui::app::App;
 use crate::tui::lsp::{STDERR_SHOWN, shown_root};
 use crate::tui::wrap::fit;
 
-use super::popup;
-
-const WIDTH: u16 = 90;
-
 /// The rows of the box, before the keys line.
 pub fn lines(app: &App, width: usize) -> Vec<Line<'static>> {
     let Some(open) = &app.lsp_box else {
@@ -93,19 +89,28 @@ pub fn lines(app: &App, width: usize) -> Vec<Line<'static>> {
     out
 }
 
-pub fn draw(app: &App, frame: &mut Frame<'_>, size: Rect) {
+/// The rows the box wants at `width` cells (RFC 0024): its lines, a blank
+/// line and the keys.
+pub fn wanted(app: &App, width: usize) -> usize {
+    if app.lsp_box.is_none() {
+        return 0;
+    }
+    lines(app, width).len() + 2
+}
+
+pub fn draw(app: &App, frame: &mut Frame<'_>, area: Rect) {
     if app.lsp_box.is_none() {
         return;
     }
     let look = &app.settings.look;
-    let cells = WIDTH.min(size.width.saturating_sub(4));
-    let width = usize::from(cells);
+    let width = usize::from(area.width);
     let mut rows = lines(app, width);
     let rule = look.symbols.rule;
     let keys = format!("r restart {rule} k stop {rule} Up Down choose {rule} Esc close");
+    let area = super::open_panel(frame, area, (Line::raw(" Language servers "), None), look);
+    // The keys stay the last row when the lines do not all fit.
+    rows.truncate(usize::from(area.height).saturating_sub(2));
     rows.push(Line::raw(""));
     rows.push(Line::styled(keys, look.styles.dim));
-    let wanted = u16::try_from(rows.len()).unwrap_or(u16::MAX);
-    let area = popup::open(frame, size, " Language servers ", cells, wanted, look);
     frame.render_widget(Paragraph::new(rows), area);
 }
