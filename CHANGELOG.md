@@ -7,6 +7,14 @@ notes are taken from that section by `ci/notes.sh`.
 
 ## Unreleased
 
+## 0.2.1 - 2026-11-14
+
+The same code as 0.2.0, whose release did not complete: four tests failed
+on macOS.
+
+- Tests: paths compared resolved, as macOS links `/etc` and the temporary
+  directory; `pbcopy` expected on macOS.
+
 ## 0.2.0 - 2026-11-13
 
 First published release; the same code as 0.1.0, whose release did not
