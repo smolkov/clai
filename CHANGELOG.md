@@ -14,6 +14,9 @@ lintian check. 0.3.0 and 0.2.1 were not published, so this release also
 brings the changes of 0.3.0 (skills) and 0.2.1 below.
 
 - Debian package for arm64: lintian override for the static binary.
+- A server that stops no longer sets the time of the last change of every
+  session: `clai -c` and the ages in the session list stay right after a
+  restart.
 - `clai -c` / `--continue` (RFC 0025): continue the last session of the
   current directory, or start one; also `clai chat -c` and
   `clai send -c MESSAGE`.

@@ -2103,3 +2103,20 @@ async fn unknown_skills_are_refused() {
     assert_eq!(skills_of(&mut c, &fx, "t").await.active[0].name, "pdf");
     fx.stop().await;
 }
+
+#[tokio::test]
+async fn a_restart_keeps_the_time_of_the_last_change() {
+    let mut fx = Fixture::start(vec![]).await;
+    let mut c = fx.client("tui", true).await;
+    new_session(&mut c, &fx.ws, Some("s")).await;
+    let before = c.list().await.unwrap()[0].updated;
+    drop(c);
+    // Times are in seconds: a stop a second later must not show.
+    tokio::time::sleep(Duration::from_millis(1100)).await;
+    fx.restart().await;
+    let mut c = fx.client("tui", true).await;
+    let listed = c.list().await.unwrap();
+    assert_eq!(listed[0].state, State::Saved);
+    assert_eq!(listed[0].updated, before);
+    fx.stop().await;
+}

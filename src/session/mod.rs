@@ -633,13 +633,20 @@ impl Actor {
     }
 
     /// Writes `session.json` with the current name, model, turns, queue and
-    /// token totals.
+    /// token totals, after a change: `updated` becomes now.
     fn save_meta(&mut self) {
+        self.meta.updated = crate::agent::now_secs();
+        self.write_meta();
+    }
+
+    /// Writes `session.json` as it is, `updated` kept: a server that stops
+    /// changes no session, and `--continue` and the ages of the session
+    /// list depend on it.
+    fn write_meta(&mut self) {
         let Some(store) = &self.store else {
             return;
         };
         self.meta.queued = self.queue.iter().cloned().collect();
-        self.meta.updated = crate::agent::now_secs();
         let result = store.write_meta(&self.meta);
         self.saved(result);
     }
@@ -744,7 +751,7 @@ impl Actor {
             }
         }
         if keep {
-            self.save_meta();
+            self.write_meta();
         }
         self.finish(reason);
     }
