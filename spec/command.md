@@ -74,10 +74,21 @@ The same for all commands, unless a command says otherwise.
 
 ```sh
 clai [--model PROVIDER/MODEL] [--name NAME]
+clai --continue [--model PROVIDER/MODEL]
 ```
 
 Same as `clai new` in the current directory: creates a session and attaches
 the TUI to it. This is the main way to use `clai` interactively.
+
+`--continue` (`-c`) attaches to the last session of the current directory
+instead (see [`sessions.md`](sessions.md), "The last session of a
+workspace"), running or saved; a saved one is resumed. With `--model`, that
+session's model is changed first, as `clai chat NAME --model` does;
+`CLAI_MODEL` does not change it. Without such a session it creates one, as
+`clai` without the option, after the note
+`clai: no session in ~/ws/project yet; starting one` on standard error.
+`--continue` with `--name` or with a task is an error (exit `2`). The steps
+below apply, with "attach" in the place of "create" in step 4.
 
 `clai` without a command and without a task always opens the TUI; with a
 task (`clai TASK...`) it is one-shot mode (see [`clai run`](#clai-run)).
@@ -86,6 +97,7 @@ task (`clai TASK...`) it is one-shot mode (see [`clai run`](#clai-run)).
 |--------|---------|
 | `--model` | Model of the new session. Default: `CLAI_MODEL`, then `default_model`. |
 | `--name` | Session name. Default: the workspace directory name, made unique. |
+| `-c`, `--continue` | Attach to the last session of the current directory; without one, create one. |
 
 `--yes`, `--no-ask` and `-C` belong to one-shot mode; without a task they
 are an error (exit `2`).
@@ -303,6 +315,7 @@ an invalid name.
 
 ```sh
 clai send NAME MESSAGE...
+clai send --continue MESSAGE...
 ```
 
 Sends `MESSAGE` to session `NAME` as if typed in the TUI and returns at once;
@@ -310,12 +323,19 @@ it does not wait for the answer. `-` reads the message from standard input.
 If a turn is running, the message is queued. An empty message exits `2`, an
 unknown session `1`.
 
+`--continue` (`-c`) sends to the last session of the current directory (see
+[`sessions.md`](sessions.md), "The last session of a workspace"); all words
+are then the message. A saved session is resumed. Without such a session it
+fails with `1` (`clai: no session in ~/ws/project`) and creates none: a
+message for an empty new session is more likely a mistake of a script.
+
 ## clai chat
 
 ```sh
 clai chat [NAME]
 clai chat [--model PROVIDER/MODEL] NAME
 clai chat --new [--name NAME] [--model PROVIDER/MODEL] [DIR]
+clai chat --continue [--model PROVIDER/MODEL]
 clai chat --questions [NAME...]
 clai chat --list [--json] [NAME...]
 clai chat NAME CHOICE [--id ID]
@@ -329,7 +349,11 @@ connection, in a second terminal, or from a script.
 **Conversation** (`clai chat [NAME]`): attaches to session `NAME` as an
 answering client named `clai chat`. Without `NAME`, or with `--new`, it
 first creates a session like `clai new -d` (workspace `DIR` or the current
-directory, `--name`, `--model` or `CLAI_MODEL`), then attaches.
+directory, `--name`, `--model` or `CLAI_MODEL`), then attaches. With
+`--continue` (`-c`) it attaches to the last session of the current
+directory, as `clai --continue` does, or creates one with the same note;
+`--continue` with a `NAME`, `--new`, `--name`, `--questions`, `--list` or
+`--id` is an error (exit `2`).
 
 ```
 clai: attached to clai (~/ws/rust/clai, anthropic/sonnet); /help lists commands, Ctrl-D detaches

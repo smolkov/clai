@@ -84,7 +84,7 @@ Tab then completes commands, options, and the configured models for
 
 | Command | Purpose |
 |---------|---------|
-| `clai` | New session in the current directory, with the TUI. |
+| `clai` | New session in the current directory, with the TUI; `clai -c` continues the last one there. |
 | `clai TASK...`, `clai run TASK...` | Run one task without the TUI and exit. |
 | `clai new`, `clai attach`, `clai ls`, `clai kill`, `clai send` | Manage sessions in the background server. |
 | `clai chat` | Chat with a session in the terminal, or answer its questions. |
@@ -224,6 +224,8 @@ can always type your own answer instead. The turn goes on with the answer.
 ```sh
 clai new -d --name api ~/ws/api       # start a session, print its name
 clai attach api                       # open it in the TUI
+clai -c                               # go on with this directory's last session
+clai send -c "and the docs too"       # send to it without attaching
 clai send api "run the tests and fix what fails"
 clai ls                               # name, workspace, model, state, age
 clai chat                             # new session here, chat in the terminal

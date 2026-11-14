@@ -37,6 +37,14 @@ pub struct Chat {
     /// With --new: the session name.
     #[arg(long, requires = "new")]
     pub name: Option<String>,
+    /// Continue the session of this directory that changed last; without
+    /// one, start a new one.
+    #[arg(
+        short = 'c',
+        long = "continue",
+        conflicts_with_all = ["new", "name", "list", "questions", "id"]
+    )]
+    pub resume: bool,
     /// The model, as PROVIDER/MODEL: of a new session, or the model to
     /// switch an existing one to (also to resume a saved session whose
     /// model is gone).
@@ -79,6 +87,8 @@ enum Mode<'a> {
     Attach(&'a str),
     /// A conversation with a new session in this directory.
     New(Option<PathBuf>),
+    /// The last session of this directory, or a new one.
+    Continue,
     Questions(&'a [String]),
     List(&'a [String]),
     Script {
@@ -105,6 +115,13 @@ impl Execute for Chat {
                     model: self.model.clone(),
                 },
             ),
+            Mode::Continue => talk::talk(
+                ctx,
+                talk::Target::Continue {
+                    request: super::common::request(None, self.model.clone(), None, Vec::new())?,
+                    model: self.model.clone(),
+                },
+            ),
             Mode::New(dir) => talk::talk(
                 ctx,
                 talk::Target::New(super::common::request(
@@ -125,6 +142,15 @@ impl Chat {
         }
         if self.questions {
             return Ok(Mode::Questions(&self.words));
+        }
+        if self.resume {
+            return if self.words.is_empty() {
+                Ok(Mode::Continue)
+            } else {
+                Err(Error::Usage(
+                    "--continue picks the session itself; give no NAME".to_owned(),
+                ))
+            };
         }
         match self.words.as_slice() {
             [name, choice, rest @ ..] if !self.new && CHOICES.contains(&choice.as_str()) => {
@@ -360,6 +386,7 @@ mod tests {
         Chat {
             new: false,
             name: None,
+            resume: false,
             model: None,
             questions: false,
             list: false,

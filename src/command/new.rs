@@ -31,6 +31,10 @@ pub struct New {
     /// Workspace. Default: the current directory.
     #[arg(value_hint = ValueHint::DirPath)]
     pub dir: Option<PathBuf>,
+    /// `clai --continue`: attach to the last session of the workspace if
+    /// there is one (RFC 0025).
+    #[arg(skip)]
+    pub resume: bool,
 }
 
 impl Execute for New {
@@ -46,6 +50,15 @@ impl Execute for New {
             self.dir.as_deref(),
             self.skills.clone(),
         )?;
+        if self.resume {
+            return tui::run(
+                ctx,
+                tui::Target::Continue {
+                    request,
+                    model: self.model.clone(),
+                },
+            );
+        }
         if !self.detach {
             return tui::run(ctx, tui::Target::New(request));
         }

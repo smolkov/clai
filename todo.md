@@ -259,6 +259,11 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [x] System prompt: tool output is data; denied files are not reached
       another way.
 
+## Continue the last session (RFC 0025)
+
+- [x] `clai -c`, `clai chat -c`: the last session of the directory, or a
+      new one with a note; `clai send -c`: fails without one.
+
 ## Skills (RFC 0023)
 
 - [x] `SKILL.md` format and checks; seven default directories and

@@ -77,6 +77,11 @@ pub struct TopArgs {
     #[arg(long, conflicts_with = "task")]
     pub name: Option<String>,
 
+    /// Continue the session of this directory that changed last; without
+    /// one, start a new one (only without TASK).
+    #[arg(short = 'c', long = "continue", conflicts_with_all = ["task", "name"])]
+    pub resume: bool,
+
     /// Allow tool calls that would ask (only with TASK).
     #[arg(long, requires = "task")]
     pub yes: bool,
@@ -161,6 +166,7 @@ impl Cli {
         let top = &cli.top;
         let top_used = top.model.is_some()
             || top.name.is_some()
+            || top.resume
             || top.yes
             || top.dir.is_some()
             || !top.task.is_empty();
@@ -182,6 +188,7 @@ impl Cli {
             None if self.top.task.is_empty() => Command::New(New {
                 model: self.top.model,
                 name: self.top.name,
+                resume: self.top.resume,
                 ..New::default()
             }),
             None => Command::Run(Run {
@@ -229,6 +236,35 @@ mod tests {
             version_text("0.2.0", Some("abc1234"), Some("2026-11-11")),
             "0.2.0 (abc1234 2026-11-11)"
         );
+    }
+
+    #[test]
+    fn continue_is_a_new_session_that_may_attach() {
+        for flag in ["-c", "--continue"] {
+            let Command::New(new) = parse(&[flag, "--model", "m"]).into_command() else {
+                panic!("not new");
+            };
+            assert!(new.resume);
+            assert_eq!(new.model.as_deref(), Some("m"));
+        }
+        let Command::New(new) = parse(&[]).into_command() else {
+            panic!("not new");
+        };
+        assert!(!new.resume);
+        // It names no new session and takes no task.
+        parse_err(&["-c", "--name", "x"]);
+        parse_err(&["-c", "fix", "it"]);
+        let Some(Command::Chat(chat)) = parse(&["chat", "-c"]).command else {
+            panic!("not chat");
+        };
+        assert!(chat.resume);
+        parse_err(&["chat", "--continue", "--new"]);
+        let Some(Command::Send(send)) = parse(&["send", "-c", "hello", "there"]).command else {
+            panic!("not send");
+        };
+        assert!(send.resume);
+        assert_eq!(send.words(), ["hello", "there"]);
+        parse_err(&["send", "s"]);
     }
 
     #[test]
@@ -404,7 +440,8 @@ mod tests {
     fn send_command() {
         assert!(matches!(
             parse(&["send", "docs", "hello", "there"]).command,
-            Some(Command::Send(Send { name, message })) if name == "docs" && message == ["hello", "there"]
+            Some(Command::Send(Send { name, message, resume: false }))
+                if name.as_deref() == Some("docs") && message == ["hello", "there"]
         ));
         assert_eq!(
             parse_err(&["send", "docs"]).kind(),

@@ -57,6 +57,66 @@ pub async fn create(client: &mut Client, request: Request) -> Result<Box<Session
     Ok(session)
 }
 
+/// The session of `workspace` that changed last (RFC 0025): its `path` is
+/// the workspace, resolved; the latest `updated` wins, and on a tie the
+/// higher id, the one created later. Running and saved sessions count
+/// alike.
+pub fn last_session<'a>(sessions: &'a [SessionInfo], workspace: &Path) -> Option<&'a SessionInfo> {
+    let resolved = workspace
+        .canonicalize()
+        .unwrap_or_else(|_| workspace.to_path_buf());
+    sessions
+        .iter()
+        .filter(|s| s.path == resolved || s.path == workspace)
+        .max_by_key(|s| (s.updated, s.id))
+}
+
+/// The session `--continue` goes to: the last one of the workspace of the
+/// `new` request, with its model changed to `model` if given; without one,
+/// a new session from `request`, with a note.
+pub async fn continue_session(
+    client: &mut Client,
+    request: Request,
+    model: Option<String>,
+) -> Result<String> {
+    let Request::New { workspace, .. } = &request else {
+        return Err(Error::Failed(
+            "--continue needs a new-session request".to_owned(),
+        ));
+    };
+    let sessions = client.list().await?;
+    if let Some(session) = last_session(&sessions, workspace) {
+        let name = session.name.clone();
+        if let Some(model) = model {
+            client
+                .request(Request::SetModel {
+                    session: name.clone(),
+                    model,
+                })
+                .await?;
+        }
+        return Ok(name);
+    }
+    note(&format!(
+        "no session in {} yet; starting one",
+        shown(workspace)
+    ));
+    Ok(create(client, request).await?.name)
+}
+
+/// The session `clai send --continue` goes to; none is an error (exit `1`).
+pub fn last_session_name(sessions: &[SessionInfo], workspace: &Path) -> Result<String> {
+    last_session(sessions, workspace)
+        .map(|s| s.name.clone())
+        .ok_or_else(|| Error::Failed(format!("no session in {}", shown(workspace))))
+}
+
+/// A directory as messages show it: `~/…` in the home directory.
+fn shown(path: &Path) -> String {
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    crate::skills::display(path, Path::new(""), home.as_deref())
+}
+
 /// `DIR` or the current directory, absolute; it must be a directory.
 pub fn workspace(dir: Option<&Path>) -> Result<PathBuf> {
     let dir = match dir {
@@ -159,5 +219,63 @@ mod tests {
             }
             other => panic!("{other:?}"),
         }
+    }
+}
+
+#[cfg(test)]
+mod last_session_tests {
+    use super::*;
+    use crate::agent::State;
+
+    fn session(id: u64, path: &str, updated: u64) -> SessionInfo {
+        SessionInfo {
+            id,
+            name: format!("s{id}"),
+            workspace: path.to_owned(),
+            path: path.into(),
+            model: "test/m".into(),
+            state: State::Idle,
+            created: 0,
+            updated,
+            turns: 0,
+            queued: 0,
+            question: None,
+            usage: Default::default(),
+        }
+    }
+
+    #[test]
+    fn the_last_session_of_the_workspace() {
+        let ws = Path::new("/nowhere/ws");
+        let mut working = session(4, "/nowhere/ws", 150);
+        working.state = State::Working;
+        let mut saved = session(5, "/nowhere/ws", 90);
+        saved.state = State::Saved;
+        let sessions = [
+            session(1, "/nowhere/ws", 100),
+            working,
+            saved,
+            // Other workspaces, a parent and a subdirectory, do not count.
+            session(2, "/nowhere/other", 500),
+            session(3, "/nowhere", 500),
+            session(6, "/nowhere/ws/src", 500),
+        ];
+        assert_eq!(last_session(&sessions, ws).unwrap().id, 4);
+        // A saved session counts as well.
+        assert_eq!(last_session(&sessions[2..], ws).unwrap().id, 5);
+        assert!(last_session(&sessions[3..], ws).is_none());
+        assert_eq!(
+            last_session_name(&sessions[3..], ws)
+                .unwrap_err()
+                .to_string(),
+            "no session in /nowhere/ws"
+        );
+    }
+
+    #[test]
+    fn a_tie_goes_to_the_newer_session() {
+        let ws = Path::new("/nowhere/ws");
+        let sessions = [session(7, "/nowhere/ws", 0), session(3, "/nowhere/ws", 0)];
+        assert_eq!(last_session(&sessions, ws).unwrap().id, 7);
     }
 }

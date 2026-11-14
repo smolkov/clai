@@ -57,6 +57,12 @@ pub enum Target {
     Attach { name: String, model: Option<String> },
     /// A `new` request.
     New(Request),
+    /// The last session of the request's workspace, with its model changed
+    /// to `model`; without one, a session from the request.
+    Continue {
+        request: Request,
+        model: Option<String>,
+    },
 }
 
 pub fn talk(ctx: &Context, target: Target) -> Result<()> {
@@ -76,6 +82,9 @@ pub fn talk(ctx: &Context, target: Target) -> Result<()> {
                 name
             }
             Target::New(request) => create(&mut client, request).await?.name,
+            Target::Continue { request, model } => {
+                crate::command::common::continue_session(&mut client, request, model).await?
+            }
         };
         let session = attach(&mut client, &name).await?;
         let mut talk = Talk {

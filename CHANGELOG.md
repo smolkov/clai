@@ -7,6 +7,10 @@ notes are taken from that section by `ci/notes.sh`.
 
 ## Unreleased
 
+- `clai -c` / `--continue` (RFC 0025): continue the last session of the
+  current directory, or start one; also `clai chat -c` and
+  `clai send -c MESSAGE`.
+
 ## 0.3.0 - 2026-11-14
 
 - Skills (RFC 0023): `SKILL.md` directories of OpenCode, Claude Code and

@@ -63,6 +63,13 @@ Statements marked **(assumption)** need a decision from the user.
   workspace directory name, with `-2`, `-3`, … added if it is taken.
   Names are unique per server. A name is one word: at most 64 characters,
   no spaces or control characters, not starting with `-`.
+- **The last session of a workspace** is what `--continue` attaches to
+  (`clai`, `clai chat`, `clai send`; RFC 0025): among the sessions whose
+  workspace is the directory, resolved, the one with the latest `updated`
+  (the last message, answer, model change or rename); on the same time,
+  the one with the higher id, created later. Running, working, waiting and
+  saved sessions count alike. Sessions of a parent directory or a
+  subdirectory do not count. The client chooses from `list`.
 - **Several sessions in one workspace** are allowed. They can change the
   same files, so `clai new` prints a note on standard error naming the other
   sessions in that workspace.

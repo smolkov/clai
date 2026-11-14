@@ -146,3 +146,4 @@ Sections that do not apply may be left out.
 | [0022](0022-conversation-layout.md) | Conversation layout: markers, short tool names, clicks, questions | done |
 | [0023](0023-skills.md) | Skills | done |
 | [0024](0024-boxes-at-the-bottom.md) | Boxes at the bottom, settings on the whole screen | draft |
+| [0025](0025-continue-the-last-session.md) | Continue the last session of the workspace | done |

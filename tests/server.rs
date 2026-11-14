@@ -612,3 +612,71 @@ fn token_totals_in_ls_and_chat() {
     let out = env.run(&["kill", "s"]);
     assert_eq!(code(&out), Some(0), "{}", text(&out.stderr));
 }
+
+#[test]
+fn send_continue_goes_to_the_last_session_of_the_workspace() {
+    let port = model_server(vec![
+        say_counted("one", 10, 1),
+        say_counted("two", 10, 1),
+        say_counted("three", 10, 1),
+    ]);
+    let env = Env::new("continue", port);
+    // Nothing to continue yet.
+    let out = env.run(&["send", "--continue", "hello"]);
+    assert_eq!(code(&out), Some(1), "{}", text(&out.stderr));
+    assert!(
+        text(&out.stderr).starts_with("clai: no session in "),
+        "{}",
+        text(&out.stderr)
+    );
+    let other = env.root.join("other");
+    fs::create_dir_all(&other).unwrap();
+    let new = |args: &[&str]| {
+        let out = env.run(args);
+        assert_eq!(code(&out), Some(0), "{}", text(&out.stderr));
+    };
+    new(&["new", "-d", "--name", "old"]);
+    new(&["new", "-d", "--name", "newer"]);
+    new(&["new", "-d", "--name", "elsewhere", other.to_str().unwrap()]);
+    // `old` changes last, a second later (times are in seconds): it gets
+    // the message.
+    thread::sleep(Duration::from_millis(1100));
+    new(&["send", "old", "first"]);
+    // Each answer counts 10 input tokens.
+    let turns = |name: &str| {
+        env.sessions()
+            .into_iter()
+            .find(|s| s["name"] == name)
+            .map(|s| s["input_tokens"].as_u64().unwrap_or(0) / 10)
+            .unwrap()
+    };
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while turns("old") < 1 {
+        assert!(Instant::now() < deadline, "the first turn did not start");
+        thread::sleep(Duration::from_millis(20));
+    }
+    new(&["send", "-c", "second", "message"]);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while turns("old") < 2 {
+        assert!(
+            Instant::now() < deadline,
+            "--continue went elsewhere: {:?}",
+            env.sessions()
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(turns("newer"), 0);
+    assert_eq!(turns("elsewhere"), 0);
+    // A saved session counts: after a restart it is resumed by the send.
+    assert_eq!(code(&env.run(&["server", "stop"])), Some(0));
+    new(&["send", "-c", "third"]);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while turns("old") < 3 {
+        assert!(
+            Instant::now() < deadline,
+            "not resumed: {:?}",
+            env.sessions()
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+}

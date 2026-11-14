@@ -71,6 +71,12 @@ pub enum Target {
     New(Request),
     /// A session by name; without one, the only session there is.
     Attach(Option<String>),
+    /// The last session of the workspace of the `new` request, with its
+    /// model changed to `model`; without one, a session from the request.
+    Continue {
+        request: Request,
+        model: Option<String>,
+    },
 }
 
 /// Runs the TUI until the user leaves. Every failure before the terminal
@@ -78,7 +84,11 @@ pub enum Target {
 pub fn run(ctx: &Context, target: Target) -> Result<()> {
     let config = ctx.config();
     let workspace = match &target {
-        Target::New(Request::New { workspace, .. }) => workspace.clone(),
+        Target::New(Request::New { workspace, .. })
+        | Target::Continue {
+            request: Request::New { workspace, .. },
+            ..
+        } => workspace.clone(),
         // No project file applies; the session has its own workspace.
         _ => runtime_dir(),
     };
@@ -164,6 +174,10 @@ async fn session_name(client: &mut Client, target: Target) -> Result<(String, bo
         Target::New(request) => Ok((create(client, request).await?.name, false)),
         Target::Attach(Some(name)) => Ok((name, false)),
         Target::Attach(None) => first_session(&client.list().await?),
+        Target::Continue { request, model } => Ok((
+            crate::command::common::continue_session(client, request, model).await?,
+            false,
+        )),
     }
 }
 
