@@ -11,5 +11,9 @@ no-manual-page [usr/bin/clai]
 # `ldd` saying "statically linked" is what is wanted.
 shared-library-lacks-prerequisites [usr/bin/clai]
 
+# On aarch64 the musl binary is a plain static executable, not a static
+# PIE; lintian names that differently. Static is what is wanted.
+statically-linked-binary [usr/bin/clai]
+
 # The package is not uploaded to Debian, so its changelog closes no bugs.
 initial-upload-closes-no-bugs [usr/share/doc/clai/changelog.Debian.gz:1]
