@@ -7,6 +7,13 @@ notes are taken from that section by `ci/notes.sh`.
 
 ## Unreleased
 
+## 0.3.1 - 2026-11-14
+
+The release of 0.3.0 did not complete: the arm64 Debian package failed its
+lintian check. 0.3.0 and 0.2.1 were not published, so this release also
+brings the changes of 0.3.0 (skills) and 0.2.1 below.
+
+- Debian package for arm64: lintian override for the static binary.
 - `clai -c` / `--continue` (RFC 0025): continue the last session of the
   current directory, or start one; also `clai chat -c` and
   `clai send -c MESSAGE`.
