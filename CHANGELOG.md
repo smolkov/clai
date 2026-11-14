@@ -7,6 +7,8 @@ notes are taken from that section by `ci/notes.sh`.
 
 ## Unreleased
 
+## 0.3.0 - 2026-11-14
+
 - Skills (RFC 0023): `SKILL.md` directories of OpenCode, Claude Code and
   `.agents`, also in subdirectories (`synced/<id>/<skill>/`), and
   `[skills] dirs`; `clai skills [--json]`; `/skills` box and
