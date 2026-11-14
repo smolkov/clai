@@ -144,7 +144,7 @@ these values filled in:
 | Value | Example |
 |-------|---------|
 | Workspace path | `/home/user/ws/rust/clai` |
-| Extra directories and their access | `~/ws/docs (read only)` |
+| Extra directories and their access, with the directories of active skills | `~/ws/docs (read only)` |
 | Platform and shell | `linux, commands run with sh -c` |
 | Today's date | `2026-11-01` |
 
@@ -168,6 +168,12 @@ the file types of the servers in use:
   files, use lsp before search_files. After an edit, errors the language
   server reports are added to the result; fix them before you go on.
 ```
+
+When the user has turned on skills, a section with their instructions
+follows the fixed text, and their directories are in the "Other
+directories" line, read only (see [`skills.md`](skills.md), "System
+prompt"). The session changes its skills between requests; a change applies
+from the next request.
 
 Project instructions (e.g. an `AGENTS.md` file) and anything else that
 grows the prompt belong to `context.md` (planned). **(assumption)**

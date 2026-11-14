@@ -287,6 +287,10 @@ stop, a crash or a reboot. `clai run` sessions are not saved.
   and writing `session.json`. A missing `usage` means zero, so the format stays
   `1`. A resume that changes the model logs `model_changed`.
 
+  The session's active skills are rebuilt from the `skills_changed` events of
+  `events.jsonl`, with the text saved in them (see [`skills.md`](skills.md),
+  "Saving"); a log of an older `clai` has none. The format stays `1`.
+
   The configuration is not saved: it is read again on resume. One JSON
   value per line; a last line cut by a crash is left out when loading. A
   file of a newer format than the running `clai` reads is refused and left

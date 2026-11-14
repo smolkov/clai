@@ -14,6 +14,7 @@ pub mod new;
 pub mod run;
 pub mod send;
 pub mod server;
+pub mod skills;
 
 use std::path::{Path, PathBuf};
 

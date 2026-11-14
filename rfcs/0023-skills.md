@@ -1,7 +1,7 @@
 # Skills
 
 - RFC: 0023
-- Status: draft
+- Status: done
 - Milestone: none; it adds to the system prompt of
   [`spec/agent-loop.md`](../spec/agent-loop.md) and the command list of
   RFC 0004
@@ -90,8 +90,10 @@ description: Steps before tagging a release of a Rust crate. Use when the user a
 1. Run `cargo test` and `cargo clippy` …
 ```
 
-- A skill is a directory directly below a skills directory that contains
-  a file `SKILL.md`. Deeper directories are not searched. **(proposal)**
+- A skill is a directory below a skills directory that contains a file
+  `SKILL.md`, up to 6 levels deep; nothing below a skill is searched.
+  (Changed after building, see "Notes from building"; the draft searched
+  only the first level.)
 - The file starts with a frontmatter block between two `---` lines.
   `name` and `description` are read from it; other keys are ignored.
 - `name`: 1 to 64 characters, lowercase letters, digits and `-`, not
@@ -381,7 +383,7 @@ the place to revisit.
 ## Implementation plan
 
 1. **Finding and reading skills**
-   - Status: todo
+   - Status: done
    - Files: `src/skills/mod.rs`, `src/skills/parse.rs`, `src/lib.rs`,
      `src/config/` (`[skills]`), `src/config/tests.rs`
    - Result: `skills::find` returns the skills of a workspace with
@@ -389,14 +391,14 @@ the place to revisit.
    - Tests: the skills and config unit tests.
 
 2. **`clai skills`**
-   - Status: todo
+   - Status: done
    - Files: `src/cli.rs`, `src/command/skills.rs`, `tests/skills.rs`
    - Result: the user can see what is found and why something is
      skipped, before any session uses it.
    - Tests: `tests/skills.rs` for the listing.
 
 3. **Active skills in the session and the prompt**
-   - Status: todo
+   - Status: done
    - Files: `src/agent/prompt.rs`, `src/agent/system_prompt.md`,
      `src/permissions/`, `src/session/`, `src/protocol/`,
      `src/server/requests.rs`, tests
@@ -405,7 +407,7 @@ the place to revisit.
    - Tests: agent, permissions, session and server tests.
 
 4. **The selection box and `/skills`**
-   - Status: todo
+   - Status: done
    - Files: `src/tui/skills.rs`, `src/tui/view/skills.rs`,
      `src/tui/app.rs`, `src/tui/commands.rs`, `src/tui/status.rs`,
      `src/tui/tests.rs`, snapshots
@@ -414,14 +416,14 @@ the place to revisit.
    - Tests: TUI tests and snapshots.
 
 5. **`clai chat`, `clai run`, `clai new`**
-   - Status: todo
+   - Status: done
    - Files: `src/command/chat/`, `src/command/run.rs`,
      `src/command/new.rs`, `tests/skills.rs`
    - Result: `/skills` in `clai chat`; `--skill NAME`.
    - Tests: `tests/skills.rs` with the mock provider.
 
 6. **Spec and readme**
-   - Status: todo
+   - Status: done
    - Files: the spec files above, `readme.md`, `todo.md`
    - Result: the spec and readme describe skills.
    - Tests: `ci/check.sh`, `ci/test.sh`.
@@ -451,15 +453,69 @@ the place to revisit.
 
 ## Open questions
 
-1. Priority between the default directories: workspace before home
-   (proposal), or home before workspace?
-2. Should `~/.config/clai/skills` and `<workspace>/.clai/skills` be
-   default directories too, before the other tools' ones?
-3. Should a new session start with no skills (proposal), or with a
-   configured default list (`[skills] active = [...]`)?
-4. Should the model later be able to see all skills and load one itself
-   (a `load_skill` tool, asking the user like other calls)?
-5. Read access to an active skill's directory (proposal), or nothing
-   beyond the `SKILL.md` text?
-6. `clai skills` as its own command (proposal), or only in `clai chat`
-   and the TUI?
+1. ~~Priority between the default directories~~: answered, workspace
+   before home.
+2. ~~`~/.config/clai/skills` and `<workspace>/.clai/skills`~~: answered,
+   not default directories.
+3. ~~Skills of a new session~~: answered, none.
+4. ~~The model loading skills itself~~: answered, not now.
+5. ~~Read access to a skill's directory~~: answered, read only.
+6. ~~`clai skills` as its own command~~: answered, yes.
+
+## Answers
+
+1. to 6. The user asked to build it, so the proposals hold, as for
+   RFC 0021: the workspace's directories come before the home directory's;
+   `clai` has no skills directory of its own (`skills.dirs` covers it); a
+   new session starts with no skills; the model does not load skills by
+   itself (out of scope, see "Alternatives"); an active skill's directory
+   is readable, not writable; `clai skills` is its own command.
+
+## Notes from building
+
+- **Protocol 9, not "no version change".** An old server closes the
+  connection on a request it does not know, and an old client fails on an
+  event it does not know, which a session log with `skills_changed` would
+  send on attach. So the version went up, as the comment on
+  `protocol::VERSION` asks; a mismatch tells the user to restart the
+  server, as before.
+- **One event, `skills_changed`, instead of `skill_on` and `skill_off`.**
+  It carries the skills turned on (name, directory, text) and the names
+  turned off. One change makes one event, one log line and one notice
+  (`skills: + release-check, − pdf`), and it is both the live event and the
+  saved one; a resume replays these events (`agent::active_skills`).
+- **No separate active list in an event.** Clients keep the active names
+  from `skills_changed`; `changed_on_disk` and `missing` come with the
+  answers to `skills` and `set_skills` and with `session_status`, where the
+  server compares the saved text with the file. `skills` takes an optional
+  `session`, so the box gets the found and the active skills in one answer.
+- **The answer carries the server's home directory,** so the TUI and
+  `clai chat` show paths as `~/…` as the server, whose home sessions use,
+  sees them.
+- **How a change reaches the agent:** `agent::SkillsHandle`, like
+  `ModelHandle`, shared by the session and its agent. Before each model
+  request the agent takes a newer version: it rebuilds the prompt from the
+  prompt without skills (the lsp bullet kept), replaces the "Other
+  directories" line, adds the section, and gives the tools a workspace with
+  the skill directories, read only (`Workspace::with_read_dirs`). A
+  directory the workspace or an extra directory already covers is not added
+  again, so a project skill stays writable as part of the workspace.
+- **`set_skills` resumes a saved session**, as `set_model` does; `skills`
+  and `session_status` read a saved session's log without resuming it.
+- **`new` takes `skills`;** names are checked before the session is made,
+  so an unknown one creates nothing. `clai run --skill` finds the skills
+  itself, in the process, as `clai run` does everything.
+- **`clai TASK...`** (the short form of `clai run`) has no `--skill`, as
+  the RFC names only `clai run` and `clai new`.
+- **Token estimate:** bytes divided by four, rounded up; the status box
+  shows it per skill with `short_tokens`.
+- **The full description line** above the status line shows when the
+  selected row cuts the description.
+- **Search below the first level** (asked by the user after building): a
+  skill may lie at any depth up to 6 below a skills directory, as in
+  `~/.claude/skills/synced/<id>/<skill>/SKILL.md`. Depth first, by name;
+  nothing below a skill; hidden directories passed over; each directory
+  searched once, so a link loop ends. This replaces "Deeper directories
+  are not searched".
+- **Not built:** Tab completion of skill names for `--skill` (noted in
+  `todo.md`).

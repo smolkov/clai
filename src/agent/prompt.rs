@@ -4,11 +4,57 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::config::Access;
 use crate::permissions::Workspace;
+use crate::skills::Active;
 
 const TEMPLATE: &str = include_str!("system_prompt.md");
+const OTHER_DIRS: &str = "Other directories you may use: ";
 
 /// The system prompt for a workspace on a day (`2026-11-01`).
 pub fn system_prompt(workspace: &Workspace, today: &str) -> String {
+    TEMPLATE
+        .replace("{workspace}", &workspace.root().display().to_string())
+        .replace("{extra_dirs}", &extra_dirs(workspace))
+        .replace("{platform}", std::env::consts::OS)
+        .replace("{date}", today)
+}
+
+/// The prompt `base` with the active skills: the "Other directories" line
+/// from `workspace`, which has their directories, and a section with their
+/// instructions at the end. Without skills, `base` as it is.
+pub fn with_skills(base: &str, workspace: &Workspace, skills: &[Active]) -> String {
+    if skills.is_empty() {
+        return base.to_owned();
+    }
+    let mut out = String::new();
+    for line in base.split_inclusive('\n') {
+        if line.starts_with(OTHER_DIRS) {
+            out.push_str(OTHER_DIRS);
+            out.push_str(&extra_dirs(workspace));
+            out.push('\n');
+        } else {
+            out.push_str(line);
+        }
+    }
+    if !out.ends_with('\n') {
+        out.push('\n');
+    }
+    out.push_str(
+        "\nThe user turned on these skills. Follow their instructions when the task fits them.\n\
+         Files the instructions name are relative to the skill's directory.\n",
+    );
+    for skill in skills {
+        out.push_str(&format!(
+            "\n<skill name=\"{}\" dir=\"{}\">\n{}\n</skill>\n",
+            skill.name,
+            skill.dir.display(),
+            skill.text
+        ));
+    }
+    out
+}
+
+/// The extra directories with their access, or `none`.
+fn extra_dirs(workspace: &Workspace) -> String {
     let extra: Vec<String> = workspace
         .extra_dirs()
         .iter()
@@ -20,16 +66,11 @@ pub fn system_prompt(workspace: &Workspace, today: &str) -> String {
             format!("{} ({access})", workspace.tilde(&dir.path))
         })
         .collect();
-    let extra = if extra.is_empty() {
+    if extra.is_empty() {
         "none".to_owned()
     } else {
         extra.join(", ")
-    };
-    TEMPLATE
-        .replace("{workspace}", &workspace.root().display().to_string())
-        .replace("{extra_dirs}", &extra)
-        .replace("{platform}", std::env::consts::OS)
-        .replace("{date}", today)
+    }
 }
 
 /// The prompt with the bullet for the `lsp` tool, for the files of
@@ -89,6 +130,8 @@ pub fn date_of(secs: u64) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
     use crate::config::ExtraDir;
 
@@ -120,6 +163,49 @@ mod tests {
 
         let ws = Workspace::new(tmp.path(), &[], None).unwrap();
         assert!(system_prompt(&ws, "x").contains("you may use: none"));
+    }
+
+    #[test]
+    fn skills_go_at_the_end_and_their_dirs_into_the_list() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ws_dir = tmp.path().join("ws");
+        let skills_dir = tmp.path().join("skills");
+        std::fs::create_dir_all(&ws_dir).unwrap();
+        std::fs::create_dir_all(skills_dir.join("a")).unwrap();
+        let ws = Workspace::new(&ws_dir, &[], None).unwrap();
+        let base = with_lsp(&system_prompt(&ws, "x"), ".rs");
+        assert_eq!(with_skills(&base, &ws, &[]), base);
+        let skills = [
+            Active {
+                name: "b".into(),
+                dir: PathBuf::from("/nowhere/b"),
+                text: "Do B.".into(),
+            },
+            Active {
+                name: "a".into(),
+                dir: skills_dir.join("a"),
+                text: "# A\n\nDo A.".into(),
+            },
+        ];
+        let dirs: Vec<PathBuf> = skills.iter().map(|s| s.dir.clone()).collect();
+        let with = with_skills(&base, &ws.with_read_dirs(&dirs), &skills);
+        let a = skills_dir.join("a").canonicalize().unwrap();
+        assert!(
+            with.contains(&format!(
+                "Other directories you may use: {} (read only)\n",
+                a.display()
+            )),
+            "{with}"
+        );
+        assert!(with.starts_with(base.get(..base.find(OTHER_DIRS).unwrap()).unwrap()));
+        let section = with.find("\nThe user turned on these skills.").unwrap();
+        assert!(section > with.find("- When you are done").unwrap());
+        assert!(with.ends_with(&format!(
+            "Files the instructions name are relative to the skill's directory.\n\n\
+             <skill name=\"b\" dir=\"/nowhere/b\">\nDo B.\n</skill>\n\n\
+             <skill name=\"a\" dir=\"{}\">\n# A\n\nDo A.\n</skill>\n",
+            skills_dir.join("a").display()
+        )));
     }
 
     #[test]

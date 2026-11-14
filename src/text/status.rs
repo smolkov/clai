@@ -174,6 +174,27 @@ fn session(status: &SessionStatus, options: &Options<'_>) -> Section {
             ));
         }
     }
+    for (i, skill) in status.skills.iter().enumerate() {
+        let label = if i == 0 { "skills" } else { "" };
+        let value = format!(
+            "{}  ({} tokens)",
+            skill.name,
+            crate::text::short_tokens(skill.tokens)
+        );
+        if skill.missing {
+            rows.push(warn(
+                label,
+                format!("{value}  {} not found any more", options.warning()),
+            ));
+        } else if skill.changed_on_disk {
+            rows.push(warn(
+                label,
+                format!("{value}  {} changed on disk", options.warning()),
+            ));
+        } else {
+            rows.push(row(label, value));
+        }
+    }
     rows.push(row(
         "created",
         format!(
@@ -608,6 +629,7 @@ pub(crate) mod tests {
             dir: None,
             size: None,
             extra_dirs: Vec::new(),
+            skills: Vec::new(),
             model: None,
             limits: None,
             now: 1_793_491_200_000 + 90_000,

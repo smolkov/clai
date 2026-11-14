@@ -111,6 +111,7 @@ impl Execute for Chat {
                     self.name.clone(),
                     self.model.clone(),
                     dir.as_deref(),
+                    Vec::new(),
                 )?),
             ),
         }

@@ -17,6 +17,7 @@ mod popup;
 pub mod prompt;
 mod sessions;
 mod settings;
+mod skills;
 mod status;
 mod status_box;
 mod themes;
@@ -202,6 +203,7 @@ pub fn draw(app: &App, frame: &mut Frame<'_>) {
     popup::draw(app, frame, size);
     sessions::draw(app, frame, size);
     picker::draw(app, frame, size);
+    skills::draw(app, frame, size);
     settings::draw(app, frame, size);
     themes::draw(app, frame, size);
     status_box::draw(app, frame, size);

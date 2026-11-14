@@ -144,4 +144,4 @@ Sections that do not apply may be left out.
 | [0020](0020-ci-pipelines.md) | Pipelines for test, build and release | accepted |
 | [0021](0021-default-model-from-the-picker.md) | Default model from the model picker | done |
 | [0022](0022-conversation-layout.md) | Conversation layout: markers, short tool names, clicks, questions | done |
-| [0023](0023-skills.md) | Skills | draft |
+| [0023](0023-skills.md) | Skills | done |

@@ -21,7 +21,7 @@ use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWrite, AsyncWr
 use crate::agent::{Answer, Question, SessionEvent, State};
 
 /// The protocol version; a new message or event kind needs a new one.
-pub const VERSION: u32 = 8;
+pub const VERSION: u32 = 9;
 
 /// The longest message accepted, in bytes.
 pub const MAX_LINE: usize = 16 << 20;
@@ -76,6 +76,9 @@ pub enum Request {
         /// `provider/model` or the short form; `None` for `default_model`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         model: Option<String>,
+        /// Skills to turn on (RFC 0023).
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        skills: Vec<String>,
     },
     List,
     Kill {
@@ -103,6 +106,19 @@ pub enum Request {
     },
     Cancel {
         session: String,
+    },
+    /// The skills found for a workspace, and with `session` its active
+    /// ones (RFC 0023).
+    Skills {
+        workspace: PathBuf,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        session: Option<String>,
+    },
+    /// Sets a session's active skills: `names` is the whole list. Answered
+    /// like `skills`.
+    SetSkills {
+        session: String,
+        names: Vec<String>,
     },
     /// Answers the open question; the response says whether it counted.
     Answer {
@@ -242,6 +258,8 @@ pub enum Payload {
     Lsp {
         servers: Vec<LspServerInfo>,
     },
+    /// After `skills` and `set_skills`.
+    Skills(Box<SkillsInfo>),
     Models {
         models: Vec<ModelInfo>,
         /// The user config file the server reads.
@@ -301,6 +319,96 @@ impl LspServerInfo {
             ("failed", _, Some(reason)) => format!("failed: {reason}"),
             (state, ..) => state.to_owned(),
         }
+    }
+}
+
+/// The skills of a workspace, and of a session (RFC 0023).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SkillsInfo {
+    /// In order of priority.
+    pub skills: Vec<SkillInfo>,
+    /// The directories searched, in order of priority.
+    pub dirs: Vec<PathBuf>,
+    /// Skipped files, directories that cannot be read.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
+    /// The session's active skills, in the order turned on.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub active: Vec<ActiveSkill>,
+    /// The server's home directory, to show paths as `~/…`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub home: Option<PathBuf>,
+}
+
+/// A skill found on disk.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SkillInfo {
+    pub name: String,
+    pub description: String,
+    pub dir: PathBuf,
+    pub source: crate::skills::Source,
+    /// The directory of the skill of the same name that wins.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shadowed_by: Option<PathBuf>,
+}
+
+/// An active skill of a session.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActiveSkill {
+    pub name: String,
+    pub dir: PathBuf,
+    /// Estimated tokens of its text.
+    pub tokens: u64,
+    /// Its `SKILL.md` has other instructions now than the session uses.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub changed_on_disk: bool,
+    /// Not found any more where it was.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub missing: bool,
+}
+
+impl SkillsInfo {
+    /// The answer for `found` and a session's active skills.
+    pub fn new(
+        found: &crate::skills::Found,
+        active: &[crate::skills::Active],
+        home: Option<&std::path::Path>,
+    ) -> SkillsInfo {
+        SkillsInfo {
+            home: home.map(std::path::Path::to_path_buf),
+            skills: found
+                .skills
+                .iter()
+                .map(|s| SkillInfo {
+                    name: s.name.clone(),
+                    description: s.description.clone(),
+                    dir: s.dir.clone(),
+                    source: s.source,
+                    shadowed_by: s.shadowed_by.clone(),
+                })
+                .collect(),
+            dirs: found.dirs.iter().map(|d| d.path.clone()).collect(),
+            warnings: found.warnings.clone(),
+            active: active
+                .iter()
+                .map(|a| ActiveSkill {
+                    name: a.name.clone(),
+                    dir: a.dir.clone(),
+                    tokens: a.tokens(),
+                    changed_on_disk: found.changed_on_disk(a),
+                    missing: found.missing(a),
+                })
+                .collect(),
+        }
+    }
+
+    /// The names that can be turned on: found and not shadowed.
+    pub fn names(&self) -> Vec<&str> {
+        self.skills
+            .iter()
+            .filter(|s| s.shadowed_by.is_none())
+            .map(|s| s.name.as_str())
+            .collect()
     }
 }
 

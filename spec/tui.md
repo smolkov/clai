@@ -601,6 +601,7 @@ Up Down choose ─ Enter next ─ Tab question ─ Esc skip ─ Ctrl-C cancel tu
 | `/rename NAME` | Rename the attached session. |
 | `/status [NAME]` | Open the status box: the full status of the attached session, or of session `NAME`, running or saved, and its statistics. See [Status box](#status-box). |
 | `/stats [RANGE]` | Open the status box on its Global tab: statistics over all sessions of the server, for `7d` (the default), `30d` or `all`. See [Global tab](#global-tab). |
+| `/skills [NAME]` | Choose the session's skills in the skills box; with a name, turn that skill on or off. See [Skills](#skills). |
 | `/lsp` | Open the language server box: the servers of the clai server, their state and the sessions using them; restart or stop one. See [Language servers](#language-servers). |
 | `/settings` | Open the settings box: the `[tui]` settings, changed with a preview and saved into the user file. See [Settings](#settings). |
 | `/theme [NAME]` | Open the theme list; with a name, switch to that theme. Either way the theme is saved as the default. See [Theme list](#theme-list). |
@@ -661,12 +662,15 @@ cancels the turn or clears the input, which closes the list.
 Every box the user can open has a command in the table above. The prompt bar has
 none: it opens when the agent asks a question.
 
-After `/attach `, `/model `, `/stats `, `/status ` and `/theme ` (typed, or
-completed with `Tab`), a list of values lies in the same place: `/attach` offers
-the other sessions, with their workspace and state, `/model` the server's
-models, with their id and which one is `current` and `default`, `/stats` the ranges, `/status` the sessions,
-`/theme` the themes, with where they come from. Typing searches them like
-commands, by name, and models also by id. `Up` / `Down` select, `Tab` completes
+After `/attach `, `/model `, `/skills `, `/stats `, `/status ` and `/theme `
+(typed, or completed with `Tab`), a list of values lies in the same place:
+`/attach` offers the other sessions, with their workspace and state, `/model`
+the server's models, with their id and which one is `current` and `default`,
+`/skills` the skills that can be turned on, with their description and
+`active` before it for active ones, `/stats` the ranges, `/status` the
+sessions, `/theme` the themes, with where they come from. Typing searches them
+like commands, by name, and models and skills also by their id or
+description. `Up` / `Down` select, `Tab` completes
 the selected value, `Enter` runs the command with it, and with no match
 (`no match`) `Enter` runs the text as typed. `Esc` closes the list until the
 input no longer is such a command. A second word closes it.
@@ -1162,6 +1166,73 @@ picker.
 (`lsp references parse src/parse.rs:3`) and, when done, a count
 (`✓ 3 references`, `✓ 1 error, 2 warnings`, `✓ 12 symbols`); see
 [`tools.md`](tools.md), "lsp".
+
+## Skills
+
+`/skills` opens a box with the skills found for the session's workspace and
+its active ones (see [`skills.md`](skills.md)), from the `skills` request. It
+opens with the answer; a request that fails shows the error in the
+conversation.
+
+```
+┌ Skills for "project" ────────────────────────────────────────────────────────┐
+│ Filter:                                                                      │
+│                                                                              │
+│ ~/ws/team-skills                                                             │
+│ ▶ [x] release-check   Steps before tagging a release of a Rust crate. Use w… │
+│   [ ] api-style       How our HTTP handlers are written and tested.          │
+│ .claude/skills                                                               │
+│   [ ] migrations      Writing and checking database migrations.              │
+│ ~/.claude/skills                                                             │
+│   [ ] pdf             Read, fill and merge PDF files.                        │
+│       release-check   shadowed by ~/ws/team-skills/release-check             │
+│ Steps before tagging a release of a Rust crate. Use when the user asks to p… │
+│ 1 active ─ ⚠ 1 skipped: ~/.agents/skills/old/SKILL.md: no description        │
+│ Space toggle ─ Enter apply ─ Esc cancel                                      │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+| Key | Action |
+|-----|--------|
+| `Up` / `Down` | Select the previous / next skill; shadowed rows and headings are passed over. |
+| `Space` | Tick or untick the selected skill. |
+| `Enter` | Apply: the ticked skills become the session's active skills (`set_skills`), and the box closes. Without a change it only closes. |
+| `Esc` | Close without changes. |
+| other keys | Edit the filter: name and description, any case. |
+
+- Rows are grouped by directory, in order of priority; a heading shows the
+  directory relative to the workspace, as `~/…` in the server's home
+  directory, or absolute. Directories without skills have no heading.
+- The box opens with the session's active skills ticked. An active skill
+  that is not found any more is listed first as
+  `[x] name   not found any more`; unticking it is the only change it
+  allows. An active skill whose file changed shows `changed on disk` before
+  its description.
+- A ticked row is in the accent colour; a shadowed one is dim and names the
+  skill that wins.
+- The description is cut to the box width with `…`. The line above the
+  status line shows the selected skill's full description, cut only at the
+  box width, when its row cuts it.
+- The status line counts the ticked skills and the warnings (skipped files,
+  missing configured directories), the first one in full.
+- Without skills, the box lists the directories searched and an example of
+  a `SKILL.md`.
+- `Space` is free for the tick because skill names have no spaces; pasted
+  text goes into the filter.
+- A change shows the notice `skills: + release-check, − pdf` in the
+  conversation of every attached client, from the `skills_changed` event.
+- The box does not open while a question is open, and a question that opens
+  closes it, as for the model picker. The end of the session closes it.
+- In ASCII mode the ticks stay `[x]` / `[ ]`; the pointer and the
+  separators follow `tui.symbols`.
+
+`/skills NAME` turns that skill on if it is off and off if it is on, without
+the box, with the same notice. An unknown name is an error from the server
+that lists the found names.
+
+The Session tab of the status box lists the active skills with their size
+in tokens (estimated), and marks one that changed on disk or is not found
+any more.
 
 ## Appearance
 

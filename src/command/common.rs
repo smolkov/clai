@@ -13,7 +13,12 @@ use crate::protocol::{Payload, Request, SessionInfo};
 
 /// The `new` request: `--model` or else this client's `CLAI_MODEL`, which
 /// the server checks; `DIR` or the current directory.
-pub fn request(name: Option<String>, model: Option<String>, dir: Option<&Path>) -> Result<Request> {
+pub fn request(
+    name: Option<String>,
+    model: Option<String>,
+    dir: Option<&Path>,
+    skills: Vec<String>,
+) -> Result<Request> {
     let model = model.or_else(|| {
         std::env::var(MODEL_ENV)
             .ok()
@@ -23,6 +28,7 @@ pub fn request(name: Option<String>, model: Option<String>, dir: Option<&Path>) 
         workspace: workspace(dir)?,
         name,
         model,
+        skills,
     })
 }
 

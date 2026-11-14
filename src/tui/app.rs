@@ -29,6 +29,7 @@ use super::prompt::Prompt;
 use super::selection::Selection;
 use super::sessions::{ListAction, SessionList};
 use super::settings::{BoxAction, SettingsBox};
+use super::skills::SkillsBox;
 use super::status::{Counted, StatusBox, Tab};
 use super::style::{Colouring, Look, Styles};
 use super::themes::{self, ThemeList};
@@ -284,6 +285,14 @@ pub struct App {
     pub picker: Option<Picker>,
     /// A `models` request is on its way to open the picker for this.
     picker_wanted: Option<Purpose>,
+    /// The box of `/skills` (RFC 0023).
+    pub skills_box: Option<SkillsBox>,
+    /// A `skills` request is on its way to open the box.
+    skills_wanted: bool,
+    /// The last answer to `skills`, for the argument list of `/skills`.
+    skills_info: Option<crate::protocol::SkillsInfo>,
+    /// A `skills` request for the argument list is on its way.
+    skills_asked: bool,
     pub session_list: Option<SessionList>,
     /// A `list` request is on its way to open the session list.
     list_wanted: bool,
@@ -330,6 +339,8 @@ pub struct App {
     pub place: Option<Place>,
     /// Tokens of the last request.
     pub context_tokens: u64,
+    /// The session's active skills, by name, from its log.
+    pub skills: Vec<String>,
     /// The sum of the log's `usage` events; `None` until the first. It is not
     /// taken from the session info: the log replayed after it would count twice.
     pub usage: Option<TokenTotals>,
@@ -392,6 +403,10 @@ impl App {
             dialog: None,
             picker: None,
             picker_wanted: None,
+            skills_box: None,
+            skills_wanted: false,
+            skills_info: None,
+            skills_asked: false,
             session_list: None,
             list_wanted: false,
             sessions: Vec::new(),
@@ -417,6 +432,7 @@ impl App {
             new_output: false,
             place: None,
             context_tokens: 0,
+            skills: Vec::new(),
             usage: None,
             requests: 0,
             tool_calls: 0,
@@ -461,6 +477,8 @@ impl App {
             effects.append(&mut restored);
             self.picker = None;
             self.picker_wanted = None;
+            self.skills_box = None;
+            self.skills_wanted = false;
             self.session_list = None;
             self.list_wanted = false;
             self.command_list = None;
@@ -478,14 +496,20 @@ impl App {
             if self.picker_wanted == Some(Purpose::Change) {
                 self.picker_wanted = None;
             }
+            self.skills_box = None;
+            self.skills_wanted = false;
             self.command_list = None;
         }
         // The picker can open late, when the server answers.
-        if self.picker.is_some() || commands::search_text(&self.editor.text()).is_none() {
+        if self.picker.is_some()
+            || self.skills_box.is_some()
+            || commands::search_text(&self.editor.text()).is_none()
+        {
             self.command_list = None;
         }
 
         let boxed = self.picker.is_some()
+            || self.skills_box.is_some()
             || self.session_list.is_some()
             || self.settings_box.is_some()
             || self.theme_list.is_some()
@@ -503,6 +527,15 @@ impl App {
             {
                 self.models_asked = true;
                 effects.push(Effect::Request(self.models_request()));
+            }
+            // The skills come with the first answer to `skills`.
+            Some(("skills", _))
+                if self.argument_list.is_some()
+                    && self.skills_info.is_none()
+                    && !self.skills_asked =>
+            {
+                self.skills_asked = true;
+                effects.push(Effect::Request(self.skills_request()));
             }
             Some(_) => {}
         }
@@ -869,6 +902,7 @@ impl App {
         (self.requests, self.tool_calls) = (0, 0);
         // Summed again from the log, so that a reconnect does not add to it.
         self.context_tokens = 0;
+        self.skills.clear();
         self.usage = None;
         self.activity.reset();
         let earlier = self.prompt.take();
@@ -1092,6 +1126,14 @@ impl App {
                 });
                 self.session.model = model;
             }
+            SessionEvent::SkillsChanged { added, removed } => {
+                conversation.notice(crate::skills::change_text(&added, &removed));
+                self.skills.retain(|n| !removed.contains(n));
+                for skill in added {
+                    self.skills.retain(|n| *n != skill.name);
+                    self.skills.push(skill.name);
+                }
+            }
             SessionEvent::Renamed { name } => {
                 conversation.notice(format!("session renamed to {name}"));
                 self.session.name = name;
@@ -1170,6 +1212,16 @@ impl App {
             }
             (Request::New { .. }, Ok(Payload::Session { session })) => {
                 return self.created(&session);
+            }
+            (Request::Skills { .. } | Request::SetSkills { .. }, Ok(Payload::Skills(info))) => {
+                self.skills(*info);
+            }
+            (Request::Skills { .. }, Err(message)) => {
+                self.skills_asked = false;
+                if !std::mem::take(&mut self.skills_wanted) || lost {
+                    return Vec::new();
+                }
+                self.conversation.error(message);
             }
             (Request::LspStatus | Request::LspRestart { .. } | Request::LspStop { .. }, result) => {
                 let Some(open) = &mut self.lsp_box else {
@@ -1360,6 +1412,64 @@ impl App {
         Request::Models {
             workspace: Some(self.session.path.clone()),
         }
+    }
+
+    /// `skills` for the attached session.
+    fn skills_request(&self) -> Request {
+        Request::Skills {
+            workspace: self.session.path.clone(),
+            session: Some(self.session.name.clone()),
+        }
+    }
+
+    /// An answer to `skills` or `set_skills`: the argument list uses it, an
+    /// open box shows it, and the box opens if it was asked for.
+    fn skills(&mut self, info: crate::protocol::SkillsInfo) {
+        self.skills_asked = false;
+        self.skills_info = Some(info.clone());
+        let wanted = std::mem::take(&mut self.skills_wanted);
+        if let Some(open) = &mut self.skills_box {
+            open.set(info);
+        } else if wanted
+            && self.prompt.is_none()
+            && self.dialog.is_none()
+            && self.session_list.is_none()
+            && self.picker.is_none()
+            && self.ended.is_none()
+        {
+            self.skills_box = Some(SkillsBox::new(info));
+        }
+    }
+
+    fn skills_key(&mut self, key: KeyEvent) -> Vec<Effect> {
+        let mut effects = vec![Effect::Redraw];
+        let Some(open) = &mut self.skills_box else {
+            return effects;
+        };
+        match key.code {
+            KeyCode::Esc => self.skills_box = None,
+            KeyCode::Up => open.up(),
+            KeyCode::Down => open.down(),
+            // Skill names have no spaces: `Space` ticks.
+            KeyCode::Char(' ') if key.modifiers.difference(KeyModifiers::SHIFT).is_empty() => {
+                open.toggle();
+            }
+            KeyCode::Enter => {
+                if open.changed() {
+                    effects.push(Effect::Request(Request::SetSkills {
+                        session: self.session.name.clone(),
+                        names: open.names(),
+                    }));
+                }
+                self.skills_box = None;
+            }
+            _ => {
+                if let Some(edit) = keys::edit(key) {
+                    open.edit(edit);
+                }
+            }
+        }
+        effects
     }
 
     fn open_picker(&mut self, purpose: Purpose) -> Vec<Effect> {
@@ -1785,6 +1895,9 @@ impl App {
         if self.picker.is_some() {
             return self.picker_key(key);
         }
+        if self.skills_box.is_some() {
+            return self.skills_key(key);
+        }
         if self.settings_box.is_some() {
             return self.settings_key(key);
         }
@@ -1887,6 +2000,7 @@ impl App {
                             workspace,
                             name,
                             model: Some(model),
+                            skills: Vec::new(),
                         }));
                     }
                 }
@@ -2003,6 +2117,27 @@ impl App {
                 search_description: false,
             })
             .collect()
+        } else if command == "skills" {
+            let info = self.skills_info.as_ref();
+            info.map(|info| {
+                info.skills
+                    .iter()
+                    .filter(|s| s.shadowed_by.is_none())
+                    .map(|s| commands::Value {
+                        value: s.name.clone(),
+                        description: if self.skills.contains(&s.name) {
+                            format!(
+                                "active {} {}",
+                                self.settings.look.symbols.separator, s.description
+                            )
+                        } else {
+                            s.description.clone()
+                        },
+                        search_description: true,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
         } else if command == "attach" || command == "status" {
             let symbols = &self.settings.look.symbols;
             // `/status` shows the attached session too.
@@ -2251,6 +2386,8 @@ impl App {
             list.paste(text);
         } else if let Some(picker) = &mut self.picker {
             picker.paste(text);
+        } else if let Some(skills) = &mut self.skills_box {
+            skills.paste(text);
         } else if self.settings_box.is_some() {
             // Nothing to paste into.
         } else if let Some(list) = &mut self.session_list {
@@ -2264,6 +2401,7 @@ impl App {
     fn mouse(&mut self, mouse: MouseEvent) -> Vec<Effect> {
         let step = self.settings.scroll_lines;
         let boxed = self.picker.is_some()
+            || self.skills_box.is_some()
             || self.session_list.is_some()
             || self.settings_box.is_some()
             || self.theme_list.is_some()
@@ -2370,6 +2508,19 @@ impl App {
                         effects
                     }
                 }
+            }
+            ("skills", "") => {
+                self.skills_wanted = true;
+                vec![Effect::Request(self.skills_request())]
+            }
+            ("skills", name) => {
+                let mut names = self.skills.clone();
+                if names.iter().any(|n| n == name) {
+                    names.retain(|n| n != name);
+                } else {
+                    names.push(name.to_owned());
+                }
+                vec![Effect::Request(Request::SetSkills { session, names })]
             }
             ("rename", "") => {
                 self.conversation.notice("usage: /rename NAME");

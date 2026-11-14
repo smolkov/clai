@@ -40,6 +40,10 @@ pub struct Run {
     /// Workspace. Default: the current directory.
     #[arg(short = 'C', value_name = "DIR", value_hint = ValueHint::DirPath)]
     pub dir: Option<PathBuf>,
+    /// Turn on skill NAME for the task; repeatable. `clai skills` lists
+    /// them.
+    #[arg(long = "skill", value_name = "NAME")]
+    pub skills: Vec<String>,
     /// Task; `-` reads it from standard input.
     #[arg(value_name = "TASK", required = true)]
     pub task: Vec<String>,
@@ -78,18 +82,19 @@ impl Execute for Run {
         );
         let prepared = self.setup(ctx, answering)?;
         let asker = asker(answering, prepared.place, prepared.unicode);
-        one_shot(
-            Agent::new(prepared.setup),
-            task.text,
-            asker,
-            prepared.unicode,
-        )
+        let agent = Agent::new(prepared.setup);
+        if !prepared.skills.is_empty() {
+            agent.skills().set(prepared.skills);
+        }
+        one_shot(agent, task.text, asker, prepared.unicode)
     }
 }
 
 /// What the agent of a run is made from, with what the terminal output needs.
 struct Prepared {
     setup: Setup,
+    /// The skills of `--skill`, in the order given.
+    skills: Vec<crate::skills::Active>,
     /// The workspace as shown: `~/ws/clai`.
     place: String,
     unicode: bool,
@@ -112,6 +117,21 @@ impl Run {
         };
         let provider = provider::from_config(provider_config)
             .map_err(|e| Error::Failed(format!("provider {}: {e}", provider_config.name)))?;
+        let mut skills = Vec::new();
+        if !self.skills.is_empty() {
+            let root = workspace
+                .canonicalize()
+                .unwrap_or_else(|_| workspace.clone());
+            let found = crate::skills::find_for(&config, &root, &options.env);
+            for name in &self.skills {
+                let skill = found
+                    .activate(name)
+                    .ok_or_else(|| Error::Usage(found.unknown(name)))?;
+                if !skills.contains(&skill) {
+                    skills.push(skill);
+                }
+            }
+        }
         let workspace =
             Workspace::new(&workspace, &config.permissions.extra_dirs, options.env.home)
                 .map_err(Error::io(workspace.display().to_string()))?;
@@ -142,6 +162,7 @@ impl Run {
             },
             place,
             unicode,
+            skills,
         })
     }
 }

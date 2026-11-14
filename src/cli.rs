@@ -22,6 +22,7 @@ use crate::command::new::New;
 use crate::command::run::Run;
 use crate::command::send::Send;
 use crate::command::server::Server;
+use crate::command::skills::Skills;
 use crate::complete;
 
 /// The text of `--version`: the crate version, and the commit and date of
@@ -116,6 +117,8 @@ pub enum Command {
     Import(Import),
     /// List configured providers and models.
     Models(Models),
+    /// List the skills found for the current directory.
+    Skills(Skills),
     /// Print a commit message for the changes in a directory.
     Commit(Commit),
     /// Run, stop or check the background server.
@@ -138,6 +141,7 @@ impl Command {
             Command::Export(c) => c,
             Command::Import(c) => c,
             Command::Models(c) => c,
+            Command::Skills(c) => c,
             Command::Commit(c) => c,
             Command::Server(c) => c,
             Command::Completion(c) => c,
@@ -185,6 +189,7 @@ impl Cli {
                 yes: self.top.yes,
                 no_ask: self.top.no_ask,
                 dir: self.top.dir,
+                skills: Vec::new(),
                 task: self.top.task,
             }),
         }

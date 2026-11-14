@@ -127,3 +127,7 @@ env        = { RUFF_CACHE_DIR = "/tmp/ruff" }
 
 [lsp.servers.pyright]
 command = []
+
+[skills]
+dirs         = ["~/ws/team-skills", "/opt/skills"]
+default_dirs = true

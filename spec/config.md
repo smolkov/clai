@@ -11,8 +11,8 @@ Statements marked **(assumption)** need a decision from the user.
 
 | File                          | Scope   | May define |
 |-------------------------------|---------|------------|
-| `~/.config/clai/config.toml`  | User    | Everything: providers, models, defaults, `[limits]`, `[permissions]`, `[commit]`, `[tui]`, `[themes]`. |
-| `<workspace>/.clai/config.toml` | Project | Defaults and limits only: `default_model`, `[limits]` (only lower, see [Limits](#limits)), `[permissions]` (restricted, see [Permissions](#permissions)), `[commit]`. Not providers, models, `[tui]` or `[themes]`. |
+| `~/.config/clai/config.toml`  | User    | Everything: providers, models, defaults, `[limits]`, `[permissions]`, `[commit]`, `[tui]`, `[themes]`, `[lsp]`, `[skills]`. |
+| `<workspace>/.clai/config.toml` | Project | Defaults and limits only: `default_model`, `[limits]` (only lower, see [Limits](#limits)), `[permissions]` (restricted, see [Permissions](#permissions)), `[commit]`, `[lsp]` (restricted, see [LSP](#lsp)). Not providers, models, `[tui]`, `[themes]` or `[skills]`. |
 
 `$XDG_CONFIG_HOME` replaces `~/.config` when it is set.
 
@@ -23,6 +23,9 @@ contains `[providers]` is rejected with an error naming the file.
 
 TUI settings and themes are personal, so they are only allowed in the user
 file too; a project file with `[tui]` or `[themes]` is rejected the same way.
+So is a project file with `[skills]`: a path in it would let a repository
+put files from anywhere on the machine into the prompt and make them
+readable for the model (see [Skills](#skills)).
 
 Precedence, later wins: user file, project file, environment variables,
 command-line options.
@@ -556,6 +559,28 @@ model   = "local/qwen"   # model for commit messages; default: default_model (cl
 trailer = "Co-Authored-By: clai <clai@localhost>"   # added after the body; default: none
 ```
 
+## Skills
+
+Where skills are found (see [`skills.md`](skills.md)). User file only.
+
+```toml
+[skills]
+# More directories with skills, searched before the default ones. Absolute,
+# or starting with ~/. A skill here wins over one of the same name elsewhere.
+dirs = ["~/ws/team-skills", "/opt/skills"]
+
+# Search the default directories of OpenCode, Claude Code and .agents, in
+# the home directory and in the workspace. Default: true.
+default_dirs = true
+```
+
+- `dirs`: a list of paths, absolute or starting with `~/`; a relative path
+  is a load error naming the entry. Default: empty. A directory that does
+  not exist is a warning when skills are listed, not a load error.
+- `default_dirs = false` searches only `dirs`. With `true`, the workspace's
+  own skill directories are searched too, although a project file may not
+  have `[skills]`.
+
 ## TUI
 
 Settings for the full-screen interface (see [`tui.md`](tui.md)). Only allowed
@@ -869,3 +894,5 @@ an editor that replaces the file is noticed the same way.
 - The project file is read when a session is created in that workspace.
 - When `[lsp]` differs from the one before, all language servers stop and
   their crashes are forgotten; they start again on the next call.
+- `[skills]` applies to the next `skills` and `set_skills` request; sessions
+  keep the skills they have active, with their saved text.

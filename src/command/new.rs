@@ -24,6 +24,10 @@ pub struct New {
     /// Model of the session, as PROVIDER/MODEL.
     #[arg(long, value_name = "PROVIDER/MODEL", add = ArgValueCompleter::new(complete::models))]
     pub model: Option<String>,
+    /// Turn on skill NAME in the session; repeatable. `clai skills` lists
+    /// them.
+    #[arg(long = "skill", value_name = "NAME")]
+    pub skills: Vec<String>,
     /// Workspace. Default: the current directory.
     #[arg(value_hint = ValueHint::DirPath)]
     pub dir: Option<PathBuf>,
@@ -36,7 +40,12 @@ impl Execute for New {
 
     fn run(&self, ctx: &Context) -> Result<()> {
         let config = ctx.config();
-        let request = request(self.name.clone(), self.model.clone(), self.dir.as_deref())?;
+        let request = request(
+            self.name.clone(),
+            self.model.clone(),
+            self.dir.as_deref(),
+            self.skills.clone(),
+        )?;
         if !self.detach {
             return tui::run(ctx, tui::Target::New(request));
         }

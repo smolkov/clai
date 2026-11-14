@@ -20,4 +20,5 @@
 
 - [Agent loop](agent-loop.md)
 - [Tools](tools.md)
+- [Skills](skills.md)
 - [Context]()

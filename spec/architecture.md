@@ -116,7 +116,7 @@ clai/
 │   ├── command/                one file per command, with its arguments and `run`
 │   │   ├── mod.rs              `Command`: name, run
 │   │   └── run.rs, new.rs, attach.rs, ls.rs, kill.rs, send.rs, export.rs, import.rs,
-│   │       models.rs, commit.rs, server.rs, completion.rs
+│   │       models.rs, skills.rs, commit.rs, server.rs, completion.rs
 │   │   └── chat/               clai chat: mod.rs (options, --list, script form),
 │   │                           talk.rs (conversation), questions.rs (--questions)
 │   ├── lsp/                    language servers (config.md, "LSP")
@@ -179,6 +179,10 @@ clai/
 │   │   ├── prompt.rs           system prompt, today's date
 │   │   ├── system_prompt.md    system prompt text
 │   │   └── tests.rs            turns against a scripted provider
+│   ├── skills/                 Skills (skills.md)
+│   │   ├── mod.rs              directories, priority, shadowing, active skills
+│   │   ├── parse.rs            `SKILL.md`: frontmatter, body, checks
+│   │   └── tests.rs            finding skills in temporary directories
 │   ├── session/                Session (sessions.md)
 │   │   ├── mod.rs              the actor: state, queue, event log, questions
 │   │   ├── questions.rs        the open question, waiting answers, first one wins
@@ -203,6 +207,7 @@ clai/
 │   │   ├── editor.rs           the input editor
 │   │   ├── prompt.rs           the open question and the keys that answer it
 │   │   ├── picker.rs           the model picker: models, filter, selected row
+│   │   ├── skills.rs           the skills box: ticks, filter, selected row
 │   │   ├── lsp.rs              the `/lsp` box: servers, selection
 │   │   ├── keys.rs             key to action, by focus
 │   │   ├── style.rs            styles and symbols (Unicode or ASCII, NO_COLOR)
@@ -266,7 +271,7 @@ need the network. Build output goes to `target/`, the spec book to
 Clients and the server exchange JSON messages over the Unix socket, one
 message per line (at most 16 MiB). Every message is an object with a
 `type`. The first message in each direction is `hello` with the protocol
-version (now `8`); on a mismatch the server sends `error` and closes the
+version (now `9`); on a mismatch the server sends `error` and closes the
 connection, and the message tells the user to restart the server with
 `clai server stop` (see [`sessions.md`](sessions.md), "Server"). The code
 is in `src/protocol/`.
@@ -276,7 +281,7 @@ Message kinds:
 | Direction | Kind | Content |
 |-----------|------|---------|
 | client → server | `hello` | Protocol version; client kind (`tui`, `chat`, `cli`, `bridge`) and name (e.g. `tui pts/3`, `clai chat`), which is shown as who answered; whether it answers questions. |
-| client → server | `request` | An id and a command: `new`, `list`, `kill`, `rename`, `attach`, `detach`, `send` (message), `set_model`, `cancel`, `answer`, `export`, `import`, `status`, `session_status`, `global_stats`, `models`, `lsp_status`, `lsp_restart`, `lsp_stop`, `stop`. Each gets exactly one `response`. Sessions are named by their current name; `attach`, `send` and `set_model` resume a saved session. |
+| client → server | `request` | An id and a command: `new`, `list`, `kill`, `rename`, `attach`, `detach`, `send` (message), `set_model`, `skills`, `set_skills`, `cancel`, `answer`, `export`, `import`, `status`, `session_status`, `global_stats`, `models`, `lsp_status`, `lsp_restart`, `lsp_stop`, `stop`. Each gets exactly one `response`. Sessions are named by their current name; `attach`, `send`, `set_model` and `set_skills` resume a saved session. |
 | server → client | `hello` | Protocol version and the server's PID. |
 | server → client | `response` | The request's id and its `result`: `ok` with a payload (`done`, a session, the session list, the status, a session's status, the global statistics, the models; a session is its id, name, workspace, model, state, created and last updated time, turns, queued messages, open question and token totals) or `error` with a message, marked `usage` when the request itself was wrong (the command then exits `2`). |
 | server → client | `event` | Something that happened in an attached session, with the session's id, and `replay` when it is part of the log sent on attach (see below). |
@@ -306,6 +311,7 @@ Session events, in the order they happen:
 | `error` | A provider or session error that ended a request or turn. |
 | `retry` | A model request failed and is tried again: the attempt (from 1), `max_retries` and the reason. |
 | `turn_end` | The turn ended: done, cancelled, limit reached or failed. |
+| `skills_changed` | The active skills changed: `added`, the skills turned on with their directory and text, and `removed`, the names turned off (see [`skills.md`](skills.md)). |
 | `model_changed`, `renamed`, `ended` | Session settings and lifetime; `model_changed` has the new model and, as `from`, the old one (none in a log of an older `clai`); `ended` has a reason: `killed`, `failed`, `server stopped`. |
 
 The `models` request answers with the models of the server's configuration, in
@@ -333,7 +339,9 @@ with its full status: the session info; its statistics, counted from the log
 calls per tool and final state, answers per kind and per client, model
 changes, time in `working`, last activity, and the running turn's progress);
 the attached clients; the session directory as shown and its size; the extra
-directories of the workspace and whether they exist; the model as configured
+directories of the workspace and whether they exist; the active skills
+with their estimated tokens, and whether each changed on disk or is not found
+any more; the model as configured
 now (with API, base URL, `temperature`, `max_output_tokens`, `max_retries`), or
 none when it is no longer configured; the limits in effect for the workspace;
 the server's clock and its `status`. A saved session is counted from its
@@ -362,6 +370,17 @@ that used it, and the last lines of its standard error. `lsp_restart`
 answer like `lsp_status`. A deleted session is removed from the servers'
 lists. They came with protocol 8, as the `lsp_start` details of a
 permission question (see [`tools.md`](tools.md), "Questions").
+
+The `skills` request names a workspace and, optionally, a session, and
+answers with the skills the server finds there (see [`skills.md`](skills.md)):
+each with its name, description, directory, source (`config`, `project`,
+`user`) and the directory that shadows it; the directories searched; the
+warnings; the session's active skills, each with its directory, estimated
+tokens, `changed_on_disk` and `missing`; and the server's home directory, for
+showing paths. `set_skills` names a session and the whole new list of active
+names and answers like `skills`; an unknown name is a usage error that lists
+the found names. `new` takes `skills` too: an unknown one refuses the session.
+They came with protocol 9, with the `skills_changed` event.
 
 The session list has the state `saved` besides `idle`, `working` and
 `waiting`: a session on disk, not loaded. `status` reports the sessions,

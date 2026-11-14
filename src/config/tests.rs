@@ -1324,3 +1324,45 @@ fn lsp_project_file_may_only_turn_it_off_or_deny() {
         );
     }
 }
+
+#[test]
+fn skills_table() {
+    assert_eq!(ok(BASE).skills, Skills::default());
+    let env = Environment {
+        home: Some(PathBuf::from("/home/u")),
+        ..Environment::default()
+    };
+    let config = load_with(
+        &with("[skills]\ndirs = [\"~/team\", \"/opt/skills\"]\ndefault_dirs = false\n"),
+        None,
+        &env,
+    )
+    .unwrap();
+    assert_eq!(
+        config.skills,
+        Skills {
+            dirs: vec![PathBuf::from("/home/u/team"), PathBuf::from("/opt/skills")],
+            default_dirs: false,
+        }
+    );
+}
+
+#[test]
+fn skills_dirs_must_be_absolute() {
+    let e = errs(&with("[skills]\ndirs = [\"team\"]\n"), None);
+    assert_eq!(e.len(), 1, "{e:?}");
+    assert!(
+        e[0].contains("skills.dirs: `team` must be an absolute path"),
+        "{e:?}"
+    );
+}
+
+#[test]
+fn project_may_not_set_skills() {
+    let e = errs(BASE, Some("[skills]\ndirs = [\"/tmp\"]\n"));
+    assert_eq!(e.len(), 1, "{e:?}");
+    assert!(
+        e[0].starts_with("project.toml:1: skills: only allowed in the user file"),
+        "{e:?}"
+    );
+}

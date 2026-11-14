@@ -10,11 +10,12 @@ use crate::config::{self, Config, LoadOptions};
 use crate::permissions::{SessionRules, Workspace};
 use crate::protocol::{
     DirInfo, ErrorReply, LimitsInfo, ModelInfo, ModelStatus, Notice, Outcome, Payload, Range,
-    Request, SessionInfo, SessionStatus, Stats, Status,
+    Request, SessionInfo, SessionStatus, SkillsInfo, Stats, Status,
 };
 use crate::session::global::{self, Part, Summary};
 use crate::session::store::{self, Meta, Store};
 use crate::session::{self, SessionHandle, Spec};
+use crate::skills::{self, Active, Found as FoundSkills};
 use crate::tools::Env;
 use crate::tools::lsp::LspEnv;
 
@@ -98,6 +99,54 @@ impl Shared {
         };
         config::load_with_user_text(&path, &text, &options)
             .map_err(|e| ErrorReply::usage(error_lines(&e).join("\n")))
+    }
+
+    /// The skills found for `workspace` with the current configuration.
+    fn skills(&self, workspace: &Path) -> std::result::Result<FoundSkills, ErrorReply> {
+        let config = self.config(workspace)?;
+        Ok(skills::find_for(&config, workspace, &self.load.env))
+    }
+
+    /// The active skills of a session, running or saved; a saved one is
+    /// not resumed.
+    async fn active_skills(&self, name: &str) -> std::result::Result<Vec<Active>, ErrorReply> {
+        match self.find(name)? {
+            (_, Found::Running(handle)) => handle.skills().await.map_err(ErrorReply::failed),
+            (id, Found::Saved) => {
+                let store = lock(&self.sessions).get(id).and_then(|e| e.store.clone());
+                let Some(store) = store else {
+                    return Ok(Vec::new());
+                };
+                let log: Vec<SessionEvent> = store
+                    .stamped()
+                    .map_err(ErrorReply::failed)?
+                    .into_iter()
+                    .map(|s| s.event)
+                    .collect();
+                Ok(crate::agent::active_skills(&log))
+            }
+        }
+    }
+
+    /// Sets the active skills of a running session to `names`.
+    async fn set_skills(
+        &self,
+        handle: &SessionHandle,
+        workspace: &Path,
+        names: Vec<String>,
+    ) -> Reply {
+        let found = self.skills(workspace)?;
+        let candidates: Vec<Active> = names.iter().filter_map(|n| found.activate(n)).collect();
+        let found_names = found.names().into_iter().map(str::to_owned).collect();
+        let active = handle
+            .set_skills(names, candidates, found_names)
+            .await
+            .map_err(ErrorReply::usage)?;
+        Ok(Payload::Skills(Box::new(SkillsInfo::new(
+            &found,
+            &active,
+            self.load.env.home.as_deref(),
+        ))))
     }
 
     /// An agent for `workspace` with model `model` (`provider/model` or
@@ -347,10 +396,10 @@ impl Shared {
             };
             (entry.store.clone(), saved)
         };
-        let (session, stats, clients) = match (found, saved) {
+        let (session, stats, clients, active) = match (found, saved) {
             (Found::Running(handle), _) => {
                 let report = handle.report().await.ok_or_else(session::gone)?;
-                (report.info, report.stats, report.clients)
+                (report.info, report.stats, report.clients, report.skills)
             }
             (Found::Saved, Some(meta)) => {
                 let stats = match &store {
@@ -359,7 +408,8 @@ impl Shared {
                 };
                 let mut info = meta.info(id, State::Saved, meta.queued.len(), None);
                 info.usage = stats.tokens;
-                (info, stats, Vec::new())
+                let active = self.active_skills(name).await.unwrap_or_default();
+                (info, stats, Vec::new(), active)
             }
             (Found::Saved, None) => return Err(no_session(name)),
         };
@@ -394,6 +444,13 @@ impl Shared {
                     .collect()
             })
             .unwrap_or_default();
+        let skills = match &config {
+            Some(config) if !active.is_empty() => {
+                let found = skills::find_for(config, &session.path, &self.load.env);
+                SkillsInfo::new(&found, &active, None).active
+            }
+            _ => SkillsInfo::new(&FoundSkills::default(), &active, None).active,
+        };
         let limits = config.as_ref().map(|config| LimitsInfo {
             max_requests: config.limits.max_requests,
             max_tool_calls: config.limits.max_tool_calls,
@@ -406,6 +463,7 @@ impl Shared {
                 dir: store.as_ref().map(|s| tilde(s.dir(), home)),
                 size: store.as_ref().map(Store::size),
                 extra_dirs,
+                skills,
                 model,
                 limits,
                 now: now_ms(),
@@ -535,7 +593,8 @@ impl Conn {
                 workspace,
                 name,
                 model,
-            } => self.new_session(workspace, name, model).await,
+                skills,
+            } => self.new_session(workspace, name, model, skills).await,
             Request::List => Ok(Payload::Sessions {
                 sessions: shared.list().await,
             }),
@@ -562,6 +621,26 @@ impl Conn {
                 }
             }
             Request::SetModel { session, model } => self.set_model(&session, &model).await,
+            Request::Skills { workspace, session } => match shared.skills(&workspace) {
+                Ok(found) => {
+                    let active = match session {
+                        Some(name) => shared.active_skills(&name).await,
+                        None => Ok(Vec::new()),
+                    };
+                    let home = shared.load.env.home.as_deref();
+                    active.map(|active| {
+                        Payload::Skills(Box::new(SkillsInfo::new(&found, &active, home)))
+                    })
+                }
+                Err(e) => Err(e),
+            },
+            Request::SetSkills { session, names } => match shared.running(&session, None).await {
+                Ok(handle) => match handle.info().await {
+                    Some(info) => shared.set_skills(&handle, &info.path, names).await,
+                    None => Err(session::gone()),
+                },
+                Err(e) => Err(e),
+            },
             Request::Cancel { session } => match shared.find(&session) {
                 Ok((_, Found::Running(handle))) => handle
                     .cancel()
@@ -617,6 +696,7 @@ impl Conn {
         workspace: PathBuf,
         name: Option<String>,
         model: Option<String>,
+        skills: Vec<String>,
     ) -> Reply {
         let shared = self.shared.clone();
         if !workspace.is_absolute() || !workspace.is_dir() {
@@ -624,6 +704,13 @@ impl Conn {
                 "{}: not a directory",
                 workspace.display()
             )));
+        }
+        // Unknown skills are refused before the session exists.
+        if !skills.is_empty() {
+            let found = shared.skills(&workspace)?;
+            if let Some(name) = skills.iter().find(|n| found.get(n).is_none()) {
+                return Err(ErrorReply::usage(found.unknown(name)));
+            }
         }
         let id = shared.next_session.fetch_add(1, Ordering::Relaxed) + 1;
         let built = shared.build(id, &workspace, model.as_deref())?;
@@ -689,6 +776,10 @@ impl Conn {
             );
             handle
         };
+        if !skills.is_empty() {
+            let path = handle.info().await.ok_or_else(session::gone)?.path;
+            shared.set_skills(&handle, &path, skills).await?;
+        }
         let info = handle.info().await.ok_or_else(session::gone)?;
         tracing::info!(session = %info.name, model = %info.model, "session created");
         broadcast(

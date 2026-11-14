@@ -19,6 +19,7 @@ Statements marked **(assumption)** need a decision from the user.
 | [`clai send`](#clai-send) | Send a message to a session without attaching. | [`sessions.md`](sessions.md) |
 | [`clai chat`](#clai-chat) | Chat with a session in the terminal, without the TUI, or answer the questions of sessions. | [`sessions.md`](sessions.md), "Questions" |
 | [`clai models`](#clai-models) | List configured providers and models. | [`config.md`](config.md) |
+| [`clai skills`](#clai-skills) | List the skills the current directory finds. | [`skills.md`](skills.md) |
 | [`clai commit`](#clai-commit) | Print a commit message for the staged changes of a repository, or with `-a` all changes of tracked files. | [`commit.md`](commit.md) |
 | [`clai export`](#clai-export), [`clai import`](#clai-import) | Write a session to a file, add one from a file. | [`sessions.md`](sessions.md), "Persistence" |
 | [`clai server`](#clai-server) | Run, stop or check the background server. | [`sessions.md`](sessions.md) |
@@ -124,7 +125,7 @@ keeps running on the server.
 ## clai run
 
 ```sh
-clai run [--model PROVIDER/MODEL] [--yes] [-C DIR] TASK...
+clai run [--model PROVIDER/MODEL] [--yes] [-C DIR] [--skill NAME]... TASK...
 clai TASK...
 ```
 
@@ -190,6 +191,7 @@ Runs one task without the TUI and exits when it is done.
 | `--yes` | Allow tool calls that would ask; `deny` rules still apply. |
 | `--no-ask` | Do not ask on the terminal; deny tool calls that would ask. |
 | `-C DIR` | Workspace. Default: the current directory. |
+| `--skill NAME` | Turn on skill `NAME` for the task; repeatable, in the order given (see [`skills.md`](skills.md)). Not in the short form `clai TASK...`. |
 
 `--yes` and `--no-ask` cannot be combined (exit `2`).
 
@@ -197,7 +199,7 @@ Runs one task without the TUI and exits when it is done.
 |------|------|
 | `0` | The turn ended with `done`. |
 | `1` | The turn failed (provider error), stopped at its limit, or was cancelled with the `c` answer; or `SIGTERM` / `SIGHUP`. |
-| `2` | Invalid options or configuration, an unknown `--model`, a `-C` that is not a directory, an empty task. |
+| `2` | Invalid options or configuration, an unknown `--model` or `--skill` (the message lists the found skills), a `-C` that is not a directory, an empty task. |
 | `130` | `Ctrl-C`. |
 
 `Ctrl-C`, `SIGTERM` and `SIGHUP` cancel the turn as in the TUI (see
@@ -208,7 +210,7 @@ ignored, so no command is left running. **(assumption)**
 ## clai new
 
 ```sh
-clai new [-d] [--name NAME] [--model PROVIDER/MODEL] [DIR]
+clai new [-d] [--name NAME] [--model PROVIDER/MODEL] [--skill NAME]... [DIR]
 ```
 
 Creates a session with workspace `DIR` (default: the current directory) and
@@ -220,9 +222,11 @@ codes of [`clai`](#clai), with `DIR` as the workspace.
 | `-d`, `--detach` | Do not attach; print the session name on standard output. |
 | `--name` | Session name. Default: the workspace directory name, made unique. |
 | `--model` | Model of the session. Default: `CLAI_MODEL`, then `default_model`. |
+| `--skill NAME` | Turn on skill `NAME` in the session; repeatable (see [`skills.md`](skills.md)). |
 
 Fails with `1` if the name is taken, and with `2` for an invalid name, an
-unknown model or a `DIR` that is not a directory. If other sessions work in
+unknown model, an unknown skill (no session is created) or a `DIR` that is
+not a directory. If other sessions work in
 the same workspace, a note on standard error names them.
 
 ## clai attach
@@ -369,6 +373,11 @@ The test passes now.
   sessions that use them, and for a failed one its last stderr line),
   `/lsp restart NAME` and `/lsp stop NAME` restart or stop one (see
   [`tui.md`](tui.md), "Language servers"),
+  `/skills` prints the skills found for the session's workspace, one per
+  line: `*` before an active one, its name, its directory, and its
+  description, `shadowed by …`, `changed on disk; …` or `not found any
+  more`, then the warnings; `/skills NAME` turns that skill on or off, and
+  the change prints as `clai: skills: + NAME` (see [`skills.md`](skills.md)),
   `/detach` leaves, `/kill` ends the session and leaves, `/help` lists them.
   A `retry` event prints `clai: retrying (1/3): …`.
 - Sessions: `/sessions` prints the table of `clai ls`, the attached session
@@ -506,6 +515,32 @@ and lists the models; the file is not changed. It needs no server.
 |--------|---------|
 | `--json` | Print a JSON array instead of the table. **(assumption)** |
 | `--set-default MODEL` | Save `MODEL` as `default_model` in the user file. |
+
+## clai skills
+
+```sh
+clai skills [--json]
+```
+
+Lists the skills the current directory would find as a workspace, with the
+user file and the project file of that directory, in order of priority (see
+[`skills.md`](skills.md)): name, source (`config`, `project`, `user`),
+directory, and the description, or `shadowed by DIR` for a skill another one
+of the same name wins over. Paths in the workspace are relative to it, those
+in the home directory start with `~/`. Each skipped file and missing
+configured directory is a `clai: warning: …` line on standard error. With no
+skills, it prints the directories searched. It needs no server. Exit `0`;
+`2` if the configuration is invalid.
+
+```
+release-check  config   ~/team/release-check  Steps before a release.
+pdf            project  .agents/skills/pdf    Project PDF.
+pdf            user     ~/.claude/skills/pdf  shadowed by .agents/skills/pdf
+```
+
+`--json` prints an object: `skills` (each with `name`, `description`,
+`dir`, `source`, `shadowed_by` or `null`), `dirs` (each with `path` and
+`source`) and `warnings`, with absolute paths.
 
 ## clai commit
 

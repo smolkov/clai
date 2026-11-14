@@ -797,7 +797,7 @@ fn extra_dir(value: &toml::Value, home: Option<&Path>) -> Result<ExtraDir, Strin
 }
 
 /// `~/x` becomes `$HOME/x`; other paths must be absolute.
-fn expand_dir(dir: &str, home: Option<&Path>) -> Result<PathBuf, String> {
+pub(super) fn expand_dir(dir: &str, home: Option<&Path>) -> Result<PathBuf, String> {
     let tilde = dir == "~" || dir.starts_with("~/");
     if tilde {
         let home = home.ok_or_else(|| format!("`{dir}`: HOME is not set"))?;

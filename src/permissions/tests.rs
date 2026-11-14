@@ -468,3 +468,36 @@ fn rules_for_entries_skip_the_boundary() {
     );
     let _ = Path::new("");
 }
+
+#[test]
+fn skill_dirs_are_read_only() {
+    let mut f = Fixture::new();
+    let skills = f.tmp.join("home/.claude/skills/release");
+    fs::create_dir_all(&skills).unwrap();
+    fs::write(skills.join("check.sh"), "").unwrap();
+    // Inside the workspace or a writable extra dir: nothing is added.
+    let inside = f.workspace.root().join("src");
+    let lib = f.tmp.join("lib");
+    let before = f.workspace.extra_dirs().len();
+    f.workspace = f
+        .workspace
+        .with_read_dirs(&[skills.clone(), inside, lib.clone()]);
+    assert_eq!(f.workspace.extra_dirs().len(), before + 1);
+    let script = skills.join("check.sh").display().to_string();
+    assert_eq!(f.path(Tool::ReadFile, &script).action, Action::Allow);
+    let write = f.path(Tool::WriteFile, &script);
+    assert_eq!(write.action, Action::Deny);
+    assert!(
+        write.reason.to_string().ends_with("is read-only"),
+        "{}",
+        write.reason
+    );
+    assert_eq!(f.path(Tool::EditFile, "src/lib.rs").action, Action::Allow);
+    assert_eq!(
+        f.path(Tool::EditFile, &lib.join("x.rs").display().to_string())
+            .action,
+        Action::Ask
+    );
+    // Commands are not changed by it.
+    assert_eq!(f.action(&format!("sh {script}")), Action::Ask);
+}

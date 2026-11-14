@@ -18,6 +18,7 @@ pub mod provider;
 pub mod runtime;
 pub mod server;
 pub mod session;
+pub mod skills;
 pub mod sync;
 pub mod text;
 pub mod tools;

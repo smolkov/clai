@@ -153,6 +153,14 @@ pub enum SessionEvent {
         /// `provider/model`.
         model: String,
     },
+    /// The session's active skills changed (RFC 0023); applies from the
+    /// next request. Added skills carry the text the session uses.
+    SkillsChanged {
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        added: Vec<crate::skills::Active>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        removed: Vec<String>,
+    },
     Renamed {
         name: String,
     },
@@ -209,4 +217,14 @@ impl EventSink {
     pub fn notice(&self, text: impl Into<String>) {
         self.emit(SessionEvent::Notice { text: text.into() });
     }
+}
+
+/// The active skills a session log leaves.
+pub fn active_skills(log: &[SessionEvent]) -> Vec<crate::skills::Active> {
+    crate::skills::replay(log.iter().filter_map(|event| match event {
+        SessionEvent::SkillsChanged { added, removed } => {
+            Some((added.as_slice(), removed.as_slice()))
+        }
+        _ => None,
+    }))
 }

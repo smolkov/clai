@@ -26,10 +26,10 @@ use crate::tools::{self, Env, Prepared, PreparedCall, ToolOutput, ask_user};
 
 pub use events::{
     CallResult, CallState, EndReason, EventSink, SessionEvent, State, ToolCallEvent, TurnEnd,
-    retry_text,
+    active_skills, retry_text,
 };
 pub use history::{History, INTERRUPTED, Journal, Record};
-pub use prompt::{date_of, now_ms, now_secs, system_prompt, today, with_lsp};
+pub use prompt::{date_of, now_ms, now_secs, system_prompt, today, with_lsp, with_skills};
 pub use question::{
     ASK_USER_CHOICES, Answer, AskCall, AskUser, Asker, CallInfo, Choice, Closed, LIMIT_CHOICES,
     LSP_START_CHOICES, Limit, PERMISSION_CHOICES, Permission, PolicyAsker, Question, QuestionKind,
@@ -104,6 +104,31 @@ impl ModelHandle {
     }
 }
 
+/// The active skills of a session (RFC 0023). The session changes them
+/// while a turn may run; the agent takes the change before its next model
+/// request.
+#[derive(Clone, Default)]
+pub struct SkillsHandle(Arc<Mutex<(u64, Vec<crate::skills::Active>)>>);
+
+impl SkillsHandle {
+    pub fn set(&self, skills: Vec<crate::skills::Active>) {
+        let mut current = lock(&self.0);
+        current.0 += 1;
+        current.1 = skills;
+    }
+
+    pub fn get(&self) -> Vec<crate::skills::Active> {
+        lock(&self.0).1.clone()
+    }
+
+    /// The skills, if they changed after version `seen`, with the new
+    /// version.
+    fn changed_since(&self, seen: u64) -> Option<(u64, Vec<crate::skills::Active>)> {
+        let current = lock(&self.0);
+        (current.0 != seen).then(|| (current.0, current.1.clone()))
+    }
+}
+
 /// Why the session cancels a turn, if not because of the user: the calls
 /// not run and the notice say so. Read once when the turn ends.
 #[derive(Clone, Default)]
@@ -130,6 +155,12 @@ pub struct Agent {
     limits: Limits,
     env: Env,
     system: String,
+    /// The prompt and the workspace without skills.
+    base_system: String,
+    base_workspace: Arc<crate::permissions::Workspace>,
+    skills: SkillsHandle,
+    /// The version of `skills` applied.
+    skills_seen: u64,
     can_ask: bool,
     history: History,
     turns: u64,
@@ -200,8 +231,12 @@ impl Agent {
             cancel_reason: CancelReason::default(),
             model: ModelHandle::new(setup.provider, setup.model, setup.model_name),
             limits: setup.limits,
+            base_workspace: setup.env.workspace.clone(),
             env: setup.env,
+            base_system: system.clone(),
             system,
+            skills: SkillsHandle::default(),
+            skills_seen: 0,
             can_ask: setup.can_ask,
             history: History::default(),
             turns: 0,
@@ -295,6 +330,34 @@ impl Agent {
         self.model.clone()
     }
 
+    /// The handle to change the active skills.
+    pub fn skills(&self) -> SkillsHandle {
+        self.skills.clone()
+    }
+
+    /// The system prompt the next request sends, with the active skills.
+    pub fn system(&mut self) -> &str {
+        self.apply_skills();
+        &self.system
+    }
+
+    /// Takes a change of the active skills: the prompt gets their section,
+    /// the workspace their directories, read only.
+    fn apply_skills(&mut self) {
+        let Some((seen, skills)) = self.skills.changed_since(self.skills_seen) else {
+            return;
+        };
+        self.skills_seen = seen;
+        let dirs: Vec<std::path::PathBuf> = skills.iter().map(|s| s.dir.clone()).collect();
+        let workspace = if dirs.is_empty() {
+            self.base_workspace.clone()
+        } else {
+            Arc::new(self.base_workspace.with_read_dirs(&dirs))
+        };
+        self.system = with_skills(&self.base_system, &workspace, &skills);
+        self.env.workspace = workspace;
+    }
+
     pub fn history(&self) -> &History {
         &self.history
     }
@@ -366,6 +429,7 @@ impl Agent {
             budget.total_requests += 1;
 
             let (provider, model, model_name) = self.model.get_named();
+            self.apply_skills();
             let request = Request {
                 model: model.id.clone(),
                 system: self.system.clone(),

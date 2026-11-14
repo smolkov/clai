@@ -345,6 +345,9 @@ pub struct SessionStatus {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub size: Option<u64>,
     pub extra_dirs: Vec<DirInfo>,
+    /// The active skills (RFC 0023).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skills: Vec<super::ActiveSkill>,
     /// `None` when the model is no longer configured.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<ModelStatus>,

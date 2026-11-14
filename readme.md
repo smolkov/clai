@@ -8,7 +8,7 @@ language server) behind permission rules, and shows every change and command.
 > Status: in development. The TUI (`clai`, `clai new`, `clai attach`), `clai run`
 > (one task, without the TUI), sessions in the background server, saved and
 > resumed (`ls`, `send`, `chat`, `kill`, `export`, `import`, `server`),
-> `clai models`, `clai commit` and `clai completion` work. The TUI `/commit`
+> `clai models`, `clai skills`, `clai commit` and `clai completion` work. The TUI `/commit`
 > dialog and context management come next. See [`todo.md`](todo.md).
 
 ## Install
@@ -89,6 +89,7 @@ Tab then completes commands, options, and the configured models for
 | `clai new`, `clai attach`, `clai ls`, `clai kill`, `clai send` | Manage sessions in the background server. |
 | `clai chat` | Chat with a session in the terminal, or answer its questions. |
 | `clai models` | List configured providers and models. |
+| `clai skills` | List the skills found for the current directory. |
 | `clai commit` | Print a commit message for the staged changes (`-a`: all changes of tracked files): `clai commit -a \| git commit -a -F -`. |
 | `clai export`, `clai import` | Write a session to a file, add one from a file. |
 | `clai server` | Run, stop or check the background server. |
@@ -129,11 +130,11 @@ widens the rule, `Enter` confirms), `n` no, `e` no with a message to the model,
 Commands: `/help`, `/model [PROVIDER/MODEL]` (without one, choose it as with
 `Ctrl-O`; with `--default` also make it the default of new sessions), `/sessions`, `/new [NAME]` (a session in the same workspace; the model
 picker starts on `default_model`, so `Enter` takes it), `/attach [NAME]`,
-`/rename NAME`, `/status [NAME]`, `/stats [7d|30d|all]`, `/lsp` (the language servers; `r` restart, `k` stop), `/settings`, `/theme [NAME]`, `/kill`, `/copy [N|code]`
+`/rename NAME`, `/status [NAME]`, `/stats [7d|30d|all]`, `/lsp` (the language servers; `r` restart, `k` stop), `/skills [NAME]` (choose the session's skills; with a name, turn one on or off), `/settings`, `/theme [NAME]`, `/kill`, `/copy [N|code]`
 (the last answer, the one N back, or its last code block), `/diff` (the changes of the last turn), `/detach`, `/quit`. `/` in the empty input lists them:
 type to search, `Up` / `Down` select, `Enter` runs, `Tab` completes, `Esc` closes
-the list and keeps the text. After `/attach ` and `/model ` a list offers the
-session names and models the same way. The list also shows commands of later
+the list and keeps the text. After `/attach `, `/model ` and `/skills ` a list
+offers the session names, models and skills the same way. The list also shows commands of later
 versions, dimmed. A message that starts with `/` is written `//…`.
 
 Switching keeps each session's unsent input, scroll position and expanded tool
@@ -382,6 +383,47 @@ Sessions on the same project share one server; it stops after 10 minutes
 without use. `/lsp` shows the servers, their state and last error lines,
 and restarts or stops one. Details: [`spec/tools.md`](spec/tools.md),
 "lsp", and [`spec/config.md`](spec/config.md), "LSP".
+
+## Skills
+
+A skill is a directory with a `SKILL.md`: a name, a description and
+instructions for the model, maybe with scripts next to it. It is the format
+of OpenCode and Claude Code, so skills you have for them work here too.
+
+```markdown
+---
+name: release-check
+description: Steps before tagging a release of a Rust crate.
+---
+
+# Release check
+
+1. Run `cargo test` and `cargo clippy` …
+```
+
+`clai` finds skills in the directories of your user file's `[skills] dirs`,
+then in `.opencode/skills`, `.claude/skills` and `.agents/skills` of the
+workspace, then in `~/.config/opencode/skills`, `~/.claude/skills` and
+`~/.agents/skills`, also in subdirectories (`synced/<id>/<skill>/`). When
+two skills have the same name, the earlier
+directory wins. `clai skills` lists what it finds, and why a file is
+skipped.
+
+```toml
+[skills]
+dirs = ["~/ws/team-skills"]   # searched first
+default_dirs = true           # false: only dirs
+```
+
+Nothing is used until you turn it on for a session: `/skills` opens a box
+(`Space` ticks, `Enter` applies), `/skills NAME` turns one on or off, and
+`clai run --skill NAME` or `clai new --skill NAME` start with it. An active
+skill's instructions go into the system prompt, and its directory is
+readable (not writable) for the model; its scripts run only as your
+command rules allow. The session keeps the text it read, also after a
+restart; `/skills` marks a skill whose file changed since. A project's
+`.clai/config.toml` cannot set `[skills]`. Details:
+[`spec/skills.md`](spec/skills.md).
 
 ## Limits
 

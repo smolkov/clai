@@ -20,6 +20,7 @@ mod prompt;
 mod selection;
 mod sessions;
 mod settings;
+mod skills;
 mod status;
 mod style;
 pub mod terminal;

@@ -271,6 +271,7 @@ async fn new_session(client: &mut Client, ws: &Path, name: Option<&str>) -> Sess
             workspace: ws.to_path_buf(),
             name: name.map(str::to_owned),
             model: None,
+            skills: Vec::new(),
         })
         .await
         .unwrap()
@@ -416,6 +417,7 @@ async fn names() {
             workspace: fx.ws.clone(),
             name: Some("one".into()),
             model: None,
+            skills: Vec::new(),
         })
         .await;
     assert!(matches!(taken, Err(Error::Failed(m)) if m == "the name one is taken"));
@@ -424,6 +426,7 @@ async fn names() {
             workspace: fx.ws.clone(),
             name: Some("a b".into()),
             model: None,
+            skills: Vec::new(),
         })
         .await;
     assert!(matches!(bad, Err(Error::Usage(_))));
@@ -432,6 +435,7 @@ async fn names() {
             workspace: fx.ws.clone(),
             name: None,
             model: Some("nope".into()),
+            skills: Vec::new(),
         })
         .await;
     assert!(matches!(unknown, Err(Error::Usage(m)) if m.contains("unknown model `nope`")));
@@ -440,6 +444,7 @@ async fn names() {
             workspace: fx.ws.join("missing"),
             name: None,
             model: None,
+            skills: Vec::new(),
         })
         .await;
     assert!(matches!(not_dir, Err(Error::Usage(_))));
@@ -821,6 +826,7 @@ async fn config_reload() {
             workspace: fx.ws.clone(),
             name: Some("b".into()),
             model: Some("three".into()),
+            skills: Vec::new(),
         })
         .await
         .unwrap();
@@ -1494,6 +1500,7 @@ async fn a_saved_default_counts_before_the_next_poll() {
             workspace: fx.ws.clone(),
             name: Some("next".into()),
             model: None,
+            skills: Vec::new(),
         })
         .await
         .unwrap();
@@ -1714,6 +1721,7 @@ async fn session_status_of_a_model_no_longer_configured() {
         workspace: fx.ws.clone(),
         name: Some("s".into()),
         model: Some("fake/two".into()),
+        skills: Vec::new(),
     })
     .await
     .unwrap();
@@ -1910,4 +1918,188 @@ async fn lsp_requests_answer_with_the_servers() {
             .contains("rust-analyzer: rust-analyzer has not run"),
         "{e}"
     );
+}
+
+/// Writes `<dir>/<name>/SKILL.md` with that body.
+fn write_skill(dir: &Path, name: &str, body: &str) {
+    fs::create_dir_all(dir.join(name)).unwrap();
+    fs::write(
+        dir.join(name).join("SKILL.md"),
+        format!("---\nname: {name}\ndescription: About {name}.\n---\n\n{body}\n"),
+    )
+    .unwrap();
+}
+
+/// The directory of skills the fixture's user file names.
+fn skills_dir(fx: &Fixture) -> PathBuf {
+    let dir = fx.tmp.path().join("skills");
+    fs::create_dir_all(&dir).unwrap();
+    let mut config = fs::read_to_string(&fx.config).unwrap();
+    if !config.contains("[skills]") {
+        config.push_str(&format!(
+            "\n[skills]\ndirs = [{:?}]\n",
+            dir.display().to_string()
+        ));
+        fs::write(&fx.config, config).unwrap();
+    }
+    dir
+}
+
+async fn skills_of(c: &mut Client, fx: &Fixture, session: &str) -> crate::protocol::SkillsInfo {
+    match c
+        .request(Request::Skills {
+            workspace: fx.ws.clone(),
+            session: Some(session.into()),
+        })
+        .await
+        .unwrap()
+    {
+        Payload::Skills(info) => *info,
+        other => panic!("{other:?}"),
+    }
+}
+
+async fn set_skills(
+    c: &mut Client,
+    session: &str,
+    names: &[&str],
+) -> std::result::Result<Payload, Error> {
+    c.request(Request::SetSkills {
+        session: session.into(),
+        names: names.iter().map(|n| (*n).to_owned()).collect(),
+    })
+    .await
+}
+
+/// The system prompt of the script's last request.
+fn last_system(script: &Script) -> String {
+    script
+        .requests
+        .lock()
+        .unwrap()
+        .last()
+        .unwrap()
+        .system
+        .clone()
+}
+
+#[tokio::test]
+async fn skills_go_into_the_prompt_and_survive_a_restart() {
+    let script = Script::new(vec![say("one"), say("two"), say("three"), say("four")]);
+    let mut fx = Fixture::start(vec![script.clone()]).await;
+    fx.add_script(script.clone());
+    let dir = skills_dir(&fx);
+    write_skill(&dir, "release", "Run the tests.");
+    write_skill(&dir, "pdf", "Use pdftotext.");
+    let mut c = fx.client("tui", true).await;
+    let mut other = fx.client("chat", true).await;
+    new_session(&mut c, &fx.ws, Some("s")).await;
+    attach(&mut c, "s").await;
+    attach(&mut other, "s").await;
+
+    let info = skills_of(&mut c, &fx, "s").await;
+    assert_eq!(info.names(), ["pdf", "release"]);
+    assert!(info.active.is_empty());
+
+    let Payload::Skills(info) = set_skills(&mut c, "s", &["release"]).await.unwrap() else {
+        panic!()
+    };
+    assert_eq!(info.active.len(), 1);
+    assert_eq!(info.active[0].name, "release");
+    assert!(!info.active[0].changed_on_disk && !info.active[0].missing);
+    // Every attached client hears of it.
+    let (removed, _) = until(&mut other, |e, _| match e {
+        SessionEvent::SkillsChanged { added, removed } => {
+            assert_eq!(added[0].text, "Run the tests.");
+            Some(removed.clone())
+        }
+        _ => None,
+    })
+    .await;
+    assert!(removed.is_empty());
+
+    send(&mut c, "s", "a").await;
+    turn_end(&mut c).await;
+    let system = last_system(&script);
+    assert!(
+        system.contains(&format!(
+            "<skill name=\"release\" dir=\"{}\">\nRun the tests.\n</skill>",
+            dir.join("release").display()
+        )),
+        "{system}"
+    );
+    assert!(system.contains("(read only)"), "{system}");
+
+    // A changed file is marked, and the session keeps its text, also
+    // after a restart.
+    write_skill(&dir, "release", "Run the tests twice.");
+    assert!(skills_of(&mut c, &fx, "s").await.active[0].changed_on_disk);
+    drop(c);
+    drop(other);
+    fx.restart().await;
+    let mut c = fx.client("tui", true).await;
+    attach(&mut c, "s").await;
+    fs::remove_dir_all(dir.join("release")).unwrap();
+    let info = skills_of(&mut c, &fx, "s").await;
+    assert!(info.active[0].missing, "{info:?}");
+    send(&mut c, "s", "b").await;
+    turn_end(&mut c).await;
+    let system = last_system(&script);
+    assert!(system.contains("Run the tests.\n</skill>"), "{system}");
+    assert!(!system.contains("twice"), "{system}");
+
+    // Turned off: gone from the next request.
+    set_skills(&mut c, "s", &["pdf"]).await.unwrap();
+    send(&mut c, "s", "c").await;
+    turn_end(&mut c).await;
+    let system = last_system(&script);
+    assert!(!system.contains("name=\"release\""), "{system}");
+    assert!(system.contains("Use pdftotext."), "{system}");
+    set_skills(&mut c, "s", &[]).await.unwrap();
+    send(&mut c, "s", "d").await;
+    turn_end(&mut c).await;
+    assert!(!last_system(&script).contains("<skill"));
+
+    // Both changes are in the log.
+    let log = saved_log(&saved_dir(&fx));
+    let changes = log
+        .iter()
+        .filter(|e| matches!(e, SessionEvent::SkillsChanged { .. }))
+        .count();
+    assert_eq!(changes, 3);
+    fx.stop().await;
+}
+
+#[tokio::test]
+async fn unknown_skills_are_refused() {
+    let fx = Fixture::start(vec![]).await;
+    write_skill(&skills_dir(&fx), "pdf", "Use pdftotext.");
+    let mut c = fx.client("tui", true).await;
+    new_session(&mut c, &fx.ws, Some("s")).await;
+    let Err(Error::Usage(message)) = set_skills(&mut c, "s", &["nope"]).await else {
+        panic!()
+    };
+    assert_eq!(message, "unknown skill `nope`; found: pdf");
+    // A new session with an unknown skill is not created.
+    let refused = c
+        .request(Request::New {
+            workspace: fx.ws.clone(),
+            name: Some("t".into()),
+            model: None,
+            skills: vec!["nope".into()],
+        })
+        .await;
+    assert!(matches!(refused, Err(Error::Usage(_))), "{refused:?}");
+    assert_eq!(c.list().await.unwrap().len(), 1);
+    // A known one is on from the start.
+    c.request(Request::New {
+        workspace: fx.ws.clone(),
+        name: Some("t".into()),
+        model: None,
+        skills: vec!["pdf".into()],
+    })
+    .await
+    .unwrap();
+    assert_eq!(skills_of(&mut c, &fx, "t").await.active[0].name, "pdf");
+    fx.stop().await;
 }

@@ -259,6 +259,17 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [x] System prompt: tool output is data; denied files are not reached
       another way.
 
+## Skills (RFC 0023)
+
+- [x] `SKILL.md` format and checks; seven default directories and
+      `[skills] dirs`, priority and shadowing; `clai skills [--json]`.
+- [x] Active skills per session: prompt section, read-only directories,
+      `skills_changed` in the log, kept text on resume; protocol 9.
+- [x] TUI `/skills` box and `/skills NAME`, value list, status box line.
+- [x] `/skills` in `clai chat`; `clai run --skill`, `clai new --skill`.
+- [ ] Tab completion of skill names for `--skill`.
+- [ ] Try the box with real skill directories of OpenCode and Claude Code.
+
 ## Conversation layout (RFC 0022)
 
 - [x] Short tool names in the TUI; rules and config keep the real names.

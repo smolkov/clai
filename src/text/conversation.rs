@@ -101,6 +101,9 @@ impl Conversation {
                 reason,
             } => self.note(&crate::agent::retry_text(*attempt, *max, reason)),
             SessionEvent::ModelChanged { model, .. } => self.note(&format!("model is now {model}")),
+            SessionEvent::SkillsChanged { added, removed } => {
+                self.note(&crate::skills::change_text(added, removed))
+            }
             SessionEvent::Renamed { name } => self.note(&format!("session renamed to {name}")),
             SessionEvent::Ended { reason } => self.note(&format!("session ended: {reason}")),
             SessionEvent::State { .. }

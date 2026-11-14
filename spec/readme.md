@@ -141,6 +141,7 @@ When a spec file is added, renamed or removed, update this table and
 | [`config.md`](config.md) | draft | Config files, precedence, providers and models, tool permissions, TUI settings and themes, validation, reloading. |
 | [`agent-loop.md`](agent-loop.md) | draft | One turn: requests, system prompt, streaming, tool calls in order, limits, cancellation, errors, events. |
 | [`tools.md`](tools.md) | draft | Each tool: arguments, results, errors, limits; paths, text files, result size, denied calls. |
+| [`skills.md`](skills.md) | draft | Skills: the `SKILL.md` format, where skills are found and which one wins, active skills in the prompt and as read-only directories, saving. |
 | [`providers.md`](providers.md) | draft | Agent–provider interface: shared request, message, event and error types; adapters per API type that encode and decode the provider's format; retries. |
 | `context.md` | planned | System prompt, project instructions, history size and truncation. |
 

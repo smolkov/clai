@@ -41,6 +41,7 @@ commands:
   /new [NAME] [MODEL]  start a session in this workspace and attach;
                    MODEL is PROVIDER/MODEL, default: default_model
   /models          list the configured models
+  /skills [NAME]   list the skills (* active); with a name, turn it on or off
   /lsp             list the language servers
   /lsp restart NAME, /lsp stop NAME
                    restart or stop a language server
@@ -203,6 +204,59 @@ enum Flow {
     Leave,
 }
 
+/// The skills as `/skills` prints them: `*` before active ones, a
+/// shadowed one with its winner, an active one not found any more, then
+/// the warnings.
+fn skills_text(info: &crate::protocol::SkillsInfo, workspace: &std::path::Path) -> String {
+    let show = |p: &std::path::Path| crate::skills::display(p, workspace, info.home.as_deref());
+    let active = |name: &str| info.active.iter().find(|a| a.name == name);
+    let mut rows: Vec<Vec<String>> = info
+        .active
+        .iter()
+        .filter(|a| a.missing)
+        .map(|a| {
+            vec![
+                format!("* {}", a.name),
+                show(&a.dir),
+                "not found any more".to_owned(),
+            ]
+        })
+        .collect();
+    for skill in &info.skills {
+        let (mark, about) = match (&skill.shadowed_by, active(&skill.name)) {
+            (Some(by), _) => (" ", format!("shadowed by {}", show(by))),
+            (None, Some(a)) if a.changed_on_disk && !a.missing => {
+                ("*", format!("changed on disk; {}", skill.description))
+            }
+            (None, Some(a)) if !a.missing => ("*", skill.description.clone()),
+            (None, _) => (" ", skill.description.clone()),
+        };
+        rows.push(vec![
+            format!("{mark} {}", skill.name),
+            show(&skill.dir),
+            about,
+        ]);
+    }
+    let mut out = String::new();
+    if rows.is_empty() {
+        out.push_str("no skills found; searched:\n");
+        for dir in &info.dirs {
+            out.push_str(&format!("  {}\n", show(dir)));
+        }
+    }
+    for line in crate::output::columns(
+        &rows,
+        &[crate::output::Align::Left, crate::output::Align::Left],
+    ) {
+        out.push_str(&line);
+        out.push('\n');
+    }
+    for warning in &info.warnings {
+        out.push_str(&format!("warning: {warning}\n"));
+    }
+    out
+}
+
 struct Talk {
     client: Client,
     lines: Lines,
@@ -222,6 +276,41 @@ struct Talk {
 }
 
 impl Talk {
+    /// `/skills`: the skills found, `*` before the active ones; `/skills
+    /// NAME`: turns that skill on or off. The change prints when its event
+    /// comes.
+    async fn skills(&mut self, argument: &str) -> Result<()> {
+        let info = match self
+            .client
+            .request(Request::Skills {
+                workspace: self.session.path.clone(),
+                session: Some(self.session.name.clone()),
+            })
+            .await?
+        {
+            Payload::Skills(info) => *info,
+            other => return Err(unexpected(&other)),
+        };
+        if argument.is_empty() {
+            let text = skills_text(&info, &self.session.path);
+            self.out(&text);
+            return Ok(());
+        }
+        let mut names: Vec<String> = info.active.iter().map(|a| a.name.clone()).collect();
+        if names.iter().any(|n| n == argument) {
+            names.retain(|n| n != argument);
+        } else {
+            names.push(argument.to_owned());
+        }
+        self.client
+            .request(Request::SetSkills {
+                session: self.session.name.clone(),
+                names,
+            })
+            .await?;
+        Ok(())
+    }
+
     fn out(&self, text: &str) {
         let mut stdout = io::stdout().lock();
         let _ = stdout.write_all(text.as_bytes());
@@ -304,6 +393,7 @@ impl Talk {
                 }
                 Err(e) => Err(e),
             },
+            "skills" => self.skills(argument).await,
             "models" => match self
                 .client
                 .request(Request::Models {
@@ -372,6 +462,7 @@ impl Talk {
                         workspace: self.session.path.clone(),
                         name,
                         model,
+                        skills: Vec::new(),
                     };
                     match create(&mut self.client, request).await {
                         Ok(session) => return Some(self.switch_to(&session.name).await),
@@ -926,6 +1017,52 @@ mod tests {
              local/qwen        qwen3              32k\n"
         );
         assert_eq!(models_text(&[]), "no models are configured\n");
+    }
+
+    #[test]
+    fn skills_mark_the_active_ones() {
+        let skill = |dir: &str, name: &str, shadowed: Option<&str>| crate::protocol::SkillInfo {
+            name: name.into(),
+            description: format!("About {name}."),
+            dir: format!("{dir}/{name}").into(),
+            source: crate::skills::Source::User,
+            shadowed_by: shadowed.map(Into::into),
+        };
+        let active = |name: &str, missing: bool| crate::protocol::ActiveSkill {
+            name: name.into(),
+            dir: format!("/old/{name}").into(),
+            tokens: 10,
+            changed_on_disk: false,
+            missing,
+        };
+        let info = crate::protocol::SkillsInfo {
+            skills: vec![
+                skill("/w/.claude/skills", "pdf", None),
+                skill("/h/.claude/skills", "pdf", Some("/w/.claude/skills/pdf")),
+                skill("/h/.claude/skills", "release", None),
+            ],
+            dirs: Vec::new(),
+            warnings: vec!["x/SKILL.md: no description".into()],
+            active: vec![active("gone", true), active("pdf", false)],
+            home: Some("/h".into()),
+        };
+        assert_eq!(
+            skills_text(&info, std::path::Path::new("/w")),
+            "* gone     /old/gone                 not found any more\n\
+             * pdf      .claude/skills/pdf        About pdf.\n\
+             \x20 pdf      ~/.claude/skills/pdf      shadowed by .claude/skills/pdf\n\
+             \x20 release  ~/.claude/skills/release  About release.\n\
+             warning: x/SKILL.md: no description\n"
+        );
+        let none = crate::protocol::SkillsInfo {
+            dirs: vec!["/h/.claude/skills".into()],
+            home: Some("/h".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            skills_text(&none, std::path::Path::new("/w")),
+            "no skills found; searched:\n  ~/.claude/skills\n"
+        );
     }
 
     #[test]

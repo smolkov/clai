@@ -104,6 +104,27 @@ impl Workspace {
         })
     }
 
+    /// This workspace with `dirs` added as read-only extra directories
+    /// (the directories of active skills). A directory that does not exist,
+    /// or that the workspace or an extra directory already covers, is not
+    /// added.
+    pub fn with_read_dirs(&self, dirs: &[PathBuf]) -> Workspace {
+        let mut ws = self.clone();
+        for dir in dirs {
+            let Ok(path) = dir.canonicalize() else {
+                tracing::warn!("skill dir {}: not found; not readable", dir.display());
+                continue;
+            };
+            if path.is_dir() && ws.area_of(&path) == Area::Outside {
+                ws.extra.push(ExtraDir {
+                    path,
+                    access: Access::Read,
+                });
+            }
+        }
+        ws
+    }
+
     pub fn root(&self) -> &Path {
         &self.root
     }

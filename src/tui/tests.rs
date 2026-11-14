@@ -3063,6 +3063,7 @@ fn new_starts_on_the_default_model() {
             workspace: "/ws/project".into(),
             name: None,
             model: Some("anthropic/opus".into()),
+            skills: Vec::new(),
         }]
     );
     assert!(app.picker.is_none());
@@ -3093,6 +3094,7 @@ fn new_with_a_name_and_another_model() {
             workspace: "/ws/project".into(),
             name: Some("spike".into()),
             model: Some("local/qwen".into()),
+            skills: Vec::new(),
         }]
     );
     // Esc creates nothing.
@@ -4196,6 +4198,7 @@ fn status_of(state: State) -> crate::protocol::SessionStatus {
             read_only: false,
             exists: false,
         }],
+        skills: Vec::new(),
         model: Some(ModelStatus {
             info: ModelInfo {
                 model: "anthropic/sonnet".into(),
@@ -6128,4 +6131,283 @@ fn the_picker_opens_over_a_question_and_the_question_comes_back() {
     assert!(app.session_list.is_none());
     let text = screen(&mut app, 80, 24);
     assert!(text.contains("── Question ─ Database"), "{text}");
+}
+
+// The skills box (RFC 0023).
+
+fn skill_info(dir: &str, name: &str, description: &str) -> crate::protocol::SkillInfo {
+    crate::protocol::SkillInfo {
+        name: name.to_owned(),
+        description: description.to_owned(),
+        dir: format!("{dir}/{name}").into(),
+        source: crate::skills::Source::User,
+        shadowed_by: None,
+    }
+}
+
+fn skills_found() -> crate::protocol::SkillsInfo {
+    crate::protocol::SkillsInfo {
+        skills: vec![
+            skill_info(
+                "/home/u/ws/team-skills",
+                "release-check",
+                "Steps before tagging a release of a Rust crate. Use when the user asks to prepare or check a release.",
+            ),
+            skill_info(
+                "/home/u/ws/team-skills",
+                "api-style",
+                "How our HTTP handlers are written and tested.",
+            ),
+            skill_info(
+                "/ws/project/.claude/skills",
+                "migrations",
+                "Writing and checking database migrations.",
+            ),
+            skill_info(
+                "/home/u/.claude/skills",
+                "pdf",
+                "Read, fill and merge PDF files.",
+            ),
+            crate::protocol::SkillInfo {
+                shadowed_by: Some("/home/u/ws/team-skills/release-check".into()),
+                ..skill_info(
+                    "/home/u/.claude/skills",
+                    "release-check",
+                    "Old release steps.",
+                )
+            },
+        ],
+        dirs: vec![
+            "/home/u/ws/team-skills".into(),
+            "/ws/project/.claude/skills".into(),
+            "/home/u/.claude/skills".into(),
+        ],
+        warnings: vec!["~/.agents/skills/old/SKILL.md: no description".into()],
+        active: Vec::new(),
+        home: Some("/home/u".into()),
+    }
+}
+
+fn active_skill(name: &str, dir: &str) -> crate::protocol::ActiveSkill {
+    crate::protocol::ActiveSkill {
+        name: name.to_owned(),
+        dir: dir.into(),
+        tokens: 400,
+        changed_on_disk: false,
+        missing: false,
+    }
+}
+
+fn skills_request() -> Request {
+    Request::Skills {
+        workspace: "/ws/project".into(),
+        session: Some("project".into()),
+    }
+}
+
+fn skills_answer(info: crate::protocol::SkillsInfo) -> Input {
+    Input::Response {
+        request: skills_request(),
+        result: Ok(Payload::Skills(Box::new(info))),
+    }
+}
+
+fn skill_on(name: &str) -> SessionEvent {
+    SessionEvent::SkillsChanged {
+        added: vec![crate::skills::Active {
+            name: name.to_owned(),
+            dir: format!("/home/u/ws/team-skills/{name}").into(),
+            text: "# text".into(),
+        }],
+        removed: Vec::new(),
+    }
+}
+
+/// An app with the skills box open on the usual list.
+fn choosing_skills(info: crate::protocol::SkillsInfo) -> App {
+    let mut app = app();
+    assert_eq!(requests(&command(&mut app, "/skills")), [skills_request()]);
+    assert!(app.skills_box.is_none(), "it opens with the answer");
+    app.update(skills_answer(info));
+    assert!(app.skills_box.is_some());
+    app
+}
+
+fn set_skills_of(effects: &[Effect]) -> Vec<Vec<String>> {
+    requests(effects)
+        .into_iter()
+        .filter_map(|r| match r {
+            Request::SetSkills { names, .. } => Some(names),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn space_ticks_and_enter_applies() {
+    let mut app = choosing_skills(skills_found());
+    assert_eq!(
+        app.skills_box.as_ref().unwrap().chosen(),
+        Some("release-check")
+    );
+    app.update(ch(' '));
+    app.update(key(KeyCode::Down));
+    app.update(key(KeyCode::Down));
+    app.update(ch(' '));
+    let effects = app.update(key(KeyCode::Enter));
+    assert_eq!(
+        set_skills_of(&effects),
+        [vec!["release-check".to_owned(), "migrations".to_owned()]]
+    );
+    assert!(app.skills_box.is_none());
+}
+
+#[test]
+fn shadowed_rows_are_passed_over() {
+    let mut app = choosing_skills(skills_found());
+    for _ in 0..10 {
+        app.update(key(KeyCode::Down));
+    }
+    assert_eq!(app.skills_box.as_ref().unwrap().chosen(), Some("pdf"));
+}
+
+#[test]
+fn esc_and_an_unchanged_enter_send_nothing() {
+    let mut app = choosing_skills(skills_found());
+    app.update(ch(' '));
+    assert!(requests(&app.update(key(KeyCode::Esc))).is_empty());
+    assert!(app.skills_box.is_none());
+    let mut info = skills_found();
+    info.active = vec![active_skill("pdf", "/home/u/.claude/skills/pdf")];
+    let mut app = choosing_skills(info);
+    assert!(requests(&app.update(key(KeyCode::Enter))).is_empty());
+}
+
+#[test]
+fn the_filter_looks_at_names_and_descriptions() {
+    let mut app = choosing_skills(skills_found());
+    typed(&mut app, "HTTP");
+    let open = app.skills_box.as_ref().unwrap();
+    assert_eq!(open.chosen(), Some("api-style"));
+    app.update(ch(' '));
+    let effects = app.update(key(KeyCode::Enter));
+    assert_eq!(set_skills_of(&effects), [vec!["api-style".to_owned()]]);
+}
+
+#[test]
+fn an_active_skill_not_found_any_more_can_be_turned_off() {
+    let mut info = skills_found();
+    info.active = vec![crate::protocol::ActiveSkill {
+        missing: true,
+        ..active_skill("gone", "/home/u/old/gone")
+    }];
+    let mut app = choosing_skills(info);
+    assert_eq!(app.skills_box.as_ref().unwrap().chosen(), Some("gone"));
+    app.update(ch(' '));
+    let effects = app.update(key(KeyCode::Enter));
+    assert_eq!(set_skills_of(&effects), [Vec::<String>::new()]);
+}
+
+#[test]
+fn slash_skills_name_toggles_one() {
+    let mut app = app_with(vec![skill_on("pdf")]);
+    assert_eq!(app.skills, ["pdf"]);
+    assert_eq!(notices(&app), ["skills: + pdf"]);
+    let effects = command(&mut app, "/skills release-check");
+    assert_eq!(
+        set_skills_of(&effects),
+        [vec!["pdf".to_owned(), "release-check".to_owned()]]
+    );
+    let effects = command(&mut app, "/skills pdf");
+    assert_eq!(set_skills_of(&effects), [Vec::<String>::new()]);
+    // The server refuses an unknown name and lists the found ones.
+    app.update(Input::Response {
+        request: Request::SetSkills {
+            session: "project".into(),
+            names: vec!["pdf".into(), "nope".into()],
+        },
+        result: Err("unknown skill `nope`; found: pdf, release-check".into()),
+    });
+    assert!(
+        kinds(&app).iter().any(|k| matches!(
+            k,
+            Kind::Error(text) if text == "unknown skill `nope`; found: pdf, release-check"
+        )),
+        "{:?}",
+        kinds(&app)
+    );
+    app.update(live(SessionEvent::SkillsChanged {
+        added: Vec::new(),
+        removed: vec!["pdf".into()],
+    }));
+    assert!(app.skills.is_empty());
+    assert_eq!(notices(&app).last().unwrap(), "skills: \u{2212} pdf");
+}
+
+#[test]
+fn the_argument_list_offers_the_skills() {
+    let mut app = app_with(vec![skill_on("pdf")]);
+    typed(&mut app, "/skil");
+    // Tab completes `/skills `, opens the values and asks for them.
+    let asked = requests(&app.update(key(KeyCode::Tab)));
+    assert_eq!(app.editor.text(), "/skills ");
+    assert_eq!(asked, [skills_request()]);
+    assert!(values(&app).is_empty());
+    app.update(skills_answer(skills_found()));
+    assert!(app.skills_box.is_none(), "only the list asked");
+    let values = values(&app);
+    assert_eq!(values, ["release-check", "api-style", "migrations", "pdf"]);
+    let pdf = app
+        .arguments()
+        .into_iter()
+        .find(|v| v.value == "pdf")
+        .unwrap();
+    assert!(pdf.description.starts_with("active"), "{}", pdf.description);
+}
+
+#[test]
+fn a_question_closes_the_skills_box() {
+    let mut app = choosing_skills(skills_found());
+    app.update(live(SessionEvent::Question(Box::new(limit()))));
+    assert!(app.skills_box.is_none());
+    // An answer on its way does not open it under the question.
+    let mut app = self::app();
+    command(&mut app, "/skills");
+    app.update(live(SessionEvent::Question(Box::new(limit()))));
+    app.update(skills_answer(skills_found()));
+    assert!(app.skills_box.is_none());
+}
+
+#[test]
+fn frame_skills_box() {
+    let mut info = skills_found();
+    info.active = vec![active_skill(
+        "release-check",
+        "/home/u/ws/team-skills/release-check",
+    )];
+    let mut app = choosing_skills(info);
+    insta::assert_snapshot!(screen(&mut app, 80, 24));
+}
+
+#[test]
+fn frame_skills_box_ascii() {
+    let mut app = App::new(
+        settings(false, true),
+        attachment(Vec::new()),
+        Instant::now(),
+    );
+    command(&mut app, "/skills");
+    app.update(skills_answer(skills_found()));
+    let text = screen(&mut app, 80, 24);
+    assert!(text.is_ascii(), "{text}");
+    insta::assert_snapshot!(text);
+}
+
+#[test]
+fn frame_skills_box_without_skills() {
+    let mut info = skills_found();
+    info.skills.clear();
+    info.warnings.clear();
+    let mut app = choosing_skills(info);
+    insta::assert_snapshot!(screen(&mut app, 80, 24));
 }

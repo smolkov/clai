@@ -1,0 +1,28 @@
+---
+source: src/tui/tests.rs
+expression: "screen(&mut app, 80, 24)"
+---
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+┌ Skills for "project" ────────────────────────────────────────────────────────┐
+│ Filter:                                                                      │
+│                                                                              │
+│ ~/ws/team-skills                                                             │
+│ ▶ [x] release-check   Steps before tagging a release of a Rust crate. Use w… │
+│   [ ] api-style       How our HTTP handlers are written and tested.          │
+│ .claude/skills                                                               │
+│   [ ] migrations      Writing and checking database migrations.              │
+│ ~/.claude/skills                                                             │
+│   [ ] pdf             Read, fill and merge PDF files.                        │
+│       release-check   shadowed by ~/ws/team-skills/release-check             │
+│ Steps before tagging a release of a Rust crate. Use when the user asks to p… │
+│ 1 active ─ ⚠ 1 skipped: ~/.agents/skills/old/SKILL.md: no description        │
+│ Space toggle ─ Enter apply ─ Esc cancel                                      │
+└──────────────────────────────────────────────────────────────────────────────┘
+────────────────────────────────────────────────────────────────────────────────
+>                                                                               
+────────────────────────────────────────────────────────────────────────────────
+  idle · /help · Ctrl-D detach                                                  
+  project · ~/ws/project · anthropic/sonnet · 1/1 · 0/200k

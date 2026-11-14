@@ -23,6 +23,7 @@ pub struct UserFile {
     #[serde(default)]
     pub themes: IndexMap<String, Spanned<ThemeFile>>,
     pub lsp: Option<Spanned<LspFile>>,
+    pub skills: Option<SkillsFile>,
 }
 
 /// A project file. Tables only allowed in the user file are accepted here
@@ -39,6 +40,15 @@ pub struct ProjectFile {
     pub themes: Option<Spanned<toml::Value>>,
     /// Only `enabled = false` and `start = "deny"`; checked by hand.
     pub lsp: Option<Spanned<toml::Value>>,
+    pub skills: Option<Spanned<toml::Value>>,
+}
+
+/// `[skills]` (RFC 0023).
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SkillsFile {
+    pub dirs: Option<Vec<Spanned<String>>>,
+    pub default_dirs: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]

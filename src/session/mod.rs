@@ -18,13 +18,14 @@ use tokio_util::sync::CancellationToken;
 
 use crate::agent::{
     Agent, Answer, Asker, CancelReason, EventSink, ModelHandle, Question, Reply, SessionEvent,
-    SessionRef, State,
+    SessionRef, SkillsHandle, State,
 };
 use crate::config::Model;
 use crate::protocol::{
     ClientInfo, ErrorReply, Outcome, Payload, ServerMessage, SessionInfo, Stats,
 };
 use crate::provider::Provider;
+use crate::skills::Active;
 
 use questions::{Pending, Questions};
 
@@ -53,6 +54,7 @@ pub struct Report {
     pub info: SessionInfo,
     pub stats: Stats,
     pub clients: Vec<ClientInfo>,
+    pub skills: Vec<Active>,
 }
 
 /// Commands to a session.
@@ -75,6 +77,17 @@ enum Msg {
         model: String,
         provider: Arc<dyn Provider>,
         config: Model,
+    },
+    /// The whole new list of active skills; `found` has the skills found
+    /// now, for names not active yet.
+    SetSkills {
+        names: Vec<String>,
+        found: Vec<Active>,
+        found_names: Vec<String>,
+        reply: oneshot::Sender<Result<Vec<Active>, String>>,
+    },
+    Skills {
+        reply: oneshot::Sender<Vec<Active>>,
     },
     Rename {
         name: String,
@@ -161,6 +174,31 @@ impl SessionHandle {
             provider,
             config,
         })
+    }
+
+    /// Sets the active skills: `names` is the whole list. Returns the
+    /// active skills after it, or why it was refused.
+    pub async fn set_skills(
+        &self,
+        names: Vec<String>,
+        found: Vec<Active>,
+        found_names: Vec<String>,
+    ) -> Result<Vec<Active>, String> {
+        let (reply, rx) = oneshot::channel();
+        self.send(Msg::SetSkills {
+            names,
+            found,
+            found_names,
+            reply,
+        })?;
+        rx.await.unwrap_or_else(|_| Err(GONE.to_owned()))
+    }
+
+    /// The active skills.
+    pub async fn skills(&self) -> Result<Vec<Active>, String> {
+        let (reply, rx) = oneshot::channel();
+        self.send(Msg::Skills { reply })?;
+        rx.await.map_err(|_| GONE.to_owned())
     }
 
     pub fn rename(&self, name: String) -> Result<(), String> {
@@ -288,6 +326,9 @@ struct Actor {
     /// Writing failed last time; said once until it works again.
     save_failed: bool,
     model_handle: ModelHandle,
+    skills_handle: SkillsHandle,
+    /// Active skills, in the order turned on.
+    skills: Vec<Active>,
     cancel_reason: CancelReason,
     /// `None` while a turn has it.
     agent: Option<Agent>,
@@ -320,6 +361,12 @@ impl Actor {
         }
         // A turn a stopped server left open gets results for its calls.
         agent.repair();
+        // The skills of the log, with the text saved there.
+        let skills = crate::agent::active_skills(&spec.log);
+        let skills_handle = agent.skills();
+        if !skills.is_empty() {
+            skills_handle.set(skills.clone());
+        }
         let queue = spec.meta.queued.iter().cloned().collect();
         // The log is the truth: this covers a session of an older `clai`, and a
         // crash between writing an event and writing the meta.
@@ -333,6 +380,8 @@ impl Actor {
             store: spec.store,
             save_failed: false,
             model_handle: agent.model(),
+            skills_handle,
+            skills,
             cancel_reason: agent.cancel_reason(),
             agent: Some(agent),
             turn: None,
@@ -421,6 +470,33 @@ impl Actor {
                     self.publish(SessionEvent::ModelChanged { from, model });
                 }
             }
+            Msg::SetSkills {
+                names,
+                found,
+                found_names,
+                reply,
+            } => {
+                let names_ref: Vec<&str> = found_names.iter().map(String::as_str).collect();
+                let result = crate::skills::apply(&self.skills, &names, &found, &names_ref);
+                let answer = result.map(
+                    |crate::skills::Applied {
+                         active: next,
+                         added,
+                         removed,
+                     }| {
+                        if !added.is_empty() || !removed.is_empty() {
+                            self.skills.clone_from(&next);
+                            self.skills_handle.set(next.clone());
+                            self.publish(SessionEvent::SkillsChanged { added, removed });
+                        }
+                        next
+                    },
+                );
+                let _ = reply.send(answer);
+            }
+            Msg::Skills { reply } => {
+                let _ = reply.send(self.skills.clone());
+            }
             Msg::Rename { name } => {
                 self.meta.name.clone_from(&name);
                 self.save_meta();
@@ -458,6 +534,7 @@ impl Actor {
                     info: self.info(),
                     stats: self.stats.clone(),
                     clients,
+                    skills: self.skills.clone(),
                 });
             }
             Msg::Kill {

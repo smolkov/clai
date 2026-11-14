@@ -222,6 +222,26 @@ pub struct Config {
     pub theme_warnings: Vec<ThemeWarning>,
     /// `[lsp]`: language servers (RFC 0019).
     pub lsp: Lsp,
+    /// `[skills]`: where skills are found (RFC 0023).
+    pub skills: Skills,
+}
+
+/// `[skills]` of the user file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Skills {
+    /// `dirs`: absolute, `~` expanded; searched first, in this order.
+    pub dirs: Vec<PathBuf>,
+    /// `default_dirs`: also search the directories of other agents.
+    pub default_dirs: bool,
+}
+
+impl Default for Skills {
+    fn default() -> Skills {
+        Skills {
+            dirs: Vec::new(),
+            default_dirs: true,
+        }
+    }
 }
 
 /// A theme file left out, and why: `themes/x.toml:3: base: …`.
@@ -577,6 +597,18 @@ fn build(
     );
 
     let mut lsp = lsp::build(user, user_file.lsp, &mut errors);
+    let mut skills = Skills::default();
+    if let Some(file) = user_file.skills {
+        skills.default_dirs = file.default_dirs.unwrap_or(true);
+        for dir in file.dirs.iter().flatten() {
+            match permissions::expand_dir(dir.get_ref(), env.home.as_deref()) {
+                Ok(path) => skills.dirs.push(path),
+                Err(message) => {
+                    errors.push(user.error(Some(dir.span()), Some("skills.dirs".into()), message))
+                }
+            }
+        }
+    }
 
     let mut limits = Limits::default();
     if let Some(file) = &user_file.limits {
@@ -603,6 +635,7 @@ fn build(
             ("providers", &file.providers),
             ("tui", &file.tui),
             ("themes", &file.themes),
+            ("skills", &file.skills),
         ] {
             if let Some(value) = value {
                 errors.push(ctx.error(
@@ -675,6 +708,7 @@ fn build(
             themes,
             theme_warnings,
             lsp,
+            skills,
         }),
         _ => Err(ConfigErrors(errors)),
     }

@@ -7,6 +7,14 @@ notes are taken from that section by `ci/notes.sh`.
 
 ## Unreleased
 
+- Skills (RFC 0023): `SKILL.md` directories of OpenCode, Claude Code and
+  `.agents`, also in subdirectories (`synced/<id>/<skill>/`), and
+  `[skills] dirs`; `clai skills [--json]`; `/skills` box and
+  `/skills NAME` in the TUI, `/skills` in `clai chat`, `--skill` for
+  `clai run` and `clai new`. An active skill's instructions go into the
+  system prompt and its directory is readable. Protocol 9: restart the
+  server after the update (`clai server stop`).
+
 ## 0.2.1 - 2026-11-14
 
 The same code as 0.2.0, whose release did not complete: four tests failed
