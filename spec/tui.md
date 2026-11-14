@@ -1330,10 +1330,16 @@ language:
   themes use the syntax colours of the same scheme: `atom-one-dark`, `nord`
   and `gruvbox-dark` are `clai`'s own, made from each scheme's palette
   (keywords, strings, numbers, functions, types, variables, operators, tags,
-  comments in italic), and `solarized-light` uses `Solarized (light)`. `ansi`
+  comments in italic), and `solarized-light` uses `Solarized (light)`. In
+  them, as in the published schemes, every word the grammar calls storage
+  (`let`, `fn`, `struct`, also `i32`) has the keyword colour, and type
+  names (`P` in `struct P`, `String`) the type colour. `ansi`
   is `clai`'s own too, on the terminal's 16 colours: keywords magenta, strings
   green, numbers and constants yellow, functions blue, types cyan, comments
-  bright black and italic. Other syntax themes are
+  bright black and italic. There the words that start a definition (`fn`,
+  `struct`, `enum`, `impl`, `class`) are keywords; other storage words
+  (`let`, `i32`; the grammars do not tell them apart) are cyan like the type
+  names. Other syntax themes are
   exact with true colour and the nearest of the 256 colours otherwise. Only
   foregrounds, bold and italic are used, never a syntax theme's background.
   `NO_COLOR` turns it off.

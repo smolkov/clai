@@ -7,6 +7,10 @@ notes are taken from that section by `ci/notes.sh`.
 
 ## Unreleased
 
+- Syntax colours: in `atom-one-dark`, `nord` and `gruvbox-dark`, `let`,
+  `struct` and the like have the keyword colour, not the type colour; in
+  `ansi`, `struct`, `enum`, `impl` and `class` do, like `fn`. In all four,
+  type names (`struct P`, `enum E`) have the type colour; they had none.
 - Boxes at the bottom (RFC 0024): the model picker, session list, skills,
   status, language servers, themes and help open in the place of the
   input, at the full width, with the conversation above; the settings

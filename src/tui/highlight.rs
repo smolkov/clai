@@ -87,6 +87,16 @@ const DEFAULT: sh::Color = sh::Color {
     a: 1,
 };
 
+/// Scopes of the words that start a definition: `fn`, `struct`, `class`.
+const DEFINITIONS: &str = "storage.type.function, storage.type.struct, storage.type.enum, \
+     storage.type.union, storage.type.trait, storage.type.impl, storage.type.class, \
+     storage.type.interface, storage.type.module, storage.type.namespace";
+
+/// Scopes of the names of types, where they are defined or used.
+const TYPE_NAMES: &str = "entity.name.type, entity.name.class, entity.name.struct, \
+     entity.name.enum, entity.name.union, entity.name.trait, entity.name.impl, \
+     entity.name.interface, support.type, support.class";
+
 fn ansi_theme() -> Theme {
     let item = |scopes: &str, colour: sh::Color, font: Option<FontStyle>| {
         ScopeSelectors::from_str(scopes)
@@ -116,17 +126,16 @@ fn ansi_theme() -> Theme {
             terminal(3),
             None,
         ),
+        // Words that start a definition have their own scopes; a plain
+        // `storage.type` is both `let` and `i32` in the grammars, and stays a
+        // type here.
         item(
-            "keyword, storage.modifier, storage.type.function, keyword.operator.word",
+            &format!("keyword, storage.modifier, keyword.operator.word, {DEFINITIONS}"),
             terminal(5),
             None,
         ),
         item("keyword.operator, punctuation", DEFAULT, None),
-        item(
-            "storage.type, entity.name.type, support.type, entity.name.class",
-            terminal(6),
-            None,
-        ),
+        item(&format!("storage.type, {TYPE_NAMES}"), terminal(6), None),
         item(
             "entity.name.function, support.function, meta.function-call variable.function",
             terminal(4),
@@ -268,18 +277,16 @@ fn palette_theme(name: &str, p: &Palette) -> Theme {
             p.number,
             None,
         ),
+        // As in the published themes: `storage.type` (`let`, `fn`,
+        // `struct`, also `i32`) is a keyword; type names are types.
         item(
-            "keyword, storage, storage.type.function, keyword.operator.word",
+            &format!("keyword, storage, storage.type, keyword.operator.word, {DEFINITIONS}"),
             p.keyword,
             None,
         ),
         item("keyword.operator", p.operator, None),
         item("punctuation", p.text, None),
-        item(
-            "entity.name.type, entity.name.class, support.type, support.class, storage.type",
-            p.kind,
-            None,
-        ),
+        item(TYPE_NAMES, p.kind, None),
         item(
             "entity.name.function, support.function, meta.function-call variable.function",
             p.function,
@@ -589,6 +596,61 @@ mod tests {
             .find(|(text, _)| text.contains(word))
             .map(|(_, s)| *s)
             .unwrap_or_else(|| panic!("no {word} in {lines:?}"))
+    }
+
+    /// The colour of each of `words` in `code`, highlighted with `theme`.
+    fn colours(theme: CodeTheme, code: &str, words: &[&str]) -> Vec<Option<Color>> {
+        load();
+        let syntax = Syntax {
+            theme,
+            colouring: Colouring::TrueColour,
+        };
+        let lines = highlight(syntax, "rust", by_token("rust"), code, Style::new()).unwrap();
+        words
+            .iter()
+            .map(|word| {
+                lines
+                    .iter()
+                    .flatten()
+                    .find(|(text, _)| text.trim() == *word)
+                    .and_then(|(_, style)| style.fg)
+            })
+            .collect()
+    }
+
+    const DEFINED: &str = "struct P { x: i32 }\nfn main() { let s = 1; }\n";
+
+    #[test]
+    fn own_themes_colour_keywords_alike_and_type_names_as_types() {
+        for name in ["atom-one-dark", "nord", "gruvbox-dark"] {
+            let c = colours(
+                CodeTheme::Named(name),
+                DEFINED,
+                &["struct", "fn", "let", "P", "main"],
+            );
+            assert_eq!(c[0], c[1], "{name}: struct and fn");
+            assert_eq!(c[2], c[1], "{name}: let and fn");
+            let palette = &OWN_PALETTES.iter().find(|(n, _)| *n == name).unwrap().1;
+            let rgb = |hex: u32| {
+                Some(Color::Rgb(
+                    ((hex >> 16) & 0xff) as u8,
+                    ((hex >> 8) & 0xff) as u8,
+                    (hex & 0xff) as u8,
+                ))
+            };
+            assert_eq!(c[1], rgb(palette.keyword), "{name}: keyword");
+            assert_eq!(c[3], rgb(palette.kind), "{name}: the type name P");
+            assert_eq!(c[4], rgb(palette.function), "{name}: the function name");
+        }
+    }
+
+    #[test]
+    fn ansi_colours_definitions_as_keywords_and_type_names_as_types() {
+        let c = colours(CodeTheme::Ansi, DEFINED, &["struct", "fn", "P", "i32"]);
+        assert_eq!(c[0], Some(Color::Magenta), "struct");
+        assert_eq!(c[1], Some(Color::Magenta), "fn");
+        assert_eq!(c[2], Some(Color::Cyan), "P");
+        assert_eq!(c[3], Some(Color::Cyan), "i32");
     }
 
     #[test]
