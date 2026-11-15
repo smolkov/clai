@@ -128,7 +128,7 @@ A request is built from:
 | `model` | The session's model `id`. A model change during a turn applies from the next request. **(assumption)** |
 | `system` | The [system prompt](#system-prompt). |
 | `messages` | The whole session history, oldest first, including this turn so far. |
-| `tools` | The specs of all six tools (`tools::specs()`), also for tools whose default is `deny`, so the model gets a clear denial instead of not knowing the tool. **(assumption)** |
+| `tools` | The specs of all six tools (`tools::specs()`), also for tools whose default is `deny`, so the model gets a clear denial instead of not knowing the tool. **(assumption)** Then the tools offered only sometimes: `lsp` when a language server is configured or found, `ask_user` when someone can answer, `report` in `clai run --report`. |
 | `max_output_tokens`, `temperature` | From the model's configuration. |
 
 The history is sent in full. If it no longer fits, the provider returns

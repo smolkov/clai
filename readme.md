@@ -208,6 +208,16 @@ denied unless `--yes` is given. `deny` rules always apply. Exit codes: `0`
 done, `1` failed or stopped, `2` usage or configuration error, `130`
 `Ctrl-C`.
 
+`--report` prints a report instead of the answer: the status, findings
+with a severity and a place, the changed files, the commands and every
+tool call. `--report=json` prints it as JSON for scripts. Without words
+the task comes from a pipe:
+
+```sh
+clai run --report "analyse this repository for security problems"
+cat issue.md | clai run --report=json > report.json
+```
+
 ## Sessions in the background
 
 Sessions run in a background server, one per user, which the first session

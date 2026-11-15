@@ -165,10 +165,15 @@ clai/
 │   │   ├── read_file.rs, list_files.rs, search_files.rs,
 │   │   │   edit_file.rs, write_file.rs, run_command.rs
 │   │   ├── lsp.rs              the `lsp` tool, the start question, errors after edits
+│   │   ├── report.rs           the `report` tool of `clai run --report`: spec, check
 │   │   ├── question.rs         details of permission questions
 │   │   ├── walk.rs             directory walking for list and search
 │   │   ├── text.rs             binary files, safe writing, similar names
 │   │   └── output.rs           results and their size limits
+│   ├── report/                 reports of `clai run --report` (command.md, "Reports")
+│   │   ├── mod.rs              facts from events, the report, Markdown and JSON
+│   │   ├── work.md             the frame of the task
+│   │   └── tests.rs
 │   ├── context/                system prompt, history, truncation        planned
 │   ├── agent/                  Agent loop (agent-loop.md)
 │   │   ├── mod.rs              `Agent::run_turn`: requests, tool calls, limits

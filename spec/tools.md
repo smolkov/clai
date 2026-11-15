@@ -15,6 +15,7 @@ JSON arguments; `clai` checks the permission (see [`config.md`](config.md),
 | [`run_command`](#run_command) | Run a shell command in the workspace. | `ask` |
 | [`lsp`](#lsp) | Ask a language server: definitions, references, types, callers, symbols, errors. | `allow`; starting a server asks; only offered when a server is configured or found |
 | [`ask_user`](#ask_user) | Ask the user questions with options. | `allow`; only offered when someone can answer |
+| [`report`](#report) | Hand in the result of `clai run --report`. | not checked; only offered in `clai run --report` |
 
 Statements marked **(assumption)** need a decision from the user.
 
@@ -726,6 +727,55 @@ questions.
 
 Shown: `ask_user` with the headers; when done, the answers
 (`SQLite; Search, Export`).
+
+## report
+
+Hands in the result of a run with `clai run --report` (RFC 0027; see
+[`command.md`](command.md), "Reports"). It is not permission-checked and
+changes nothing: the agent keeps the report, and the command prints it.
+
+```json
+{
+  "status": "partly_solved",
+  "summary": "Found two problems; fixed the path check, the other needs a decision.",
+  "findings": [
+    {"severity": "high", "title": "Path check follows links",
+     "file": "src/tools/paths.rs", "line": 41,
+     "detail": "A link inside the workspace can point outside it; resolve it first."}
+  ],
+  "follow_ups": ["Decide whether extra_dirs may hold links."]
+}
+```
+
+| Argument | Required | Meaning |
+|----------|----------|---------|
+| `status` | yes | `solved`, `partly_solved` or `not_solved`. |
+| `summary` | yes | What was done and the outcome, at most 4 000 characters. |
+| `findings` | no | Problems or facts the task asked for, at most 200. |
+| `severity` | yes | `critical`, `high`, `medium`, `low` or `info`. |
+| `title` | yes | One line, at most 200 characters. |
+| `file` | no | Path relative to the workspace, at most 1 000 characters. |
+| `line` | no | Line number, from 1. |
+| `detail` | no | What it is, why it matters, how to fix it; at most 4 000 characters. |
+| `follow_ups` | no | What is left to do, at most 50 items of at most 1 000 characters. |
+
+Texts are trimmed; an empty `file`, `detail` or follow-up counts as
+missing, an empty `summary` or `title` is an error. Unknown fields are
+ignored.
+
+- A valid call keeps the report and gives the result `saved: 1 finding`
+  and a line telling the model to end with a short answer. A later valid
+  call replaces the report.
+- A wrong call (a missing `status`, an unknown status or severity, a text
+  too long, line `0`) is an error result naming the problem
+  (`finding 1: severity `urgent` is not one of critical, high, medium,
+  low, info`), and nothing is kept.
+- Where it is not offered, a call is the error `report is not available
+  here; answer in text`.
+
+It counts as a tool call against the turn's limits. Shown: `report` with
+the status; when done, the number of findings (`✓ report partly solved —
+1 finding`). The report leaves its own calls out of its `tool_calls`.
 
 ## Open questions
 

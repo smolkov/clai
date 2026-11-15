@@ -205,6 +205,11 @@ pub(crate) fn short_result(tool: &str, state: CallState, text: &str) -> String {
             }
         }
         ("lsp", CallState::Done) => lsp_result(&lines),
+        // `saved: 1 finding` gives `1 finding`.
+        ("report", CallState::Done) => {
+            let first = lines.first().copied().unwrap_or_default();
+            first.strip_prefix("saved: ").unwrap_or(first).to_owned()
+        }
         // The answers, without the questions: `SQLite; Search, Export`.
         ("ask_user", CallState::Done) if lines.len() > 1 => lines
             .iter()

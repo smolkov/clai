@@ -148,3 +148,4 @@ Sections that do not apply may be left out.
 | [0024](0024-boxes-at-the-bottom.md) | Boxes at the bottom, settings on the whole screen | done |
 | [0025](0025-continue-the-last-session.md) | Continue the last session of the workspace | done |
 | [0026](0026-startup.md) | Startup: one place for the environment, paths and the command context | done |
+| [0027](0027-run-report.md) | Reports from `clai run` | done |

@@ -11,7 +11,7 @@ Statements marked **(assumption)** need a decision from the user.
 | Command | Purpose | Details |
 |---------|---------|---------|
 | [`clai`](#clai) | New session in the current directory, attach the TUI. | [`sessions.md`](sessions.md), [`tui.md`](tui.md) |
-| [`clai run`](#clai-run) | One-shot: run one task, print the result, exit. | this file |
+| [`clai run`](#clai-run) | One-shot: run one task, print the result or a report, exit. | this file |
 | [`clai new`](#clai-new) | New session, attach or leave it running. | [`sessions.md`](sessions.md) |
 | [`clai attach`](#clai-attach) | Attach the TUI to a running session. | [`sessions.md`](sessions.md) |
 | [`clai ls`](#clai-ls) | List sessions. | [`sessions.md`](sessions.md) |
@@ -140,7 +140,8 @@ keeps running on the server.
 ## clai run
 
 ```sh
-clai run [--model PROVIDER/MODEL] [--yes] [-C DIR] [--skill NAME]... TASK...
+clai run [--model PROVIDER/MODEL] [--yes | --no-ask] [-C DIR] [--skill NAME]...
+         [--report[=text|json]] [TASK...]
 clai TASK...
 ```
 
@@ -150,7 +151,12 @@ Runs one task without the TUI and exits when it is done.
   first argument is not a command name; `clai run` is needed for a task that
   starts with a command name (e.g. `clai run "commit the docs"`).
 - `TASK...` words are joined with spaces. `-` reads the task from standard
-  input.
+  input, and so does no task when standard input is not a terminal (`echo
+  "fix the build" | clai run`). No task on a terminal is a usage error:
+  `clai: no task: give it as words or on standard input`. With words,
+  standard input is not read. A task on standard input may have at most
+  1 MiB (`the task is longer than 1 MiB`) and must be UTF-8; both are
+  usage errors (RFC 0027).
 - Runs in a temporary session that is not listed and ends with the task.
 - Standard output: the model's final answer as plain text (Markdown
   source): the text of the last answer of the turn, written when the turn
@@ -207,6 +213,7 @@ Runs one task without the TUI and exits when it is done.
 | `--no-ask` | Do not ask on the terminal; deny tool calls that would ask. |
 | `-C DIR` | Workspace. Default: the current directory. |
 | `--skill NAME` | Turn on skill `NAME` for the task; repeatable, in the order given (see [`skills.md`](skills.md)). Not in the short form `clai TASK...`. |
+| `--report` | Print a report instead of the last answer, as Markdown; `--report=json` prints it as one JSON object, `--report=text` is the same as `--report`. The value needs the `=`: in `clai run --report json`, `json` is a word of the task. Not in the short form. See [Reports](#reports). |
 
 `--yes` and `--no-ask` cannot be combined (exit `2`).
 
@@ -214,13 +221,109 @@ Runs one task without the TUI and exits when it is done.
 |------|------|
 | `0` | The turn ended with `done`. |
 | `1` | The turn failed (provider error), stopped at its limit, or was cancelled with the `c` answer; or `SIGTERM` / `SIGHUP`. |
-| `2` | Invalid options or configuration, an unknown `--model` or `--skill` (the message lists the found skills), a `-C` that is not a directory, an empty task. |
+| `2` | Invalid options or configuration, an unknown `--model` or `--skill` (the message lists the found skills), a `-C` that is not a directory, an empty task, no task on a terminal, a task on standard input longer than 1 MiB or not UTF-8, a `--report` value other than `text` or `json`. |
 | `130` | `Ctrl-C`. |
 
 `Ctrl-C`, `SIGTERM` and `SIGHUP` cancel the turn as in the TUI (see
 [`agent-loop.md`](agent-loop.md), "Cancellation"): a running command is
 stopped, then `clai run` exits. Further signals while it stops are
 ignored, so no command is left running. **(assumption)**
+
+### Reports
+
+`clai run --report` (RFC 0027) works on the task as an issue and prints a
+report: what the model handed in with the [`report`](tools.md#report)
+tool, and what `clai` saw itself in the events of the run.
+
+```sh
+clai run --report "analyse this repository for security problems"
+cat issue.md | clai run --report
+clai run --report=json -C ~/ws/api < issue.md > report.json
+```
+
+- The task goes to the model inside a short fixed frame
+  (`src/report/work.md`): look at the code with the tools, make and check
+  changes when the task asks for them, decide yourself when a question is
+  not answered, call `report` once at the end, then end with a short
+  answer. The task is between `<task>` and `</task>`.
+- The model gets the `report` tool; without `--report` it does not.
+- When the turn ends with `done` and the model gave no report, `clai run`
+  sends one more message: `Call the report tool now with the result of
+  your work on the task; use no other tools.` Without a report after that,
+  the report has the status `unknown` and the last answer of the work turn
+  as its summary, and `clai: the model gave no report; its status is
+  unknown` goes to standard error.
+- Questions are answered as without `--report`. With the default
+  permissions, a run without a terminal and without `--yes` reads, lists
+  and searches, but edits nothing and runs no command: the safe way for an
+  audit.
+- Standard error gets what it gets without `--report`. Standard output
+  gets only the report.
+
+What the report holds:
+
+| Field | From | Meaning |
+|-------|------|---------|
+| `version` | `clai` | `1`. Fields may be added within a version; renaming or removing one needs a new version. |
+| `workspace`, `model` | `clai` | Absolute workspace; `provider/model`. |
+| `outcome` | `clai` | How the work turn ended: `done`, `limit` or `failed`. |
+| `status` | model | `solved`, `partly_solved`, `not_solved`, or `unknown` without a report. |
+| `summary` | model | What was done and the outcome. Without a report: the last answer, or the error of a failed run. |
+| `findings` | model | `severity` (`critical`, `high`, `medium`, `low`, `info`), `title`, `file`, `line`, `detail`. |
+| `follow_ups` | model | What is left to do. |
+| `changes` | `clai` | `edit_file` and `write_file` calls that were done: `path` and `kind` (`edited`, `written`), each path once, in order. |
+| `commands` | `clai` | `run_command` calls that ran: `command` and `exit_code` (`null` after a timeout or a signal). |
+| `files_read` | `clai` | Paths of `read_file` calls that were done, each once, in order. |
+| `tool_calls` | `clai` | Every tool call but `report`, in order: `tool`, `summary`, `state` (`done`, `error`, `denied`, `cancelled`) and `result`, as on the tool line. |
+| `counts` | `clai` | The calls by state: `done`, `error`, `denied`, `cancelled`. |
+| `usage` | `clai` | `input_tokens`, `output_tokens` and `requests` of all turns of the run. |
+| `duration` | `clai` | Seconds. |
+
+Paths are relative to the workspace when inside it.
+
+**JSON** (`--report=json`): one object with these fields, indented, then
+a newline.
+
+**Text** (`--report`): Markdown, without colour. Empty sections are left
+out:
+
+```markdown
+# Partly solved
+
+~/ws/rust/clai · anthropic/sonnet · 3 min · 45.1k in, 3.2k out
+
+Found two problems; fixed the path check, the other needs a decision.
+
+## Findings
+
+- **high** Path check follows links — `src/tools/paths.rs:41`
+  A link inside the workspace can point outside it; resolve it first.
+
+## Changes
+
+- edited `src/tools/paths.rs`
+
+## Follow-ups
+
+- Decide whether extra_dirs may hold links.
+
+## Tool calls
+
+- ✓ read_file src/tools/paths.rs (lines 1–120) — 120 lines
+- ✓ edit_file src/tools/paths.rs (line 41) — 1 change
+```
+
+After a limit the line `The run stopped at its limit.` follows the
+second line, after a failed run `The run failed.`. With `tui.symbols =
+"ascii"`, or `auto` and a locale that is not UTF-8, the marks are those of
+the tool lines and `·` and `—` are `-`.
+
+| The work turn | Standard output | Exit |
+|---------------|-----------------|------|
+| `done` | the report | `0`, whatever the `status` |
+| `limit` | the report, `outcome` `limit` | `1` |
+| `failed` | the report, `outcome` `failed`, status `unknown` | `1` |
+| cancelled (`c`, `Ctrl-C`, a signal) | nothing | `1`, `130` after `Ctrl-C` |
 
 ## clai new
 

@@ -259,6 +259,16 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [x] System prompt: tool output is data; denied files are not reached
       another way.
 
+## Reports from clai run (RFC 0027)
+
+- [x] `report` tool, offered only with `--report`; checked arguments.
+- [x] `clai run --report[=text|json]`: facts and tool calls from the
+      events, a second request when no report came, exit codes.
+- [x] `clai run` reads the task from a pipe without `-`.
+- [ ] Try `--report` with real models (Anthropic, OpenAI, a local one):
+      do they call `report` without the second request?
+- [ ] `--save` to keep the run as a saved session (RFC 0027, open question).
+
 ## Startup (RFC 0026)
 
 - [x] `Startup` and `Paths` read once in `main`; every command through its

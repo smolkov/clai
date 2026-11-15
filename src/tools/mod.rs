@@ -12,6 +12,7 @@ pub mod lsp;
 mod output;
 mod question;
 mod read_file;
+pub mod report;
 mod run_command;
 mod search_files;
 mod text;

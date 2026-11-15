@@ -16,6 +16,7 @@ pub mod paths;
 pub mod permissions;
 pub mod protocol;
 pub mod provider;
+pub mod report;
 pub mod runtime;
 pub mod server;
 pub mod session;

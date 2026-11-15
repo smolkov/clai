@@ -22,6 +22,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::config::{Action, Limits, Model, Rule};
 use crate::provider::{Block, ErrorKind, Provider, ProviderError, Request, Role, StopReason};
+use crate::tools::report::{self, Reported};
 use crate::tools::{self, Env, Prepared, PreparedCall, ToolOutput, ask_user};
 
 pub use events::{
@@ -167,6 +168,10 @@ pub struct Agent {
     /// The last question number; shared by all sessions of a server.
     questions: Arc<AtomicU64>,
     journal: Option<Journal>,
+    /// The model gets the `report` tool (`clai run --report`).
+    offers_report: bool,
+    /// The last valid `report` call.
+    report: Option<Reported>,
 }
 
 /// Requests and tool calls: in the current budget, and in the whole turn.
@@ -242,6 +247,8 @@ impl Agent {
             turns: 0,
             questions: Arc::new(AtomicU64::new(0)),
             journal: None,
+            offers_report: false,
+            report: None,
         }
     }
 
@@ -356,6 +363,16 @@ impl Agent {
         };
         self.system = with_skills(&self.base_system, &workspace, &skills);
         self.env.workspace = workspace;
+    }
+
+    /// Offers the `report` tool from the next request on (RFC 0027).
+    pub fn offer_report(&mut self) {
+        self.offers_report = true;
+    }
+
+    /// What the last valid `report` call handed in.
+    pub fn report(&self) -> Option<&Reported> {
+        self.report.as_ref()
     }
 
     pub fn history(&self) -> &History {
@@ -572,6 +589,9 @@ impl Agent {
         if self.offers_ask_user() {
             specs.push(ask_user::spec());
         }
+        if self.offers_report {
+            specs.push(report::spec());
+        }
         specs
     }
 
@@ -650,6 +670,31 @@ impl Agent {
         }
     }
 
+    /// Keeps the report of a `report` call; not permission-checked.
+    fn report_call(
+        &mut self,
+        call: &CallIn,
+        events: &EventSink,
+    ) -> (ToolOutput, CallState, Option<Stop>) {
+        if !self.offers_report {
+            return (
+                ToolOutput::error(report::NOT_AVAILABLE),
+                CallState::Error,
+                None,
+            );
+        }
+        match report::check(&call.arguments) {
+            Ok(reported) => {
+                let summary = Some(reported.status.text().to_owned());
+                self.emit_call(events, call, CallState::Running, summary, None, None);
+                let text = report::result_text(&reported);
+                self.report = Some(reported);
+                (ToolOutput::ok(text), CallState::Done, None)
+            }
+            Err(e) => (ToolOutput::error(e), CallState::Error, None),
+        }
+    }
+
     /// Prepares, asks about and runs one call.
     async fn one_call(
         &mut self,
@@ -661,6 +706,9 @@ impl Agent {
     ) -> (ToolOutput, CallState, Option<Stop>) {
         if call.name == ask_user::NAME {
             return self.ask_user(call, budget, events, asker, cancel).await;
+        }
+        if call.name == report::NAME {
+            return self.report_call(call, events);
         }
         let prepared = match tools::prepare(&self.env, &call.name, &call.arguments) {
             Prepared::Failed(output) => return (output, CallState::Error, None),

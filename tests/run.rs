@@ -272,3 +272,265 @@ fn interrupt_exits_130() {
     assert_eq!(out.status.code(), Some(130), "{}", stderr(&out));
     assert_eq!(stderr(&out), "clai: turn cancelled\n");
 }
+
+// Reports (RFC 0027).
+
+fn report_call(id: &str) -> Reply {
+    call(
+        id,
+        "report",
+        json!({
+            "status": "partly_solved",
+            "summary": "Found one problem.",
+            "findings": [{"severity": "high", "title": "Secret in code",
+                          "file": "a.txt", "line": 1, "detail": "Move it out."}],
+            "follow_ups": ["rotate the key"]
+        }),
+    )
+}
+
+fn json_of(out: &std::process::Output) -> serde_json::Value {
+    serde_json::from_str(&stdout(out)).unwrap_or_else(|e| panic!("{e}: {}", stdout(out)))
+}
+
+fn tool_names(request: &serde_json::Value) -> Vec<String> {
+    request["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["function"]["name"].as_str().unwrap().to_owned())
+        .collect()
+}
+
+#[test]
+fn report_as_json() {
+    let server = Server::start(vec![
+        call("c1", "search_files", json!({"pattern": "key"})),
+        call("c2", "read_file", json!({"path": "a.txt"})),
+        report_call("c3"),
+        say("Done: one problem."),
+    ]);
+    let env = Env::new("report-json", &server, "");
+    fs::write(env.work().join("a.txt"), "key=1\n").unwrap();
+    let out = env.run(&["run", "--report=json", "find", "secrets"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let r = json_of(&out);
+    assert_eq!(r["version"], 1);
+    assert_eq!(r["outcome"], "done");
+    assert_eq!(r["status"], "partly_solved");
+    assert_eq!(r["summary"], "Found one problem.");
+    assert_eq!(r["findings"][0]["severity"], "high");
+    assert_eq!(r["findings"][0]["file"], "a.txt");
+    assert_eq!(r["follow_ups"][0], "rotate the key");
+    assert_eq!(r["model"], "test/m");
+    assert_eq!(r["files_read"], json!(["a.txt"]));
+    let calls = r["tool_calls"].as_array().unwrap();
+    assert_eq!(calls.len(), 2, "report itself is left out: {calls:?}");
+    assert_eq!(calls[0]["tool"], "search_files");
+    assert_eq!(calls[1]["summary"], "a.txt (lines 1–1)");
+    assert_eq!(calls[1]["result"], "1 line");
+    assert_eq!(r["counts"]["done"], 2);
+    assert_eq!(r["usage"]["requests"], 4);
+    assert!(
+        stderr(&out).contains("✓ report partly solved — 1 finding\n"),
+        "{}",
+        stderr(&out)
+    );
+    // The task in its frame, and the tool in every request.
+    let requests = server.requests();
+    let first = requests[0]["messages"][1]["content"].as_str().unwrap();
+    assert!(first.contains("<task>\nfind secrets\n</task>"), "{first}");
+    assert!(tool_names(&requests[0]).contains(&"report".to_owned()));
+    assert!(requests[3]["messages"].as_array().unwrap().iter().any(|m| {
+        m["role"] == "tool"
+            && m["content"]
+                .as_str()
+                .unwrap()
+                .starts_with("saved: 1 finding")
+    }));
+}
+
+#[test]
+fn report_as_text_from_a_pipe() {
+    let server = Server::start(vec![report_call("c1"), say("Done.")]);
+    let env = Env::new("report-text", &server, "");
+    let out = env.run_with_input(&["run", "--report"], "find secrets\n");
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let text = stdout(&out);
+    assert!(text.starts_with("# Partly solved\n\n"), "{text}");
+    assert!(text.contains("\nFound one problem.\n"), "{text}");
+    assert!(
+        text.contains("- **high** Secret in code — `a.txt:1`\n  Move it out.\n"),
+        "{text}"
+    );
+    assert!(
+        text.contains("## Follow-ups\n\n- rotate the key\n"),
+        "{text}"
+    );
+    let first = server.requests()[0]["messages"][1]["content"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(first.contains("<task>\nfind secrets\n</task>"), "{first}");
+}
+
+#[test]
+fn report_lists_denied_and_allowed_changes() {
+    let script = || {
+        vec![
+            write_call(),
+            call("c2", "run_command", json!({"command": "true"})),
+            report_call("c3"),
+            say("Done."),
+        ]
+    };
+    // Without a terminal and without --yes: denied, no changes.
+    let server = Server::start(script());
+    let env = Env::new("report-denied", &server, "");
+    let out = env.run(&["run", "--report=json", "fix", "it"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let r = json_of(&out);
+    assert_eq!(r["tool_calls"][0]["state"], "denied");
+    assert_eq!(r["changes"], json!([]));
+    assert_eq!(r["commands"], json!([]));
+    assert_eq!(r["counts"]["denied"], 2);
+    assert!(!env.work().join("new.txt").exists());
+
+    // With --yes: done.
+    let server = Server::start(script());
+    let env = Env::new("report-yes", &server, "");
+    let out = env.run(&["run", "--yes", "--report=json", "fix", "it"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let r = json_of(&out);
+    assert_eq!(
+        r["changes"],
+        json!([{"path": "new.txt", "kind": "written"}])
+    );
+    assert_eq!(r["commands"], json!([{"command": "true", "exit_code": 0}]));
+}
+
+#[test]
+fn report_is_asked_for_once_more() {
+    // No report in the work turn; one in the next.
+    let server = Server::start(vec![say("All fine."), report_call("c1"), say("Done.")]);
+    let env = Env::new("report-again", &server, "");
+    let out = env.run(&["run", "--report=json", "check"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert_eq!(json_of(&out)["status"], "partly_solved");
+    let requests = server.requests();
+    assert_eq!(requests.len(), 3);
+    let messages = requests[1]["messages"].as_array().unwrap();
+    assert!(
+        messages.last().unwrap()["content"]
+            .as_str()
+            .unwrap()
+            .starts_with("Call the report tool now")
+    );
+
+    // No report at all: status unknown, the answer as summary, a note.
+    let server = Server::start(vec![say("All fine."), say("Still fine.")]);
+    let env = Env::new("report-none", &server, "");
+    let out = env.run(&["run", "--report=json", "check"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let r = json_of(&out);
+    assert_eq!(r["status"], "unknown");
+    assert_eq!(r["summary"], "All fine.");
+    assert!(
+        stderr(&out).contains("clai: the model gave no report; its status is unknown\n"),
+        "{}",
+        stderr(&out)
+    );
+}
+
+#[test]
+fn a_wrong_report_call_is_answered_with_the_problem() {
+    let server = Server::start(vec![
+        call("c1", "report", json!({"status": "great", "summary": "x"})),
+        report_call("c2"),
+        say("Done."),
+    ]);
+    let env = Env::new("report-wrong", &server, "");
+    let out = env.run(&["run", "--report=json", "check"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert_eq!(json_of(&out)["status"], "partly_solved");
+    let tool = server.requests()[1]["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["role"] == "tool")
+        .unwrap()
+        .clone();
+    assert!(
+        tool["content"]
+            .as_str()
+            .unwrap()
+            .contains("status `great` is not one of"),
+        "{tool}"
+    );
+}
+
+#[test]
+fn report_after_a_limit_or_an_error_exits_1() {
+    let server = Server::start(vec![call("c1", "list_files", json!({})), say("never")]);
+    let env = Env::new("report-limit", &server, "[limits]\nmax_requests = 1\n");
+    let out = env.run(&["run", "--report=json", "list"]);
+    assert_eq!(out.status.code(), Some(1));
+    let r = json_of(&out);
+    assert_eq!(r["outcome"], "limit");
+    assert_eq!(r["status"], "unknown");
+    assert_eq!(r["tool_calls"][0]["tool"], "list_files");
+
+    let server = Server::start(vec![Reply::Status(
+        401,
+        r#"{"error": {"message": "invalid key", "code": "invalid_api_key"}}"#.into(),
+    )]);
+    let env = Env::new("report-failed", &server, "");
+    let out = env.run(&["run", "--report=json", "hi"]);
+    assert_eq!(out.status.code(), Some(1));
+    let r = json_of(&out);
+    assert_eq!(r["outcome"], "failed");
+    assert_eq!(r["status"], "unknown");
+    assert!(
+        r["summary"].as_str().unwrap().contains("invalid key"),
+        "{r}"
+    );
+}
+
+#[test]
+fn without_report_nothing_changes() {
+    let server = Server::start(vec![say("Hi.")]);
+    let env = Env::new("report-off", &server, "");
+    // `json` after `--report` without `=` is a word of the task.
+    let out = env.run(&["run", "--report", "json"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert!(stdout(&out).starts_with("# Unknown"), "{}", stdout(&out));
+    let first = server.requests()[0]["messages"][1]["content"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(first.contains("<task>\njson\n</task>"), "{first}");
+
+    let server = Server::start(vec![say("Hi.")]);
+    let env = Env::new("report-plain", &server, "");
+    let out = env.run(&["run", "hi"]);
+    assert_eq!(stdout(&out), "Hi.\n");
+    assert!(!tool_names(&server.requests()[0]).contains(&"report".to_owned()));
+}
+
+#[test]
+fn task_from_a_pipe_without_a_dash() {
+    let server = Server::start(vec![say("ok")]);
+    let env = Env::new("pipe", &server, "");
+    let out = env.run_with_input(&["run"], "fix the build\n");
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert_eq!(
+        server.requests()[0]["messages"][1]["content"],
+        "fix the build"
+    );
+    // Standard input closed and empty: an empty task.
+    let out = env.run(&["run"]);
+    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(stderr(&out), "clai: the task is empty\n");
+    let out = env.run(&["run", "--report=xml", "x"]);
+    assert_eq!(out.status.code(), Some(2));
+}

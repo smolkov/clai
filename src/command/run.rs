@@ -1,17 +1,17 @@
 //! `clai run` and its short form `clai TASK...` (see `spec/command.md`).
 
-use std::io::{self, IsTerminal, Write};
+use std::io::{self, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use clap::{Args, ValueHint};
+use clap::{Args, ValueEnum, ValueHint};
 use clap_complete::ArgValueCompleter;
 use tokio::signal::unix::{SignalKind, signal};
 use tokio_util::sync::CancellationToken;
 
-use super::common::input_text;
+use super::common::{Input, task_text};
 use super::{Context, Execute};
 use crate::agent::{Agent, Asker, EndReason, EventSink, PolicyAsker, Setup, system_prompt, today};
 use crate::complete;
@@ -21,6 +21,7 @@ use crate::lsp::pool::Pool;
 use crate::output::write_stdout;
 use crate::permissions::{SessionRules, Workspace};
 use crate::provider;
+use crate::report::{self, Collector, Outcome};
 use crate::sync::lock;
 use crate::text::{LineAsker, Renderer, unicode};
 use crate::tools::Env;
@@ -44,10 +45,32 @@ pub struct Run {
     /// them.
     #[arg(long = "skill", value_name = "NAME")]
     pub skills: Vec<String>,
-    /// Task; `-` reads it from standard input.
-    #[arg(value_name = "TASK", required = true)]
+    /// Print a report instead of the last answer: Markdown, or with
+    /// `--report=json` one JSON object.
+    #[arg(
+        long,
+        value_name = "FORMAT",
+        num_args = 0..=1,
+        require_equals = true,
+        default_missing_value = "text"
+    )]
+    pub report: Option<ReportFormat>,
+    /// Task; `-` reads it from standard input, as does no task when
+    /// standard input is not a terminal.
+    #[arg(value_name = "TASK")]
     pub task: Vec<String>,
 }
+
+/// The format of `--report`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum ReportFormat {
+    /// Markdown.
+    Text,
+    Json,
+}
+
+/// The longest task from standard input.
+const MAX_TASK: usize = 1024 * 1024;
 
 /// Exit code after `Ctrl-C`.
 pub(super) const INTERRUPTED: u8 = 130;
@@ -74,25 +97,62 @@ impl Execute for Run {
     }
 
     fn run(&self, ctx: &Context) -> Result<()> {
-        let task = input_text(&self.task, "task")?;
+        let task = self.task(ctx)?;
         let answering = answering(
             self.yes,
             self.no_ask,
-            !task.from_stdin && io::stdin().is_terminal(),
+            !task.from_stdin && ctx.startup.stdin_terminal,
         );
         let prepared = self.setup(ctx, answering)?;
+        let report = self.report.map(|format| Reporting {
+            format,
+            workspace: prepared.root.clone(),
+            place: prepared.place.clone(),
+            model: prepared.setup.model_name.clone(),
+        });
         let asker = asker(answering, prepared.place, prepared.unicode);
         let agent = Agent::new(prepared.setup);
         if !prepared.skills.is_empty() {
             agent.skills().set(prepared.skills);
         }
-        one_shot(agent, task.text, asker, prepared.unicode)
+        one_shot(agent, task.text, asker, prepared.unicode, report)
     }
+}
+
+impl Run {
+    /// The task: the words, or standard input for `-` or for no words when
+    /// it is not a terminal.
+    fn task(&self, ctx: &Context) -> Result<Input> {
+        if self.task.is_empty() && ctx.startup.stdin_terminal {
+            return Err(Error::Usage(
+                "no task: give it as words or on standard input".to_owned(),
+            ));
+        }
+        let dash = ["-".to_owned()];
+        let words = if self.task.is_empty() {
+            &dash[..]
+        } else {
+            &self.task[..]
+        };
+        task_text(words, "task", MAX_TASK)
+    }
+}
+
+/// What `--report` needs besides the events.
+struct Reporting {
+    format: ReportFormat,
+    /// Absolute, links resolved.
+    workspace: PathBuf,
+    /// As shown: `~/ws/clai`.
+    place: String,
+    model: String,
 }
 
 /// What the agent of a run is made from, with what the terminal output needs.
 struct Prepared {
     setup: Setup,
+    /// The workspace, absolute.
+    root: PathBuf,
     /// The skills of `--skill`, in the order given.
     skills: Vec<crate::skills::Active>,
     /// The workspace as shown: `~/ws/clai`.
@@ -136,6 +196,7 @@ impl Run {
             Workspace::new(&workspace, &config.permissions.extra_dirs, options.env.home)
                 .map_err(Error::io(workspace.display().to_string()))?;
         let place = workspace.tilde(workspace.root());
+        let root = workspace.root().to_path_buf();
         let unicode = unicode(config.tui.symbols, ctx.startup.getenv());
         tracing::info!(model = %model_ref, "run");
         Ok(Prepared {
@@ -160,6 +221,7 @@ impl Run {
                     ))),
                 },
             },
+            root,
             place,
             unicode,
             skills,
@@ -182,9 +244,15 @@ fn asker(answering: Answering, place: String, unicode: bool) -> Box<dyn Asker> {
 }
 
 /// Runs the one turn here, not in a server, on a runtime of its own.
-fn one_shot(agent: Agent, task: String, asker: Box<dyn Asker>, unicode: bool) -> Result<()> {
+fn one_shot(
+    agent: Agent,
+    task: String,
+    asker: Box<dyn Asker>,
+    unicode: bool,
+    report: Option<Reporting>,
+) -> Result<()> {
     let runtime = crate::runtime::multi_thread()?;
-    let result = runtime.block_on(turn(agent, task, asker, unicode));
+    let result = runtime.block_on(turn(agent, task, asker, unicode, report));
     // A question may still wait for a line on standard input.
     runtime.shutdown_timeout(Duration::from_millis(100));
     result
@@ -201,16 +269,26 @@ pub fn answering(yes: bool, no_ask: bool, terminal: bool) -> Answering {
     }
 }
 
-/// Runs the turn: events to standard error, the answer to standard output.
-async fn turn(mut agent: Agent, task: String, asker: Box<dyn Asker>, unicode: bool) -> Result<()> {
+/// Runs the turn: events to standard error, the answer or the report to
+/// standard output.
+async fn turn(
+    mut agent: Agent,
+    task: String,
+    asker: Box<dyn Asker>,
+    unicode: bool,
+    report: Option<Reporting>,
+) -> Result<()> {
     let cancel = CancellationToken::new();
     let stopped = Arc::new(AtomicU8::new(NO_SIGNAL));
     watch_signals(cancel.clone(), stopped.clone())?;
 
     let renderer = Arc::new(Mutex::new(Renderer::new(unicode)));
+    let collector = Arc::new(Mutex::new(Collector::default()));
     let sink = {
         let renderer = renderer.clone();
+        let collector = collector.clone();
         EventSink::call(move |event| {
+            lock(&collector).event(&event);
             let text = lock(&renderer).event(&event);
             if !text.is_empty() {
                 let mut stderr = io::stderr().lock();
@@ -219,7 +297,32 @@ async fn turn(mut agent: Agent, task: String, asker: Box<dyn Asker>, unicode: bo
             }
         })
     };
-    let end = agent.run_turn(task, &sink, asker.as_ref(), cancel).await;
+    let started = Instant::now();
+    let message = match &report {
+        Some(_) => {
+            agent.offer_report();
+            report::work_message(&task)
+        }
+        None => task,
+    };
+    let end = agent
+        .run_turn(message, &sink, asker.as_ref(), cancel.clone())
+        .await;
+    let answer = lock(&renderer).answer().unwrap_or_default().to_owned();
+    if report.is_some()
+        && end.reason == EndReason::Done
+        && agent.report().is_none()
+        && !cancel.is_cancelled()
+    {
+        agent
+            .run_turn(
+                report::ASK_AGAIN.to_owned(),
+                &sink,
+                asker.as_ref(),
+                cancel.clone(),
+            )
+            .await;
+    }
     // The language servers of the run end with it.
     if let Some(lsp) = &agent.env().lsp {
         lsp.pool.stop_all().await;
@@ -229,6 +332,37 @@ async fn turn(mut agent: Agent, task: String, asker: Box<dyn Asker>, unicode: bo
         SIGINT => return Err(Error::Exit(INTERRUPTED)),
         OTHER_SIGNAL => return Err(Error::Exit(1)),
         _ => {}
+    }
+    if let Some(reporting) = report {
+        let Some(outcome) = Outcome::of(end.reason) else {
+            return Err(Error::Exit(1));
+        };
+        let collector = lock(&collector);
+        let reported = agent.report();
+        let fallback = match outcome {
+            Outcome::Done => answer,
+            Outcome::Limit => String::new(),
+            Outcome::Failed => collector.error().unwrap_or("the run failed").to_owned(),
+        };
+        if reported.is_none() && outcome != Outcome::Failed {
+            crate::output::note("the model gave no report; its status is unknown");
+        }
+        let run = report::Run {
+            workspace: &reporting.workspace,
+            model: &reporting.model,
+            outcome,
+            duration: started.elapsed().as_secs(),
+        };
+        let report = collector.report(run, reported, &fallback);
+        let text = match reporting.format {
+            ReportFormat::Text => report::render_text(&report, &reporting.place, unicode),
+            ReportFormat::Json => report::render_json(&report),
+        };
+        write_stdout(&text)?;
+        return match outcome {
+            Outcome::Done => Ok(()),
+            Outcome::Limit | Outcome::Failed => Err(Error::Exit(1)),
+        };
     }
     match end.reason {
         EndReason::Done => {

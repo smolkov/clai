@@ -135,6 +135,43 @@ pub fn input_text(words: &[String], what: &str) -> Result<Input> {
     })
 }
 
+/// [`input_text`] with at most `max` bytes from standard input; more is a
+/// usage error: `the {what} is longer than 1 MiB`.
+pub fn task_text(words: &[String], what: &str, max: usize) -> Result<Input> {
+    input_from(words, what, || {
+        let mut bytes = Vec::new();
+        let limit = u64::try_from(max).unwrap_or(u64::MAX).saturating_add(1);
+        std::io::stdin()
+            .take(limit)
+            .read_to_end(&mut bytes)
+            .map_err(Error::io("standard input"))?;
+        limited(bytes, what, max)
+    })
+}
+
+/// The text of `bytes`, if not longer than `max` and UTF-8.
+fn limited(bytes: Vec<u8>, what: &str, max: usize) -> Result<String> {
+    if bytes.len() > max {
+        return Err(Error::Usage(format!(
+            "the {what} is longer than {}",
+            size_text(max)
+        )));
+    }
+    String::from_utf8(bytes)
+        .map_err(|_| Error::Usage(format!("the {what} on standard input is not UTF-8")))
+}
+
+/// `1 MiB`, `512 KiB`, `100 bytes`.
+fn size_text(bytes: usize) -> String {
+    if bytes >= 1024 * 1024 && bytes.is_multiple_of(1024 * 1024) {
+        format!("{} MiB", bytes / (1024 * 1024))
+    } else if bytes >= 1024 && bytes.is_multiple_of(1024) {
+        format!("{} KiB", bytes / 1024)
+    } else {
+        format!("{bytes} bytes")
+    }
+}
+
 fn input_from(
     words: &[String],
     what: &str,
@@ -180,6 +217,21 @@ mod tests {
         // `-` among other words is a word.
         let input = input_from(&words(&["a", "-"]), "task", never).unwrap();
         assert_eq!(input.text, "a -");
+    }
+
+    #[test]
+    fn standard_input_has_a_limit() {
+        assert_eq!(limited(b"abc".to_vec(), "task", 3).unwrap(), "abc");
+        match limited(b"abcd".to_vec(), "task", 3) {
+            Err(Error::Usage(m)) => assert_eq!(m, "the task is longer than 3 bytes"),
+            other => panic!("{other:?}"),
+        }
+        match limited(vec![0xff], "task", 3) {
+            Err(Error::Usage(m)) => assert_eq!(m, "the task on standard input is not UTF-8"),
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(size_text(1024 * 1024), "1 MiB");
+        assert_eq!(size_text(2048), "2 KiB");
     }
 
     #[test]

@@ -19,6 +19,8 @@ use crate::command::kill::Kill;
 use crate::command::ls::Ls;
 use crate::command::models::Models;
 use crate::command::new::New;
+#[cfg(test)]
+use crate::command::run::ReportFormat;
 use crate::command::run::Run;
 use crate::command::send::Send;
 use crate::command::server::Server;
@@ -214,6 +216,7 @@ impl Cli {
                 no_ask: self.top.no_ask,
                 dir: self.top.dir,
                 skills: Vec::new(),
+                report: None,
                 task: self.top.task,
             }),
         }
@@ -371,11 +374,23 @@ mod tests {
     }
 
     #[test]
-    fn run_needs_task() {
-        assert_eq!(
-            parse_err(&["run"]).kind(),
-            ErrorKind::MissingRequiredArgument
-        );
+    fn run_takes_the_task_from_a_pipe() {
+        // Without words the task comes from standard input (RFC 0027); the
+        // command checks that it is not a terminal.
+        let Some(Command::Run(run)) = parse(&["run"]).command else {
+            panic!("not run");
+        };
+        assert!(run.task.is_empty());
+        assert_eq!(run.report, None);
+        let Some(Command::Run(run)) = parse(&["run", "--report", "x"]).command else {
+            panic!("not run");
+        };
+        assert_eq!(run.report, Some(ReportFormat::Text));
+        assert_eq!(run.task, ["x"]);
+        let Some(Command::Run(run)) = parse(&["run", "--report=json", "x"]).command else {
+            panic!("not run");
+        };
+        assert_eq!(run.report, Some(ReportFormat::Json));
     }
 
     #[test]

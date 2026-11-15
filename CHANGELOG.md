@@ -7,6 +7,12 @@ notes are taken from that section by `ci/notes.sh`.
 
 ## Unreleased
 
+- Reports (RFC 0027): `clai run --report` prints a report instead of the
+  last answer, as Markdown or with `--report=json` as JSON: the status,
+  summary, findings and follow-ups the model hands in with the new
+  `report` tool, and the changed files, commands, files read and every
+  tool call of the run. `clai run` without words reads the task from a
+  pipe, without `-`.
 - Startup (RFC 0026): the environment is read once; every workspace is
   used with links resolved; only the server and `clai run` warn about a
   log they cannot open; each log line names its process (`server[4242]`).
