@@ -1,1 +1,1 @@
-clai: CONFIG:2: default_model: unknown model `anthropic/opus`; configured: anthropic/sonnet
+codeagent: CONFIG:2: default_model: unknown model `anthropic/opus`; configured: anthropic/sonnet

@@ -1,5 +1,5 @@
 //! Answering a question with lines of text, as a state machine: the same
-//! keys in `clai run` and `clai chat` (see `spec/command.md`, "clai chat").
+//! keys in `codeagent run` and `codeagent chat` (see `spec/command.md`, "codeagent chat").
 
 use crate::agent::{Answer, AskUser, Question, QuestionKind};
 use crate::tools::UserAnswer;

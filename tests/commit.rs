@@ -1,4 +1,4 @@
-//! `clai commit` as a process, in a git repository, against the local model
+//! `codeagent commit` as a process, in a git repository, against the local model
 //! server of `support`.
 
 #![allow(
@@ -35,9 +35,9 @@ fn git(dir: &Path, args: &[&str]) {
     );
 }
 
-/// Runs `clai` in `env`; git does not look above its home for a
+/// Runs `codeagent` in `env`; git does not look above its home for a
 /// repository (the test directories are inside this one).
-fn clai(env: &Env, args: &[&str]) -> std::process::Output {
+fn codeagent(env: &Env, args: &[&str]) -> std::process::Output {
     env.command(args)
         .env("GIT_CEILING_DIRECTORIES", &env.root)
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
@@ -72,18 +72,18 @@ fn message_on_stdout() {
     let env = Env::new(
         "message",
         &server,
-        "[commit]\ntrailer = \"Co-Authored-By: clai <clai@localhost>\"\n",
+        "[commit]\ntrailer = \"Co-Authored-By: codeagent <codeagent@localhost>\"\n",
     );
     repository(&env);
     fs::write(env.work().join("parser.rs"), "fn parse() {}\n").unwrap();
     fs::write(env.work().join("notes.txt"), "not staged\n").unwrap();
     git(&env.work(), &["add", "parser.rs"]);
 
-    let out = clai(&env, &["commit"]);
+    let out = codeagent(&env, &["commit"]);
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
     assert_eq!(
         stdout(&out),
-        "parser: add the parser\n\nIt reads numbers.\n\nCo-Authored-By: clai <clai@localhost>\n"
+        "parser: add the parser\n\nIt reads numbers.\n\nCo-Authored-By: codeagent <codeagent@localhost>\n"
     );
     // Standard error is not a terminal: no progress line.
     assert_eq!(stderr(&out), "");
@@ -122,7 +122,7 @@ fn hint_and_subdirectory() {
     fs::write(env.work().join("src/a.rs"), "x\n").unwrap();
     git(&env.work(), &["add", "-A"]);
     let src = env.work().join("src");
-    let out = clai(
+    let out = codeagent(
         &env,
         &["commit", "--hint", "fixes #12", src.to_str().unwrap()],
     );
@@ -145,9 +145,9 @@ fn commit_model_then_option() {
     repository(&env);
     fs::write(env.work().join("a.txt"), "a\n").unwrap();
     git(&env.work(), &["add", "-A"]);
-    let out = clai(&env, &["commit"]);
+    let out = codeagent(&env, &["commit"]);
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
-    let out = clai(&env, &["commit", "--model", "test/m"]);
+    let out = codeagent(&env, &["commit", "--model", "test/m"]);
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
     let requests = server.requests();
     assert_eq!(requests[0]["model"], "model-2");
@@ -161,7 +161,7 @@ fn all_changes_like_commit_a() {
     repository(&env);
     fs::write(env.work().join("readme.md"), "hello again\n").unwrap();
     fs::write(env.work().join("untracked.txt"), "not in git\n").unwrap();
-    let out = clai(&env, &["commit", "-a"]);
+    let out = codeagent(&env, &["commit", "-a"]);
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
     assert_eq!(stdout(&out), "Update the readme\n");
     let user = server.requests()[0]["messages"][1]["content"]
@@ -179,7 +179,7 @@ fn nothing_staged() {
     let env = Env::new("nothing", &server, "");
     repository(&env);
     fs::write(env.work().join("readme.md"), "changed, not staged\n").unwrap();
-    let out = clai(&env, &["commit"]);
+    let out = codeagent(&env, &["commit"]);
     assert_eq!(out.status.code(), Some(1));
     assert_eq!(stdout(&out), "");
     assert!(
@@ -194,7 +194,7 @@ fn nothing_staged() {
 fn not_a_repository() {
     let server = Server::start(Vec::new());
     let env = Env::new("norepo", &server, "");
-    let out = clai(&env, &["commit"]);
+    let out = codeagent(&env, &["commit"]);
     assert_eq!(out.status.code(), Some(1));
     assert!(
         stderr(&out).contains("not a git repository"),
@@ -208,7 +208,7 @@ fn unknown_model() {
     let server = Server::start(Vec::new());
     let env = Env::new("unknown", &server, "");
     repository(&env);
-    let out = clai(&env, &["commit", "--model", "test/nope"]);
+    let out = codeagent(&env, &["commit", "--model", "test/nope"]);
     assert_eq!(out.status.code(), Some(2), "{}", stderr(&out));
 }
 
@@ -222,7 +222,7 @@ fn model_error() {
     repository(&env);
     fs::write(env.work().join("a.txt"), "a\n").unwrap();
     git(&env.work(), &["add", "-A"]);
-    let out = clai(&env, &["commit"]);
+    let out = codeagent(&env, &["commit"]);
     assert_eq!(out.status.code(), Some(1));
     assert_eq!(stdout(&out), "");
     assert!(

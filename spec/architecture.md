@@ -1,6 +1,6 @@
 # Architecture
 
-How `clai` is divided into parts, what each part owns, and how the parts talk
+How `codeagent` is divided into parts, what each part owns, and how the parts talk
 to each other. This file describes structure and data flow. Behaviour is
 described in the topic files it links to, and the code layout (modules,
 crates, dependencies) in [`implementation.md`](../implementation.md). If this
@@ -10,19 +10,19 @@ Statements marked **(assumption)** need a decision from the user.
 
 ## Overview
 
-`clai` is one binary that runs in one of three roles:
+`codeagent` is one binary that runs in one of three roles:
 
 | Role | Started by | Lives | Does |
 |------|------------|-------|------|
-| Client | `clai`, `clai attach`, `clai chat`, `clai ls`, … | As long as the command | Talks to the server; shows sessions and questions; sends user input and answers. |
-| Server | The first client that needs one, or `clai server` | Until idle for 60 s | Owns all sessions, runs their agent loops and tools, saves them and resumes saved ones. |
-| One-shot | `clai run`, `clai TASK...` | One task | Runs one temporary session in its own process, without a server. |
+| Client | `codeagent`, `codeagent attach`, `codeagent chat`, `codeagent ls`, … | As long as the command | Talks to the server; shows sessions and questions; sends user input and answers. |
+| Server | The first client that needs one, or `codeagent server` | Until idle for 60 s | Owns all sessions, runs their agent loops and tools, saves them and resumes saved ones. |
+| One-shot | `codeagent run`, `codeagent TASK...` | One task | Runs one temporary session in its own process, without a server. |
 
 ```
   clients (one process each)                      server (one per user)
  ┌──────────────────────────┐                  ┌──────────────────────────────────────┐
- │ TUI            clai chat │                  │ session registry                     │
- │ clai ls/send/kill/new    │   Unix socket    │   ┌─ session "clai" ───────────────┐ │
+ │ TUI            codeagent chat │                  │ session registry                     │
+ │ codeagent ls/send/kill/new    │   Unix socket    │   ┌─ session "codeagent" ───────────────┐ │
  │ web UI bridge (later)    │◀────────────────▶│   │ state, history, session rules  │ │
  └──────────────────────────┘  versioned JSON  │   │ agent loop                     │ │
                                commands ▶      │   │   ├─ context                   │ │
@@ -36,7 +36,7 @@ Statements marked **(assumption)** need a decision from the user.
                                                │ config (loaded, watched, reloaded)   │
                                                └──────────────────────────────────────┘
 
-  one-shot: clai run = client output + one session + agent loop, in one process
+  one-shot: codeagent run = client output + one session + agent loop, in one process
 ```
 
 ## Components
@@ -64,7 +64,7 @@ Statements marked **(assumption)** need a decision from the user.
 Each component uses only components below it; nothing calls upwards.
 
 ```
- commands · TUI · clai chat             (clients: show and send)
+ commands · TUI · codeagent chat             (clients: show and send)
  client · protocol                      (transport)
  server · session                       (state and lifetime)
  agent loop                             (one turn)
@@ -92,8 +92,8 @@ content. When files are added, moved or removed, this tree is updated in the
 same change.
 
 ```
-clai/
-├── Cargo.toml, Cargo.lock      one crate, one binary `clai`
+codeagent/
+├── Cargo.toml, Cargo.lock      one crate, one binary `codeagent`
 ├── clippy.toml                 lint settings (never-crash rules)
 ├── readme.md                   user-facing overview and status
 ├── agent.md                    rules for the coding agent on this repository
@@ -117,7 +117,7 @@ clai/
 │   │   ├── mod.rs              `Command`: name, run
 │   │   └── run.rs, new.rs, attach.rs, ls.rs, kill.rs, send.rs, export.rs, import.rs,
 │   │       models.rs, skills.rs, commit.rs, server.rs, completion.rs
-│   │   └── chat/               clai chat: mod.rs (options, --list, script form),
+│   │   └── chat/               codeagent chat: mod.rs (options, --list, script form),
 │   │                           talk.rs (conversation), questions.rs (--questions)
 │   ├── lsp/                    language servers (config.md, "LSP")
 │   │   ├── mod.rs              `lsp::Error`
@@ -165,12 +165,12 @@ clai/
 │   │   ├── read_file.rs, list_files.rs, search_files.rs,
 │   │   │   edit_file.rs, write_file.rs, run_command.rs
 │   │   ├── lsp.rs              the `lsp` tool, the start question, errors after edits
-│   │   ├── report.rs           the `report` tool of `clai run --report`: spec, check
+│   │   ├── report.rs           the `report` tool of `codeagent run --report`: spec, check
 │   │   ├── question.rs         details of permission questions
 │   │   ├── walk.rs             directory walking for list and search
 │   │   ├── text.rs             binary files, safe writing, similar names
 │   │   └── output.rs           results and their size limits
-│   ├── report/                 reports of `clai run --report` (command.md, "Reports")
+│   ├── report/                 reports of `codeagent run --report` (command.md, "Reports")
 │   │   ├── mod.rs              facts from events, the report, Markdown and JSON
 │   │   ├── work.md             the frame of the task
 │   │   └── tests.rs
@@ -222,10 +222,10 @@ clai/
 │   │   │                       status and session rows, popups, model picker
 │   │   ├── snapshots/          expected frames (insta)
 │   │   └── tests.rs            state tests and frames with TestBackend
-│   ├── text/                   plain-text output for clai run and clai chat
+│   ├── text/                   plain-text output for codeagent run and codeagent chat
 │   │   ├── events.rs           tool lines, notices, the final answer
 │   │   ├── ansi.rs             colours, used when the terminal has them
-│   │   ├── conversation.rs     a conversation as streamed text (clai chat)
+│   │   ├── conversation.rs     a conversation as streamed text (codeagent chat)
 │   │   ├── question.rs         questions as text, colour, pager hint
 │   │   ├── dialog.rs           answering a question line by line
 │   │   ├── asker.rs            `LineAsker`: answers read as lines
@@ -239,7 +239,7 @@ clai/
 └── tests/                      tests of the binary and live tests
     ├── cli.rs, completion.rs, models.rs
     ├── live.rs                 against real APIs, ignored by default
-    ├── run.rs                  clai run against a local server
+    ├── run.rs                  codeagent run against a local server
     ├── server.rs               the server and session commands as processes
     ├── configs.rs              the sample configurations load or fail as expected
     ├── configs/                sample configurations: valid/, invalid/ (with .err), project/
@@ -249,7 +249,7 @@ clai/
 ```
 
 Unit tests live next to their code (`#[cfg(test)]`, `config/tests.rs`,
-`provider/tests_http.rs`); `tests/` holds tests that run the `clai` binary or
+`provider/tests_http.rs`); `tests/` holds tests that run the `codeagent` binary or
 need the network. Build output goes to `target/`, the spec book to
 `target/spec-book/`.
 
@@ -258,8 +258,8 @@ need the network. Build output goes to `target/`, the spec book to
 | State | Owner | Others see |
 |-------|-------|------------|
 | Configuration | Server (one-shot: its process) | A snapshot, taken by each session when it is created and replaced on reload for new requests. |
-| History, model, session rules, open question, limits | The session | Events; the full event log on attach. Saved to `$XDG_STATE_HOME/clai/sessions/` as it changes (see [`sessions.md`](sessions.md), "Persistence"). |
-| Session list and names | Server registry | `clai ls`, the TUI session list. |
+| History, model, session rules, open question, limits | The session | Events; the full event log on attach. Saved to `$XDG_STATE_HOME/codeagent/sessions/` as it changes (see [`sessions.md`](sessions.md), "Persistence"). |
+| Session list and names | Server registry | `codeagent ls`, the TUI session list. |
 | Language server processes | The server's LSP pool (one-shot: its process) | `/lsp` (`lsp_status`). Which servers a session may use is the session's: the start question is asked per session. |
 | Scroll position, expanded entries, unsent input, theme | Each TUI | Nobody. |
 | API keys | Provider, in memory, after first use | Nobody; never logged or sent to clients. |
@@ -280,14 +280,14 @@ message per line (at most 16 MiB). Every message is an object with a
 `type`. The first message in each direction is `hello` with the protocol
 version (now `9`); on a mismatch the server sends `error` and closes the
 connection, and the message tells the user to restart the server with
-`clai server stop` (see [`sessions.md`](sessions.md), "Server"). The code
+`codeagent server stop` (see [`sessions.md`](sessions.md), "Server"). The code
 is in `src/protocol/`.
 
 Message kinds:
 
 | Direction | Kind | Content |
 |-----------|------|---------|
-| client → server | `hello` | Protocol version; client kind (`tui`, `chat`, `cli`, `bridge`) and name (e.g. `tui pts/3`, `clai chat`), which is shown as who answered; whether it answers questions. |
+| client → server | `hello` | Protocol version; client kind (`tui`, `chat`, `cli`, `bridge`) and name (e.g. `tui pts/3`, `codeagent chat`), which is shown as who answered; whether it answers questions. |
 | client → server | `request` | An id and a command: `new`, `list`, `kill`, `rename`, `attach`, `detach`, `send` (message), `set_model`, `skills`, `set_skills`, `cancel`, `answer`, `export`, `import`, `status`, `session_status`, `global_stats`, `models`, `lsp_status`, `lsp_restart`, `lsp_stop`, `stop`. Each gets exactly one `response`. Sessions are named by their current name; `attach`, `send`, `set_model` and `set_skills` resume a saved session. |
 | server → client | `hello` | Protocol version and the server's PID. |
 | server → client | `response` | The request's id and its `result`: `ok` with a payload (`done`, a session, the session list, the status, a session's status, the global statistics, the models; a session is its id, name, workspace, model, state, created and last updated time, turns, queued messages, open question and token totals) or `error` with a message, marked `usage` when the request itself was wrong (the command then exits `2`). |
@@ -314,16 +314,16 @@ Session events, in the order they happen:
 | `text_delta`, `text_done` | Streamed model text. |
 | `tool_call` | A tool call and its state: `pending`, `waiting`, `running`, `done`, `error`, `denied`, `cancelled`; with output as it arrives, and once its `details` (as a permission question shows them: the diff of an edit, the command and its directory). |
 | `question`, `question_closed` | A question with all its details, and its answer with the client that gave it (see [`sessions.md`](sessions.md), "Questions"). |
-| `usage` | Tokens of a request, context size, and the request's `provider/model` (none in a log of an older `clai`). The session sums them; the session info has the totals as `usage`. |
+| `usage` | Tokens of a request, context size, and the request's `provider/model` (none in a log of an older `codeagent`). The session sums them; the session info has the totals as `usage`. |
 | `error` | A provider or session error that ended a request or turn. |
 | `retry` | A model request failed and is tried again: the attempt (from 1), `max_retries` and the reason. |
 | `turn_end` | The turn ended: done, cancelled, limit reached or failed. |
 | `skills_changed` | The active skills changed: `added`, the skills turned on with their directory and text, and `removed`, the names turned off (see [`skills.md`](skills.md)). |
-| `model_changed`, `renamed`, `ended` | Session settings and lifetime; `model_changed` has the new model and, as `from`, the old one (none in a log of an older `clai`); `ended` has a reason: `killed`, `failed`, `server stopped`. |
+| `model_changed`, `renamed`, `ended` | Session settings and lifetime; `model_changed` has the new model and, as `from`, the old one (none in a log of an older `codeagent`); `ended` has a reason: `killed`, `failed`, `server stopped`. |
 
 The `models` request answers with the models of the server's configuration, in
 config order (`model`, `provider`, `name`, `id`, `context_window`, `default`,
-`key` as in `clai models --json`, without running `api_key_cmd`), the path of
+`key` as in `codeagent models --json`, without running `api_key_cmd`), the path of
 the user config file, and `default_from` (`user`, `project`, `env`): what sets
 the default. It may name a `workspace`; then the default is the one new
 sessions there get, with that workspace's project file. Both fields are
@@ -447,7 +447,7 @@ version is a bug, not an expected case; a new kind needs a new version.
 | Project config file | No: comes with the repository | May only make permissions stricter; no providers, models or `[tui]` (see [`config.md`](config.md), "Files"). |
 | Model output (text, tool calls) | No | Argument checks, workspace boundary, permission rules including the built-in rules for secret files (see [`config.md`](config.md), "Built-in rules"), questions (see [`tools.md`](tools.md)). |
 | Language servers | No: they run code of the project (build scripts, macros, plugins) | Started only after the start question, or with `[lsp] start = "allow"` in the user file; a project file may only turn them off. Their answers are data: locations are filtered with the `read_file` rules, text outside the workspace is not shown, and a `workspace/applyEdit` is never applied. A malformed message fails the server, not the session. |
-| Tool output (file contents, command output) | No | Sent to the model as data, and the system prompt says so; never interpreted by `clai`, never logged. |
+| Tool output (file contents, command output) | No | Sent to the model as data, and the system prompt says so; never interpreted by `codeagent`, never logged. |
 | Clients | Yes, same user | Socket directory mode `0700`; the server never listens on the network. |
 | A later web UI | Only through a bridge the user starts and authenticates | Same protocol and same answer checks as any client (see [`sessions.md`](sessions.md), "Clients"). |
 | Provider APIs | For their answers only | HTTPS (or a local address the user configured); keys only to the provider they belong to. |

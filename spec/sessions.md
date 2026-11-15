@@ -1,6 +1,6 @@
 # Sessions
 
-`clai` can run several sessions at the same time. Sessions run in a
+`codeagent` can run several sessions at the same time. Sessions run in a
 background process, the server, and keep running when no TUI shows them. A
 TUI attaches to one session at a time; it can detach, switch to another
 session, or start a new one. This works like `tmux` or `screen`, for agent
@@ -12,8 +12,8 @@ Statements marked **(assumption)** need a decision from the user.
 
 | Term        | Meaning |
 |-------------|---------|
-| Server      | Background `clai` process of one user that owns all sessions and runs their agent loops and tools. |
-| Client      | A process that talks to the server: a TUI, a terminal command such as `clai ls` or `clai chat`, or later a web UI (see [Questions](#questions)). |
+| Server      | Background `codeagent` process of one user that owns all sessions and runs their agent loops and tools. |
+| Client      | A process that talks to the server: a TUI, a terminal command such as `codeagent ls` or `codeagent chat`, or later a web UI (see [Questions](#questions)). |
 | Session     | One conversation with the model in one workspace, with its history, settings and permission rules. It lives in the server, not in a client. |
 | Attach      | Connect a client to a session: it receives the session's events (conversation, questions) and may send user input and answers. |
 | Question    | A decision the session waits for: a permission question for a tool call, or a limit question. Sent to every attached client that can answer. |
@@ -22,8 +22,8 @@ Statements marked **(assumption)** need a decision from the user.
 ## Server
 
 - One server per user and machine. Clients reach it over a Unix domain
-  socket at `$XDG_RUNTIME_DIR/clai/server.sock` (fallback
-  `/tmp/clai-$UID/server.sock`). The socket directory has mode `0700`, so
+  socket at `$XDG_RUNTIME_DIR/codeagent/server.sock` (fallback
+  `/tmp/codeagent-$UID/server.sock`). The socket directory has mode `0700`, so
   only the user can connect; a directory that belongs to another user or is
   a link is refused. A lock file `server.lock` next to the socket makes sure
   only one server runs.
@@ -31,7 +31,7 @@ Statements marked **(assumption)** need a decision from the user.
   in the background and then connects. It first loads the configuration
   itself, so an invalid one is reported by the client (exit `2`) instead of
   a server that does not start. A started server leaves the terminal's
-  session and ignores `SIGHUP`; `clai server` runs it in the foreground, for
+  session and ignores `SIGHUP`; `codeagent server` runs it in the foreground, for
   debugging, where `Ctrl-C`, `SIGTERM` and `SIGHUP` stop it.
 - The server exits when it has had no clients and no session `working` or
   `waiting` for 60 s. Idle sessions do not keep it running: they are saved
@@ -42,7 +42,7 @@ Statements marked **(assumption)** need a decision from the user.
   session is reported in that session and never affects other sessions.
 - Client and server exchange versioned messages. A client that does not match
   the server's protocol version gets a clear error that tells the user to
-  restart the server (`clai server stop`).
+  restart the server (`codeagent server stop`).
 
 ## Session lifecycle
 
@@ -64,14 +64,14 @@ Statements marked **(assumption)** need a decision from the user.
   Names are unique per server. A name is one word: at most 64 characters,
   no spaces or control characters, not starting with `-`.
 - **The last session of a workspace** is what `--continue` attaches to
-  (`clai`, `clai chat`, `clai send`; RFC 0025): among the sessions whose
+  (`codeagent`, `codeagent chat`, `codeagent send`; RFC 0025): among the sessions whose
   workspace is the directory, resolved, the one with the latest `updated`
   (the last message, answer, model change or rename); on the same time,
   the one with the higher id, created later. Running, working, waiting and
   saved sessions count alike. Sessions of a parent directory or a
   subdirectory do not count. The client chooses from `list`.
 - **Several sessions in one workspace** are allowed. They can change the
-  same files, so `clai new` prints a note on standard error naming the other
+  same files, so `codeagent new` prints a note on standard error naming the other
   sessions in that workspace.
 - **Working and waiting:** see [Background work](#background-work).
 - **Kill:** ends the session and deletes its saved files. A running turn is
@@ -103,7 +103,7 @@ decision is needed.
   What a question contains and how it is answered: [Questions](#questions).
 
   While a question is open, the session's state is `waiting`. A detached
-  session waits; it never decides on its own. `clai ls` and the TUI session
+  session waits; it never decides on its own. `codeagent ls` and the TUI session
   list show waiting sessions.
 - A finished turn is not a question: when the model answers without tool
   calls (often with a question for the user in its text), the session
@@ -114,7 +114,7 @@ decision is needed.
   [`tui.md`](tui.md), "Switching sessions").
 - While a session works, its TUI stays usable: the user can type and queue
   messages, switch sessions or detach.
-- A one-shot `clai run` asks on the terminal when standard input is one.
+- A one-shot `codeagent run` asks on the terminal when standard input is one.
   Otherwise no one can answer: a permission question counts as denied
   (allowed with `--yes`) and a limit question counts as "stop" (see
   [`command.md`](command.md)). **(assumption)**
@@ -136,7 +136,7 @@ decision is needed.
 A question is a message from the session to its clients. It carries
 everything needed to decide without looking anywhere else, so every kind of
 client can show it and answer it the same way: the TUI as a prompt bar, the
-terminal client `clai chat` as lines of text (see
+terminal client `codeagent chat` as lines of text (see
 [`command.md`](command.md)), and a later web UI as a page. Clients only show
 questions and send answers; the decision is checked and applied by the
 server.
@@ -147,16 +147,16 @@ server.
   one after another.
 - When a question opens, it is sent to every attached client that declared,
   when connecting, that it can answer. Clients that only watch (e.g. a
-  second TUI in read-only mode, or `clai ls`) see that the session is
+  second TUI in read-only mode, or `codeagent ls`) see that the session is
   `waiting` and why: they get the question with an empty `choices` list.
 - A client that attaches while a question is open receives it at once, as
   part of the session's state.
 - A question stays open until it is answered or the turn is cancelled. It
   never times out and is never answered by the server itself, except in
-  `clai run` (see [Background work](#background-work)).
+  `codeagent run` (see [Background work](#background-work)).
 - The first valid answer counts. The server then sends `question closed`,
   with the answer and the client that gave it (e.g. `tui pts/3`,
-  `clai chat`), to all clients; they remove the prompt and show the
+  `codeagent chat`), to all clients; they remove the prompt and show the
   outcome in the conversation. A later answer to the same question is
   rejected with `already answered by tui pts/3`. Answers that arrive at the
   same time are checked one after another, in the order the server got
@@ -171,7 +171,7 @@ Every question has:
 | Field | Meaning |
 |-------|---------|
 | `id` | Unique on the server; an answer names it. |
-| `session` | Session name and workspace (as shown, `~/ws/rust/clai`). |
+| `session` | Session name and workspace (as shown, `~/ws/rust/codeagent`). |
 | `kind` | `permission`, `limit` or `ask_user`. |
 | `opened` | Time the question opened. |
 | `turn` | Number of the turn, and how many model requests and tool calls it has used. |
@@ -184,7 +184,7 @@ A permission question also has:
 |-------|---------|
 | `call` | Tool name, the call's id from the model, and its arguments exactly as the model sent them (JSON). |
 | `details` | What the tool will do, prepared by the tool: resolved paths, the diff or new content, the command with its parts and working directory. Per tool in [`tools.md`](tools.md), "Questions". |
-| `reason` | Why it asks: the deciding rule and its source (`config.toml:24`, `.clai/config.toml:3`) or `default for edit_file`, and the rule's `message` if it has one (see [`config.md`](config.md), "Checking order"). |
+| `reason` | Why it asks: the deciding rule and its source (`config.toml:24`, `.codeagent/config.toml:3`) or `default for edit_file`, and the rule's `message` if it has one (see [`config.md`](config.md), "Checking order"). |
 | `proposals` | Allow rules for "always", narrowest first (see [`tools.md`](tools.md), "Permissions"). |
 | `text` | The model's text in the same answer before the tool call, if any, so the user sees what the model said it was about to do. |
 
@@ -193,7 +193,7 @@ permission question too: `call` is the `lsp` call, `details` are of the
 kind `lsp_start` (server, command, root, environment), the reason is
 `starting a language server ([lsp] start = "ask")`, there are no proposals,
 and its choices have no "always". Its `summary` is
-`start language server rust-analyzer in ~/ws/clai`.
+`start language server rust-analyzer in ~/ws/codeagent`.
 
 A limit question has the limit and the counts reached instead of `call`,
 `details` and `proposals`.
@@ -253,8 +253,8 @@ call fails (see [`tools.md`](tools.md), "edit_file").
 | Client | Shows a question as | Answers with |
 |--------|---------------------|--------------|
 | TUI | Expanded tool call and prompt bar (see [`tui.md`](tui.md), "Permission prompts"); a question from the model as a box ("Questions from the model"). | Keys `y`, `a`, `n`, `e`, `Esc`; in the box, the option keys. |
-| Terminal: `clai chat` | In the conversation with the session, or alone with `--questions`: the fields as text, the diff or command, and a numbered list of choices (see [`command.md`](command.md)); a question from the model one question after another with numbered options. | A line on standard input, or options for scripts. |
-| Terminal: `clai run` | The same text on standard error, when standard input is a terminal. | A line on standard input. |
+| Terminal: `codeagent chat` | In the conversation with the session, or alone with `--questions`: the fields as text, the diff or command, and a numbered list of choices (see [`command.md`](command.md)); a question from the model one question after another with numbered options. | A line on standard input, or options for scripts. |
+| Terminal: `codeagent run` | The same text on standard error, when standard input is a terminal. | A line on standard input. |
 | Web UI (later) | A page with the same fields. | The same answers. |
 
 The web UI is not part of the first version (see [`readme.md`](readme.md),
@@ -265,8 +265,8 @@ never listens on a network port. **(assumption)**
 
 ## Commands
 
-Sessions are managed with `clai`, `clai new`, `clai attach`, `clai ls`,
-`clai kill`, `clai send`, `clai chat` and `clai server`; syntax and options are in
+Sessions are managed with `codeagent`, `codeagent new`, `codeagent attach`, `codeagent ls`,
+`codeagent kill`, `codeagent send`, `codeagent chat` and `codeagent server`; syntax and options are in
 [`command.md`](command.md). In the TUI, the session list and the `/sessions`,
 `/new`, `/attach`, `/rename`, `/kill` commands do the same (see
 [`tui.md`](tui.md)).
@@ -274,48 +274,48 @@ Sessions are managed with `clai`, `clai new`, `clai attach`, `clai ls`,
 ## Persistence
 
 Every session of the server is saved as it goes, so it survives a server
-stop, a crash or a reboot. `clai run` sessions are not saved.
+stop, a crash or a reboot. `codeagent run` sessions are not saved.
 
-- **Where:** `$XDG_STATE_HOME/clai/sessions/<id>/` (fallback
-  `~/.local/state/clai/sessions/`), directories with mode `0700`, files with
+- **Where:** `$XDG_STATE_HOME/codeagent/sessions/<id>/` (fallback
+  `~/.local/state/codeagent/sessions/`), directories with mode `0700`, files with
   mode `0600`. They hold the session's code, file contents and command
   output, as the conversation does; API keys are never written.
 - **What:**
 
   | File | Content | Written |
   |------|---------|---------|
-  | `session.json` | Format version, `clai` version, name, workspace, `provider/model`, created and updated time, number of turns, queued messages, tokens used (`usage`). | Replaced atomically (temporary file, then rename) on every change. |
+  | `session.json` | Format version, `codeagent` version, name, workspace, `provider/model`, created and updated time, number of turns, queued messages, tokens used (`usage`). | Replaced atomically (temporary file, then rename) on every change. |
   | `history.jsonl` | What the model sees: each message (text, tool calls, tool results), full tool outputs that were cut for the model, and allow rules added by `always` answers (as text). | Appended as the agent adds them. |
   | `events.jsonl` | What clients see: the event log. Streamed text is kept as whole blocks (`text_done`), a command's live output only as the call's final result; `ended` is not kept. Each line has `at`, the time it was logged in milliseconds since 1970. | Appended as events happen. |
 
   Token totals are written after each model request. On resume they are summed
-  from the log, which is the truth: this covers a session of an older `clai` (it
+  from the log, which is the truth: this covers a session of an older `codeagent` (it
   lists zero until it is first resumed) and a crash between writing the event
   and writing `session.json`. A missing `usage` means zero, so the format stays
   `1`. A resume that changes the model logs `model_changed`.
 
   The session's active skills are rebuilt from the `skills_changed` events of
   `events.jsonl`, with the text saved in them (see [`skills.md`](skills.md),
-  "Saving"); a log of an older `clai` has none. The format stays `1`.
+  "Saving"); a log of an older `codeagent` has none. The format stays `1`.
 
   The configuration is not saved: it is read again on resume. One JSON
   value per line; a last line cut by a crash is left out when loading. A
-  file of a newer format than the running `clai` reads is refused and left
+  file of a newer format than the running `codeagent` reads is refused and left
   untouched.
 - **Statistics:** the session counts every event as it publishes it, for
   `session_status` (see [`architecture.md`](architecture.md), "Protocol"). On
   resume, and for a saved session, which is not resumed for it, the log is
   counted again: it is the truth, and the counts are not saved. A line without
-  `at` (an older `clai`) has an unknown time; the format stays `1`. Events that
+  `at` (an older `codeagent`) has an unknown time; the format stays `1`. Events that
   close a turn left open by a crash get the time of the last event, so the time
-  the server was away does not count as work. `clai export` keeps the times.
+  the server was away does not count as work. `codeagent export` keeps the times.
 - **Statistics over all sessions** (`global_stats`, the TUI's `/stats`): the
   server counts the log of every saved session, running ones included (each
   event is appended before it is sent). Deleted sessions and bundles that are
   not imported are not counted. A log that cannot be read is left out and
   counted as skipped.
   - **Per model:** a `usage` event carries the `provider/model` of its request
-    (`model`; a log of an older `clai` has none). Without it, the tokens and
+    (`model`; a log of an older `codeagent` has none). Without it, the tokens and
     requests go to the model in effect: the `from` of the first
     `model_changed`, or the model of `session.json` when the log never
     changes it; each `model_changed` sets it for the events after it. Before
@@ -331,7 +331,7 @@ stop, a crash or a reboot. `clai run` sessions are not saved.
     when they change. Any range and offset is made from these counts.
 - **Saved state:** a server that starts lists every saved session with the
   state `saved`, reading only `session.json`. A command that names it
-  resumes it: `attach`, `send`, `set_model` (`clai chat NAME`, `clai send`,
+  resumes it: `attach`, `send`, `set_model` (`codeagent chat NAME`, `codeagent send`,
   the TUI). `list`, `rename`, `kill` and `export` work without resuming.
   Names are unique across running and saved sessions.
 - **Resume:** the history, the allow rules, the model, the number of turns
@@ -339,7 +339,7 @@ stop, a crash or a reboot. `clai run` sessions are not saved.
   clients as on any attach. Queued messages start one after another. The
   project file of the workspace is read again. A saved rule that no longer
   parses is left out, with a notice. If the model is no longer configured,
-  resuming fails with a message; `set_model` (`clai chat NAME --model
+  resuming fails with a message; `set_model` (`codeagent chat NAME --model
   PROVIDER/MODEL`) resumes it with another one. If the workspace is no
   longer a directory, resuming fails and the session stays saved.
 - **Server stop:** running sessions stop and stay saved. A running turn is
@@ -356,8 +356,8 @@ stop, a crash or a reboot. `clai run` sessions are not saved.
   memory. Its clients get one notice; saving is tried again with the next
   change. A session that could not be created on disk lives in memory only
   and says so.
-- **Export and import:** `clai export NAME FILE` writes a running or saved
-  session to one JSON file (mode `0600`); `clai import FILE` adds it as a
+- **Export and import:** `codeagent export NAME FILE` writes a running or saved
+  session to one JSON file (mode `0600`); `codeagent import FILE` adds it as a
   saved session, under its name made unique or a given one. Use them to
   archive a session or move it to another machine.
 

@@ -32,8 +32,8 @@ use crate::complete;
 static VERSION: LazyLock<String> = LazyLock::new(|| {
     version_text(
         env!("CARGO_PKG_VERSION"),
-        option_env!("CLAI_BUILD_COMMIT"),
-        option_env!("CLAI_BUILD_DATE"),
+        option_env!("CODEAGENT_BUILD_COMMIT"),
+        option_env!("CODEAGENT_BUILD_DATE"),
     )
 });
 
@@ -54,7 +54,7 @@ fn version_text(version: &str, commit: Option<&str>, date: Option<&str>) -> Stri
 
 /// AI coding agent for the terminal.
 #[derive(Debug, Parser)]
-#[command(name = "clai", version = VERSION.as_str(), disable_help_subcommand = true)]
+#[command(name = "codeagent", version = VERSION.as_str(), disable_help_subcommand = true)]
 pub struct Cli {
     /// Use FILE instead of the user config file.
     #[arg(long, global = true, value_name = "FILE", value_hint = ValueHint::FilePath)]
@@ -67,8 +67,8 @@ pub struct Cli {
     pub top: TopArgs,
 }
 
-/// Arguments of `clai` without a command: a new session, or the short form
-/// `clai TASK...` of `clai run`.
+/// Arguments of `codeagent` without a command: a new session, or the short form
+/// `codeagent TASK...` of `codeagent run`.
 #[derive(Debug, Args)]
 pub struct TopArgs {
     /// Model to use, as PROVIDER/MODEL.
@@ -120,7 +120,7 @@ pub enum Command {
     Chat(Chat),
     /// Write a session to a file.
     Export(Export),
-    /// Add a saved session from a file written by `clai export`.
+    /// Add a saved session from a file written by `codeagent export`.
     Import(Import),
     /// List configured providers and models.
     Models(Models),
@@ -175,7 +175,7 @@ impl Cli {
         if cli.command.is_some() && top_used {
             return Err(Cli::command().error(
                 ErrorKind::ArgumentConflict,
-                "options of `clai` without a command and a task cannot be used with a command; \
+                "options of `codeagent` without a command and a task cannot be used with a command; \
                  put command options after the command name",
             ));
         }
@@ -183,7 +183,7 @@ impl Cli {
     }
 
     /// Which process this is, for the log: the server, a turn of
-    /// `clai run`, or a client.
+    /// `codeagent run`, or a client.
     pub fn role(&self) -> crate::log::Role {
         use crate::command::server::{Server, ServerAction};
         use crate::log::Role;
@@ -199,8 +199,8 @@ impl Cli {
         }
     }
 
-    /// The command to run. `clai` alone is `clai new`, and `clai TASK...`
-    /// is `clai run TASK...`.
+    /// The command to run. `codeagent` alone is `codeagent new`, and `codeagent TASK...`
+    /// is `codeagent run TASK...`.
     pub fn into_command(self) -> Command {
         match self.command {
             Some(command) => command,
@@ -228,12 +228,12 @@ mod tests {
     use super::*;
 
     fn parse(args: &[&str]) -> Cli {
-        Cli::parse_args(std::iter::once("clai").chain(args.iter().copied()))
+        Cli::parse_args(std::iter::once("codeagent").chain(args.iter().copied()))
             .unwrap_or_else(|e| panic!("{args:?}: {e}"))
     }
 
     fn parse_err(args: &[&str]) -> clap::Error {
-        match Cli::parse_args(std::iter::once("clai").chain(args.iter().copied())) {
+        match Cli::parse_args(std::iter::once("codeagent").chain(args.iter().copied())) {
             Ok(cli) => panic!("{args:?} parsed as {cli:?}"),
             Err(e) => e,
         }

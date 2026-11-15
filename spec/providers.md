@@ -158,7 +158,7 @@ An adapter:
   the session event `retry`; it does not count as the start of the stream.
 - reads the API key on the first request and keeps it; if reading fails,
   the request ends with `Auth` and the next request tries again;
-- ignores fields it does not know, so new API fields do not break `clai`;
+- ignores fields it does not know, so new API fields do not break `codeagent`;
   unknown event types and block types are logged at debug level.
   **(assumption)**
 - never panics on any input from the network: anything it cannot decode is

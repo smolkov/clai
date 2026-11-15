@@ -40,7 +40,7 @@ pub enum ClientKind {
 pub struct ClientHello {
     pub version: u32,
     pub kind: ClientKind,
-    /// Shown as who answered a question: `tui pts/3`, `clai chat`.
+    /// Shown as who answered a question: `tui pts/3`, `codeagent chat`.
     pub name: String,
     /// Whether it answers questions; clients that only watch get no
     /// choices.
@@ -265,7 +265,7 @@ pub enum Payload {
         /// The user config file the server reads.
         config: PathBuf,
         /// What sets the default: the user file, the project file of the
-        /// workspace asked about, or `CLAI_MODEL`.
+        /// workspace asked about, or `CODEAGENT_MODEL`.
         #[serde(default)]
         default_from: DefaultFrom,
     },
@@ -422,7 +422,7 @@ pub struct ModelInfo {
     pub id: String,
     pub context_window: u64,
     pub default: bool,
-    /// The key's status as in `clai models --json`; `api_key_cmd` is not run.
+    /// The key's status as in `codeagent models --json`; `api_key_cmd` is not run.
     pub key: String,
 }
 
@@ -459,12 +459,12 @@ impl TokenTotals {
     }
 }
 
-/// A session as `clai ls` and the session list show it.
+/// A session as `codeagent ls` and the session list show it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SessionInfo {
     pub id: u64,
     pub name: String,
-    /// As shown: `~/ws/rust/clai`.
+    /// As shown: `~/ws/rust/codeagent`.
     pub workspace: String,
     pub path: PathBuf,
     /// `provider/model`.

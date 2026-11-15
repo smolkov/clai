@@ -197,7 +197,7 @@ fn parse_hex(s: &str) -> Option<Colour> {
     Some(Colour::Rgb(byte(0..2)?, byte(2..4)?, byte(4..6)?))
 }
 
-/// The names the `code` key of a theme takes: `clai`'s own (`ansi`, and those
+/// The names the `code` key of a theme takes: `codeagent`'s own (`ansi`, and those
 /// of the bundled themes) and the themes `syntect` bundles.
 pub const CODE_THEMES: [&str; 11] = [
     "ansi",
@@ -220,7 +220,7 @@ pub enum ThemeSource {
     Table,
     /// `themes/NAME.toml` next to the user file.
     File(std::path::PathBuf),
-    /// Built into `clai`.
+    /// Built into `codeagent`.
     Bundled,
 }
 

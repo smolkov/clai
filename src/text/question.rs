@@ -1,4 +1,4 @@
-//! A question as text, in the layout of `spec/command.md`, "clai chat".
+//! A question as text, in the layout of `spec/command.md`, "codeagent chat".
 
 use std::fmt::Write as _;
 
@@ -18,9 +18,9 @@ const LABEL: usize = 9;
 /// How a question is shown.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Style {
-    /// First word of the header: `clai`, or the session name.
+    /// First word of the header: `codeagent`, or the session name.
     pub name: String,
-    /// The workspace as shown (`~/ws/rust/clai`).
+    /// The workspace as shown (`~/ws/rust/codeagent`).
     pub place: String,
     pub unicode: bool,
     /// ANSI colours for diffs.
@@ -30,12 +30,12 @@ pub struct Style {
 }
 
 /// The question and its choices; `place` is the workspace as shown
-/// (`~/ws/rust/clai`).
+/// (`~/ws/rust/codeagent`).
 pub fn render_question(question: &Question, place: &str, unicode: bool) -> String {
     render_question_styled(
         question,
         &Style {
-            name: "clai".to_owned(),
+            name: "codeagent".to_owned(),
             place: place.to_owned(),
             unicode,
             colour: false,
@@ -89,7 +89,7 @@ fn ask_intro(out: &mut String, a: &AskUser, unicode: bool) {
 }
 
 /// One question from the model with its numbered options and how to
-/// answer (see `spec/command.md`, "clai chat").
+/// answer (see `spec/command.md`, "codeagent chat").
 pub fn ask_block(a: &AskUser, index: usize) -> String {
     let mut out = String::new();
     let Some(q) = a.questions.get(index) else {

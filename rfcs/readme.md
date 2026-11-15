@@ -1,6 +1,6 @@
 # RFCs
 
-An RFC (request for comments) proposes a change to `clai` before it is
+An RFC (request for comments) proposes a change to `codeagent` before it is
 built: a new feature, a milestone, or a decision the spec leaves open. It
 gives one place to agree on the direction, so the work that follows is
 predictable for everyone involved.
@@ -9,7 +9,7 @@ predictable for everyone involved.
 
 | File | Says |
 |------|------|
-| [`spec/`](../spec/readme.md) | What `clai` does. Source of truth for behaviour. |
+| [`spec/`](../spec/readme.md) | What `codeagent` does. Source of truth for behaviour. |
 | [`implementation.md`](../implementation.md) | How it is built, and in which order (milestones). |
 | `rfcs/` | How one step is built, and which decisions it makes. |
 | [`todo.md`](../todo.md) | What is done and what is left. |
@@ -123,7 +123,7 @@ Sections that do not apply may be left out.
 | RFC | Title | Status |
 |-----|-------|--------|
 | [0001](0001-tui-core.md) | TUI core | done |
-| [0002](0002-clai-without-command.md) | `clai` without a command opens the TUI | done |
+| [0002](0002-codeagent-without-command.md) | `codeagent` without a command opens the TUI | done |
 | [0003](0003-session-improvements.md) | Session improvements | done |
 | [0004](0004-tui-command-list.md) | TUI command list | done |
 | [0005](0005-session-switching.md) | Session switching | done |
@@ -148,4 +148,4 @@ Sections that do not apply may be left out.
 | [0024](0024-boxes-at-the-bottom.md) | Boxes at the bottom, settings on the whole screen | done |
 | [0025](0025-continue-the-last-session.md) | Continue the last session of the workspace | done |
 | [0026](0026-startup.md) | Startup: one place for the environment, paths and the command context | done |
-| [0027](0027-run-report.md) | Reports from `clai run` | done |
+| [0027](0027-run-report.md) | Reports from `codeagent run` | done |

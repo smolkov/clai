@@ -415,9 +415,9 @@ fn saving_the_default_says_what_overrides_it() {
             .contains("default_model = \"anthropic/opus\"")
     );
 
-    fs::create_dir_all(dir.path().join("ws/.clai")).unwrap();
+    fs::create_dir_all(dir.path().join("ws/.codeagent")).unwrap();
     fs::write(
-        dir.path().join("ws/.clai/config.toml"),
+        dir.path().join("ws/.codeagent/config.toml"),
         "default_model = \"sonnet\"\n",
     )
     .unwrap();
@@ -448,10 +448,10 @@ fn env_errors() {
     };
     let e = errs_env(BASE, None, &env);
     assert!(
-        e[0].starts_with("CLAI_MODEL: unknown model `nope`"),
+        e[0].starts_with("CODEAGENT_MODEL: unknown model `nope`"),
         "{e:?}"
     );
-    assert_eq!(e[1], "CLAI_THEME: unknown theme `neon`");
+    assert_eq!(e[1], "CODEAGENT_THEME: unknown theme `neon`");
 }
 
 /// Rules as `action label(patterns)`, in load order.
@@ -897,7 +897,7 @@ fn user_path() {
     };
     assert_eq!(
         user_config_path(&env),
-        Some(PathBuf::from("/x/clai/config.toml"))
+        Some(PathBuf::from("/x/codeagent/config.toml"))
     );
     let env = Environment {
         xdg_config_home: Some(PathBuf::from("relative")),
@@ -906,7 +906,7 @@ fn user_path() {
     };
     assert_eq!(
         user_config_path(&env),
-        Some(PathBuf::from("/home/u/.config/clai/config.toml"))
+        Some(PathBuf::from("/home/u/.config/codeagent/config.toml"))
     );
     assert_eq!(user_config_path(&Environment::default()), None);
 }
@@ -1114,7 +1114,7 @@ fn a_broken_theme_file_counts_only_in_use() {
             ("gone", "themes/gone.toml: cannot read: denied"),
         ]
     );
-    // In use, by the file or by `CLAI_THEME`: a load error, with no second
+    // In use, by the file or by `CODEAGENT_THEME`: a load error, with no second
     // "unknown theme".
     let e = load_themes(
         &with("[tui]\ntheme = \"bad\"\n"),
@@ -1135,8 +1135,8 @@ fn a_broken_theme_file_counts_only_in_use() {
 #[test]
 fn the_theme_directory() {
     assert_eq!(
-        themes::directory(Path::new("/home/u/.config/clai/config.toml")),
-        Path::new("/home/u/.config/clai/themes")
+        themes::directory(Path::new("/home/u/.config/codeagent/config.toml")),
+        Path::new("/home/u/.config/codeagent/themes")
     );
     let dir = tempfile::tempdir().unwrap();
     assert!(themes::read_directory(&dir.path().join("missing")).is_empty());

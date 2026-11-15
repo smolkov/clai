@@ -381,14 +381,14 @@ async fn describe_sends_one_request_without_tools() {
         &fake,
         &model(),
         &prepared(),
-        Some("Co-Authored-By: clai <clai@localhost>"),
+        Some("Co-Authored-By: codeagent <codeagent@localhost>"),
         CancellationToken::new(),
     )
     .await
     .unwrap();
     assert_eq!(
         text,
-        "Add a\n\nBecause.\n\nCo-Authored-By: clai <clai@localhost>\n"
+        "Add a\n\nBecause.\n\nCo-Authored-By: codeagent <codeagent@localhost>\n"
     );
     let requests = fake.requests();
     assert_eq!(requests.len(), 1);

@@ -42,7 +42,7 @@ say "cargo package (builds the packed crate)"
 # shellcheck disable=SC2086
 cargo package --locked $package_args >&2
 
-crate="target/package/clai-$version.crate"
+crate="target/package/codeagent-$version.crate"
 [ -f "$crate" ] || fail "$crate was not written"
 size=$(wc -c <"$crate" | tr -d ' ')
 [ "$size" -lt 10485760 ] || fail "$crate is $size bytes; crates.io takes at most 10 MiB"
@@ -50,5 +50,5 @@ say "$crate: $size bytes, $(wc -l <"$list" | tr -d ' ') files"
 
 if [ "$run_tests" = 1 ]; then
     say "cargo test in the packed crate"
-    (cd "target/package/clai-$version" && cargo test --locked --quiet) >&2
+    (cd "target/package/codeagent-$version" && cargo test --locked --quiet) >&2
 fi

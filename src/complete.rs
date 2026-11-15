@@ -1,4 +1,4 @@
-//! Values for shell completion (see `clai completion`).
+//! Values for shell completion (see `codeagent completion`).
 //!
 //! Completers run on every Tab, so they must be quiet: any problem gives no
 //! candidates, never an error or output on standard error.
@@ -95,7 +95,7 @@ mod tests {
 
     #[test]
     fn candidates_filter_by_prefix() {
-        let dir = std::env::temp_dir().join(format!("clai-complete-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("codeagent-complete-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("config.toml");
         std::fs::write(&file, config::EXAMPLE).unwrap();
@@ -142,12 +142,12 @@ mod tests {
             question: None,
             usage: Default::default(),
         };
-        let sessions = [info("clai"), info("clai-2"), info("docs")];
-        let names: Vec<String> = session_candidates(&sessions, "cl")
+        let sessions = [info("codeagent"), info("codeagent-2"), info("docs")];
+        let names: Vec<String> = session_candidates(&sessions, "co")
             .iter()
             .map(|c| c.get_value().to_string_lossy().into_owned())
             .collect();
-        assert_eq!(names, ["clai", "clai-2"]);
+        assert_eq!(names, ["codeagent", "codeagent-2"]);
         assert!(session_candidates(&sessions, "x").is_empty());
     }
 }

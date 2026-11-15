@@ -183,7 +183,7 @@ pub enum DefaultFrom {
     User,
     /// The project file of the workspace.
     Project,
-    /// `CLAI_MODEL`.
+    /// `CODEAGENT_MODEL`.
     Env,
 }
 
@@ -303,7 +303,7 @@ fn resolve(declared: &[(&str, &str)], text: &str) -> Result<ModelRef, String> {
     }
 }
 
-/// The environment `clai` reads its configuration from: the [`Startup`]
+/// The environment `codeagent` reads its configuration from: the [`Startup`]
 /// read once in `main` (RFC 0026).
 ///
 /// [`Startup`]: crate::startup::Startup
@@ -313,19 +313,19 @@ pub use crate::startup::Startup as Environment;
 pub struct LoadOptions {
     /// `--config FILE`: used instead of the user file.
     pub config_file: Option<PathBuf>,
-    /// Directory whose `.clai/config.toml` is the project file.
+    /// Directory whose `.codeagent/config.toml` is the project file.
     pub workspace: PathBuf,
     pub env: Environment,
 }
 
-/// `$XDG_CONFIG_HOME/clai/config.toml`, else `~/.config/clai/config.toml`.
+/// `$XDG_CONFIG_HOME/codeagent/config.toml`, else `~/.config/codeagent/config.toml`.
 pub fn user_config_path(env: &Environment) -> Option<PathBuf> {
     let base = env
         .xdg_config_home
         .clone()
         .filter(|p| p.is_absolute())
         .or_else(|| env.home.as_ref().map(|h| h.join(".config")))?;
-    Some(base.join("clai").join("config.toml"))
+    Some(base.join("codeagent").join("config.toml"))
 }
 
 /// Loads and validates the configuration.
@@ -363,7 +363,7 @@ pub struct SavedDefault {
     /// The file written.
     pub path: PathBuf,
     /// What decides the default for `options.workspace` now: not the user
-    /// file when `CLAI_MODEL` or the project file sets one.
+    /// file when `CODEAGENT_MODEL` or the project file sets one.
     pub from: DefaultFrom,
     /// The default in force there, when it is not the saved one.
     pub effective: ModelRef,
@@ -386,7 +386,7 @@ impl SavedDefault {
                 self.effective
             )),
             DefaultFrom::Project => notes.push(format!(
-                "{warning} .clai/config.toml of this workspace sets default_model = {}, which wins here",
+                "{warning} .codeagent/config.toml of this workspace sets default_model = {}, which wins here",
                 self.effective
             )),
         }
@@ -442,7 +442,7 @@ pub fn load_with_user_text(
     user_text: &str,
     options: &LoadOptions,
 ) -> Result<Config, Error> {
-    let project_path = options.workspace.join(".clai").join("config.toml");
+    let project_path = options.workspace.join(".codeagent").join("config.toml");
     let project_text = match fs::read_to_string(&project_path) {
         Ok(text) => Some(text),
         Err(e) if e.kind() == io::ErrorKind::NotFound => None,

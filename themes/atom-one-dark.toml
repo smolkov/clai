@@ -1,4 +1,4 @@
-# Atom One Dark, bundled with clai. Copy it to ~/.config/clai/themes/atom-one-dark.toml
+# Atom One Dark, bundled with codeagent. Copy it to ~/.config/codeagent/themes/atom-one-dark.toml
 # to change it there; that file then replaces this one.
 base        = "dark"
 background  = "#282c34"

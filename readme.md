@@ -1,48 +1,48 @@
-# clai
+# codeagent
 
-`clai` is an AI coding agent for the terminal, written in Rust. You describe
-a task in plain language; `clai` sends it to a large language model, runs the
+`codeagent` is an AI coding agent for the terminal, written in Rust. You describe
+a task in plain language; `codeagent` sends it to a large language model, runs the
 tool calls the model asks for (read and edit files, run commands, ask a
 language server) behind permission rules, and shows every change and command.
 
-> Status: in development. The TUI (`clai`, `clai new`, `clai attach`), `clai run`
+> Status: in development. The TUI (`codeagent`, `codeagent new`, `codeagent attach`), `codeagent run`
 > (one task, without the TUI), sessions in the background server, saved and
 > resumed (`ls`, `send`, `chat`, `kill`, `export`, `import`, `server`),
-> `clai models`, `clai skills`, `clai commit` and `clai completion` work. The TUI `/commit`
+> `codeagent models`, `codeagent skills`, `codeagent commit` and `codeagent completion` work. The TUI `/commit`
 > dialog and context management come next. See [`todo.md`](todo.md).
 
 ## Install
 
 Releases are on the
-[GitHub releases page](https://github.com/smolkov/clai/releases): static
+[GitHub releases page](https://github.com/smolkov/codeagent/releases): static
 Linux binaries (x86_64, aarch64), macOS binaries, Debian packages, and
-`SHA256SUMS`. The archives hold `clai`, the readme, the licences and the
+`SHA256SUMS`. The archives hold `codeagent`, the readme, the licences and the
 shell completions in `completions/`.
 
 ```sh
 v=0.3.1 t=x86_64-unknown-linux-musl
-curl -LO https://github.com/smolkov/clai/releases/download/v$v/clai-$v-$t.tar.gz
-curl -LO https://github.com/smolkov/clai/releases/download/v$v/SHA256SUMS
+curl -LO https://github.com/smolkov/codeagent/releases/download/v$v/codeagent-$v-$t.tar.gz
+curl -LO https://github.com/smolkov/codeagent/releases/download/v$v/SHA256SUMS
 sha256sum -c --ignore-missing SHA256SUMS
-tar xf clai-$v-$t.tar.gz
-install clai-$v-$t/clai ~/.local/bin/
+tar xf codeagent-$v-$t.tar.gz
+install codeagent-$v-$t/codeagent ~/.local/bin/
 ```
 
 The build provenance of each file can be checked with
-`gh attestation verify FILE --repo smolkov/clai`.
+`gh attestation verify FILE --repo smolkov/codeagent`.
 
 On Debian and Ubuntu (the package needs no other package and installs the
 shell completions):
 
 ```sh
-sudo apt install ./clai_0.3.1-1_amd64.deb
+sudo apt install ./codeagent_0.3.1-1_amd64.deb
 ```
 
 From crates.io, built from source (needs Rust 1.88 or newer and a C
 compiler, for the crypto library):
 
 ```sh
-cargo install clai --locked
+cargo install codeagent --locked
 ```
 
 ## Build
@@ -52,7 +52,7 @@ the first build.
 
 ```sh
 cargo build --release
-./target/release/clai --help
+./target/release/codeagent --help
 ```
 
 `ci/` holds the scripts the GitHub and GitLab pipelines run; they run
@@ -64,43 +64,43 @@ locally too:
 | `ci/test.sh` | `cargo test`, and the tests of the scripts. |
 | `ci/crate.sh [--allow-dirty]` | Packs the crate as crates.io gets it; builds and tests it. |
 | `ci/build.sh TARGET` | Release build; Linux targets are musl and checked static. Needs `musl-tools`, or `cargo-zigbuild` for another architecture. |
-| `ci/package.sh TARGET` | `dist/clai-VERSION-TARGET.tar.gz`. |
-| `ci/deb.sh TARGET` | `dist/clai_VERSION-1_ARCH.deb` with `cargo-deb`; `lintian` if installed. |
+| `ci/package.sh TARGET` | `dist/codeagent-VERSION-TARGET.tar.gz`. |
+| `ci/deb.sh TARGET` | `dist/codeagent_VERSION-1_ARCH.deb` with `cargo-deb`; `lintian` if installed. |
 | `ci/deb-test.sh DEB` | Installs, checks and removes the package; only in a throw-away container. |
 
 ## Shell completion
 
 ```sh
-echo 'source <(clai completion bash)' >> ~/.bashrc   # bash
-echo 'source <(clai completion zsh)'  >> ~/.zshrc    # zsh
-echo 'clai completion fish | source'  >> ~/.config/fish/config.fish
+echo 'source <(codeagent completion bash)' >> ~/.bashrc   # bash
+echo 'source <(codeagent completion zsh)'  >> ~/.zshrc    # zsh
+echo 'codeagent completion fish | source'  >> ~/.config/fish/config.fish
 ```
 
 Tab then completes commands, options, and the configured models for
 `--model`. `elvish` and `powershell` work too; see
-[`spec/command.md`](spec/command.md), "clai completion".
+[`spec/command.md`](spec/command.md), "codeagent completion".
 
 ## Commands
 
 | Command | Purpose |
 |---------|---------|
-| `clai` | New session in the current directory, with the TUI; `clai -c` continues the last one there. |
-| `clai TASK...`, `clai run TASK...` | Run one task without the TUI and exit. |
-| `clai new`, `clai attach`, `clai ls`, `clai kill`, `clai send` | Manage sessions in the background server. |
-| `clai chat` | Chat with a session in the terminal, or answer its questions. |
-| `clai models` | List configured providers and models. |
-| `clai skills` | List the skills found for the current directory. |
-| `clai commit` | Print a commit message for the staged changes (`-a`: all changes of tracked files): `clai commit -a \| git commit -a -F -`. |
-| `clai export`, `clai import` | Write a session to a file, add one from a file. |
-| `clai server` | Run, stop or check the background server. |
-| `clai completion [SHELL]` | Print the shell code for Tab completion. |
+| `codeagent` | New session in the current directory, with the TUI; `codeagent -c` continues the last one there. |
+| `codeagent TASK...`, `codeagent run TASK...` | Run one task without the TUI and exit. |
+| `codeagent new`, `codeagent attach`, `codeagent ls`, `codeagent kill`, `codeagent send` | Manage sessions in the background server. |
+| `codeagent chat` | Chat with a session in the terminal, or answer its questions. |
+| `codeagent models` | List configured providers and models. |
+| `codeagent skills` | List the skills found for the current directory. |
+| `codeagent commit` | Print a commit message for the staged changes (`-a`: all changes of tracked files): `codeagent commit -a \| git commit -a -F -`. |
+| `codeagent export`, `codeagent import` | Write a session to a file, add one from a file. |
+| `codeagent server` | Run, stop or check the background server. |
+| `codeagent completion [SHELL]` | Print the shell code for Tab completion. |
 
 All options and exit codes: [`spec/command.md`](spec/command.md).
 
 ## The TUI
 
-`clai` creates a session in the current directory and opens the full-screen
-interface; `clai new [DIR]` does the same for `DIR`, and `clai attach NAME`
+`codeagent` creates a session in the current directory and opens the full-screen
+interface; `codeagent new [DIR]` does the same for `DIR`, and `codeagent attach NAME`
 returns to a session (without a name and with several sessions, it opens the
 session list). Leaving only detaches: the session keeps running.
 
@@ -156,9 +156,9 @@ with its share of the tokens, and a chart of tokens per day. `R` counts again.
 `Right` and see it at once, `d` sets the default, `s` saves into the config file
 (comments and order stay), `Esc` closes. `/theme` lists the themes and previews
 the selected one; `Enter` takes it and saves it as the default, `/theme NAME`
-does so directly. Besides `terminal`, `dark` and `light`, `clai` brings
+does so directly. Besides `terminal`, `dark` and `light`, `codeagent` brings
 `atom-one-dark`, `nord`, `gruvbox-dark` and `solarized-light`. Your own themes go
-in the config file as `[themes.NAME]` or as files in `~/.config/clai/themes/`,
+in the config file as `[themes.NAME]` or as files in `~/.config/codeagent/themes/`,
 e.g. `themes/mine.toml`:
 
 ```toml
@@ -172,7 +172,7 @@ The session row ends with the tokens the session has used, `in 45.1k out 3.2k`.
 Input counts the history again with each request, so this is neither the context
 size nor a bill.
 
-Without a terminal the TUI exits with `2`; use `clai run` or `clai chat`.
+Without a terminal the TUI exits with `2`; use `codeagent run` or `codeagent chat`.
 `[tui]` in the configuration has `symbols`, `mouse` (off: the terminal's own
 text selection works), `tool_output_lines`, `tool_preview` (`changes`: diffs and
 the end of command output under finished calls; `all`; `none`), `clipboard`
@@ -195,14 +195,14 @@ hides the line.
 ## Running a task
 
 ```sh
-clai fix the failing test in tests/parse.rs
-clai run --model local/qwen "explain src/main.rs"
-clai - < task.txt                               # task from standard input
-clai --yes -C ~/ws/app "run the tests and fix what fails"
+codeagent fix the failing test in tests/parse.rs
+codeagent run --model local/qwen "explain src/main.rs"
+codeagent - < task.txt                               # task from standard input
+codeagent --yes -C ~/ws/app "run the tests and fix what fails"
 ```
 
 The final answer goes to standard output, one line per tool call to
-standard error. When `clai` runs in a terminal it asks before writing files
+standard error. When `codeagent` runs in a terminal it asks before writing files
 or running commands that the rules do not allow; in scripts such calls are
 denied unless `--yes` is given. `deny` rules always apply. Exit codes: `0`
 done, `1` failed or stopped, `2` usage or configuration error, `130`
@@ -214,8 +214,8 @@ tool call. `--report=json` prints it as JSON for scripts. Without words
 the task comes from a pipe:
 
 ```sh
-clai run --report "analyse this repository for security problems"
-cat issue.md | clai run --report=json > report.json
+codeagent run --report "analyse this repository for security problems"
+cat issue.md | codeagent run --report=json > report.json
 ```
 
 ## Sessions in the background
@@ -227,30 +227,30 @@ a decision: a permission or limit question, or a question from the model.
 
 When a choice is yours (which design, which database), the model can ask
 with the `ask_user` tool: one to four questions with options, answered in
-the TUI in the place of the input (what you typed is kept) or as numbered lines in `clai chat` and `clai run`; you
+the TUI in the place of the input (what you typed is kept) or as numbered lines in `codeagent chat` and `codeagent run`; you
 can always type your own answer instead. The turn goes on with the answer.
 `ask_user = "deny"` in `[permissions]` turns it off.
 
 ```sh
-clai new -d --name api ~/ws/api       # start a session, print its name
-clai attach api                       # open it in the TUI
-clai -c                               # go on with this directory's last session
-clai send -c "and the docs too"       # send to it without attaching
-clai send api "run the tests and fix what fails"
-clai ls                               # name, workspace, model, state, age
-clai chat                             # new session here, chat in the terminal
-clai chat api                         # chat with a running session
-clai chat --questions                 # only answer questions, of all sessions
-clai chat --list                      # open questions, one per line
-clai chat api allow --id q3           # answer from a script
-clai kill api                         # end it and delete its saved files
-clai server status                    # running, pid, sessions
-clai server stop                      # stop the server; sessions stay saved
-clai export api api.json              # write a session to one file
-clai import api.json                  # add it again (e.g. on another machine)
+codeagent new -d --name api ~/ws/api       # start a session, print its name
+codeagent attach api                       # open it in the TUI
+codeagent -c                               # go on with this directory's last session
+codeagent send -c "and the docs too"       # send to it without attaching
+codeagent send api "run the tests and fix what fails"
+codeagent ls                               # name, workspace, model, state, age
+codeagent chat                             # new session here, chat in the terminal
+codeagent chat api                         # chat with a running session
+codeagent chat --questions                 # only answer questions, of all sessions
+codeagent chat --list                      # open questions, one per line
+codeagent chat api allow --id q3           # answer from a script
+codeagent kill api                         # end it and delete its saved files
+codeagent server status                    # running, pid, sessions
+codeagent server stop                      # stop the server; sessions stay saved
+codeagent export api api.json              # write a session to one file
+codeagent import api.json                  # add it again (e.g. on another machine)
 ```
 
-`clai chat` is a plain-text chat: lines you type go to the model, its text
+`codeagent chat` is a plain-text chat: lines you type go to the model, its text
 streams back with one line per tool call. `Ctrl-C` cancels the running
 turn, `Ctrl-D` detaches (the session keeps working), `/help` lists the
 commands (`/cancel`, `/model`, `/usage`, `/status [NAME]`, `/stats [RANGE]`, `/sessions`, `/attach NAME`,
@@ -260,25 +260,25 @@ with a message, `c` cancel the turn; for a limit question `y` continue,
 `n` stop; for a question from the model an option's number (`1,3: text`
 for several, with a text), your own text, `s` skip or `c` cancel.
 
-Sessions are saved as they go, in `~/.local/state/clai/sessions/`
+Sessions are saved as they go, in `~/.local/state/codeagent/sessions/`
 (`$XDG_STATE_HOME`), so they survive a server stop, a crash or a reboot.
-`clai ls` shows them as `saved`, and `clai chat NAME` (or `send`) resumes
+`codeagent ls` shows them as `saved`, and `codeagent chat NAME` (or `send`) resumes
 one with its whole conversation and the rules you allowed. A turn that was
 running is interrupted, not continued. If its model is gone from the
-configuration, resume with `clai chat NAME --model PROVIDER/MODEL`. The
+configuration, resume with `codeagent chat NAME --model PROVIDER/MODEL`. The
 files hold the conversation, including file contents and command output,
 so they are readable only by you; API keys are never saved. The
 server reloads `config.toml` when it changes; new sessions use the new
 file. Tab completion knows session names.
 
-The socket is `$XDG_RUNTIME_DIR/clai/server.sock` (or
-`/tmp/clai-$UID/server.sock`), in a directory only you can read. Details:
+The socket is `$XDG_RUNTIME_DIR/codeagent/server.sock` (or
+`/tmp/codeagent-$UID/server.sock`), in a directory only you can read. Details:
 [`spec/sessions.md`](spec/sessions.md).
 
 ## Configuration
 
-Providers and models are defined in `~/.config/clai/config.toml`
-(`$XDG_CONFIG_HOME/clai/config.toml`); `clai` has no built-in list. A
+Providers and models are defined in `~/.config/codeagent/config.toml`
+(`$XDG_CONFIG_HOME/codeagent/config.toml`); `codeagent` has no built-in list. A
 minimal file:
 
 ```toml
@@ -293,18 +293,18 @@ id             = "claude-sonnet-5-5"
 context_window = 200000
 ```
 
-Check it with `clai models`, which lists every configured model and marks
+Check it with `codeagent models`, which lists every configured model and marks
 the default and providers whose key variable is not set.
 
 To change the default model of new sessions, tick `Space` "Also make it the
 default" in the model picker (`Ctrl-O`) before `Enter`, use
-`/model NAME --default`, or run `clai models --set-default NAME`. All three
-write `default_model` into the user file, comments kept; the next `clai` start
+`/model NAME --default`, or run `codeagent models --set-default NAME`. All three
+write `default_model` into the user file, comments kept; the next `codeagent` start
 uses it.
 
-A project can add `.clai/config.toml` to set `default_model`, `[commit]`, lower `[limits]` and
-stricter `[permissions]`. `CLAI_MODEL` overrides `default_model` and
-`CLAI_THEME` overrides the theme. All keys: [`spec/config.md`](spec/config.md). Sample files to start from
+A project can add `.codeagent/config.toml` to set `default_model`, `[commit]`, lower `[limits]` and
+stricter `[permissions]`. `CODEAGENT_MODEL` overrides `default_model` and
+`CODEAGENT_THEME` overrides the theme. All keys: [`spec/config.md`](spec/config.md). Sample files to start from
 (minimal, Ollama, every key, read-only, for scripts) are in
 [`tests/configs/`](tests/configs/readme.md).
 
@@ -336,7 +336,7 @@ as writes. Nothing outside the workspace (and `extra_dirs`) is ever read or
 written. Details, exceptions (`except`) and messages for the model:
 [`spec/config.md`](spec/config.md), "Permissions".
 
-Out of the box, `clai` keeps well-known secret files from the model:
+Out of the box, `codeagent` keeps well-known secret files from the model:
 `.env` and `.env.*` (not `.env.example` and the like), key files (`*.pem`,
 `*.key`, `*.p12`, `*.pfx`, `id_rsa`, …), `.netrc` and `.pgpass`. They are
 not read, listed or searched, and an allowed command that names one, such
@@ -361,7 +361,7 @@ result.
 
 These servers are used when their program is on `PATH`: rust-analyzer
 (`.rs`), gopls (`.go`), clangd (C and C++), pyright (`.py`) and
-typescript-language-server (`.ts`, `.js`). `clai` installs none; with
+typescript-language-server (`.ts`, `.js`). `codeagent` installs none; with
 rustup, `rustup component add rust-analyzer`. Add or change servers in the
 user file:
 
@@ -383,14 +383,14 @@ roots      = ["pyproject.toml"]
 does, so the first `lsp` call of a session for a server asks:
 
 ```
-Start language server rust-analyzer in ~/ws/clai?
+Start language server rust-analyzer in ~/ws/codeagent?
 command: rust-analyzer  It may run build scripts and macros of the project.
 [y] yes  [n] no  [e] explain  [Esc] cancel
 ```
 
 `y` lasts for the session; `n` for the turn. `start = "allow"` (or
-`clai run --yes`) skips the question, `start = "deny"` or `enabled = false`
-turns the tool off. A project's `.clai/config.toml` can only turn it off.
+`codeagent run --yes`) skips the question, `start = "deny"` or `enabled = false`
+turns the tool off. A project's `.codeagent/config.toml` can only turn it off.
 Sessions on the same project share one server; it stops after 10 minutes
 without use. `/lsp` shows the servers, their state and last error lines,
 and restarts or stops one. Details: [`spec/tools.md`](spec/tools.md),
@@ -413,12 +413,12 @@ description: Steps before tagging a release of a Rust crate.
 1. Run `cargo test` and `cargo clippy` …
 ```
 
-`clai` finds skills in the directories of your user file's `[skills] dirs`,
+`codeagent` finds skills in the directories of your user file's `[skills] dirs`,
 then in `.opencode/skills`, `.claude/skills` and `.agents/skills` of the
 workspace, then in `~/.config/opencode/skills`, `~/.claude/skills` and
 `~/.agents/skills`, also in subdirectories (`synced/<id>/<skill>/`). When
 two skills have the same name, the earlier
-directory wins. `clai skills` lists what it finds, and why a file is
+directory wins. `codeagent skills` lists what it finds, and why a file is
 skipped.
 
 ```toml
@@ -429,12 +429,12 @@ default_dirs = true           # false: only dirs
 
 Nothing is used until you turn it on for a session: `/skills` opens a box
 (`Space` ticks, `Enter` applies), `/skills NAME` turns one on or off, and
-`clai run --skill NAME` or `clai new --skill NAME` start with it. An active
+`codeagent run --skill NAME` or `codeagent new --skill NAME` start with it. An active
 skill's instructions go into the system prompt, and its directory is
 readable (not writable) for the model; its scripts run only as your
 command rules allow. The session keeps the text it read, also after a
 restart; `/skills` marks a skill whose file changed since. A project's
-`.clai/config.toml` cannot set `[skills]`. Details:
+`.codeagent/config.toml` cannot set `[skills]`. Details:
 [`spec/skills.md`](spec/skills.md).
 
 ## Limits
@@ -453,8 +453,8 @@ A project file may only lower these values. Details:
 
 ## Logging
 
-`clai` logs to `~/.local/state/clai/clai.log` (or `$XDG_STATE_HOME/clai/clai.log`).
-Set `CLAI_LOG=debug` for more detail.
+`codeagent` logs to `~/.local/state/codeagent/codeagent.log` (or `$XDG_STATE_HOME/codeagent/codeagent.log`).
+Set `CODEAGENT_LOG=debug` for more detail.
 
 ## Release
 
@@ -480,7 +480,7 @@ crates.io, once:
   `cargo publish --locked` with your crates.io token. Publishing cannot be
   undone; a version can only be yanked.
 - Then, in the crate's settings on crates.io, add a trusted publisher:
-  repository `smolkov/clai`, workflow `release.yml`, environment
+  repository `smolkov/codeagent`, workflow `release.yml`, environment
   `crates-io`. Create the `crates-io` environment in the GitHub repository
   (with yourself as required reviewer, if each publish should wait for
   you). Later releases publish without a stored token.

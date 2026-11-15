@@ -58,7 +58,7 @@ Out:
 - The spacing between entries: it stays as it is (the user found it
   good).
 - Renaming the tools for the model, in the config or in permission rules.
-- `clai chat` and `clai run` output: they keep the long names (chosen by
+- `codeagent chat` and `codeagent run` output: they keep the long names (chosen by
   the user). They print plain lines that scripts may read.
 - The details view (`o`): it stays as it is.
 - The `Enter` key on a selected call: it keeps its cycle.
@@ -296,7 +296,7 @@ Written into the spec when the RFC is accepted:
      while building it:
      - The prompt bar replaces only the leading `edit_file:` of the
        question's summary; the summary itself, as sent by the server and
-       shown by `clai chat`, keeps the real name.
+       shown by `codeagent chat`, keeps the real name.
      - The activity line already says `Editing …`, `Running …`; it is
        unchanged.
 2. **The answer marker**
@@ -388,7 +388,7 @@ Written into the spec when the RFC is accepted:
 4. ~~Names in the permission question~~: answered, the real name in its
    rule text (see "Short tool names").
 5. ~~`Enter` and the clicks~~: answered, `Enter` keeps its cycle.
-6. ~~`clai chat`~~: answered, it keeps the long names (see "Scope").
+6. ~~`codeagent chat`~~: answered, it keeps the long names (see "Scope").
 7. ~~Where the question of `ask_user` opens~~: answered, at the bottom,
    covering the input (see "Questions at the bottom").
 8. ~~Rows above a tall question~~: answered, 3.
@@ -401,7 +401,7 @@ Written into the spec when the RFC is accepted:
 3. `write_file` is shown as `write`, chosen by the user.
 4. The rule texts of a permission question keep the real tool name, chosen
    by the user.
-6. `clai chat` and `clai run` keep the long names, chosen by the user.
+6. `codeagent chat` and `codeagent run` keep the long names, chosen by the user.
 5. `Enter` on a selected call keeps its cycle (closed, expanded, full),
    chosen by the user.
 7. A question from the model opens at the bottom and covers the input

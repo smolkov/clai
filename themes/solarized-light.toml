@@ -1,4 +1,4 @@
-# Solarized (light), bundled with clai. Copy it to ~/.config/clai/themes/solarized-light.toml
+# Solarized (light), bundled with codeagent. Copy it to ~/.config/codeagent/themes/solarized-light.toml
 # to change it there; that file then replaces this one.
 base        = "light"
 background  = "#fdf6e3"

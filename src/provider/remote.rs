@@ -66,7 +66,7 @@ struct Inner<C> {
     http: Http,
     base_url: String,
     key_source: KeySource,
-    /// Where `api_key_env` is looked up: the environment `clai` started
+    /// Where `api_key_env` is looked up: the environment `codeagent` started
     /// with (RFC 0026).
     env: Arc<crate::startup::Startup>,
     key: OnceCell<Option<ApiKey>>,

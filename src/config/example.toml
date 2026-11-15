@@ -1,4 +1,4 @@
-# ~/.config/clai/config.toml
+# ~/.config/codeagent/config.toml
 
 # Model used for new sessions, as "<provider>/<model>".
 default_model = "anthropic/sonnet"

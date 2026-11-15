@@ -1,6 +1,6 @@
-//! The report of `clai run --report` (RFC 0027; see `spec/command.md`,
-//! "clai run"): what the model handed in with the `report` tool, and what
-//! `clai` saw itself in the events of the run.
+//! The report of `codeagent run --report` (RFC 0027; see `spec/command.md`,
+//! "codeagent run"): what the model handed in with the `report` tool, and what
+//! `codeagent` saw itself in the events of the run.
 
 use std::collections::HashMap;
 use std::path::Path;

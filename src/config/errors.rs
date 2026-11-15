@@ -110,11 +110,11 @@ mod tests {
     #[test]
     fn display_env() {
         let err = ConfigError {
-            origin: Origin::Env("CLAI_MODEL"),
+            origin: Origin::Env("CODEAGENT_MODEL"),
             key: None,
             message: "unknown model".into(),
         };
-        assert_eq!(err.to_string(), "CLAI_MODEL: unknown model");
+        assert_eq!(err.to_string(), "CODEAGENT_MODEL: unknown model");
     }
 
     #[test]

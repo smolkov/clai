@@ -1,4 +1,4 @@
-//! `clai run` and its short form `clai TASK...` (see `spec/command.md`).
+//! `codeagent run` and its short form `codeagent TASK...` (see `spec/command.md`).
 
 use std::io::{self, Write};
 use std::path::PathBuf;
@@ -41,7 +41,7 @@ pub struct Run {
     /// Workspace. Default: the current directory.
     #[arg(short = 'C', value_name = "DIR", value_hint = ValueHint::DirPath)]
     pub dir: Option<PathBuf>,
-    /// Turn on skill NAME for the task; repeatable. `clai skills` lists
+    /// Turn on skill NAME for the task; repeatable. `codeagent skills` lists
     /// them.
     #[arg(long = "skill", value_name = "NAME")]
     pub skills: Vec<String>,
@@ -143,7 +143,7 @@ struct Reporting {
     format: ReportFormat,
     /// Absolute, links resolved.
     workspace: PathBuf,
-    /// As shown: `~/ws/clai`.
+    /// As shown: `~/ws/codeagent`.
     place: String,
     model: String,
 }
@@ -155,7 +155,7 @@ struct Prepared {
     root: PathBuf,
     /// The skills of `--skill`, in the order given.
     skills: Vec<crate::skills::Active>,
-    /// The workspace as shown: `~/ws/clai`.
+    /// The workspace as shown: `~/ws/codeagent`.
     place: String,
     unicode: bool,
 }
@@ -381,7 +381,7 @@ async fn turn(
 }
 
 /// `SIGINT`, `SIGTERM` and `SIGHUP` cancel the turn (or the request of
-/// `clai commit`). Later signals are
+/// `codeagent commit`). Later signals are
 /// ignored while it stops, so no command is left running.
 pub(super) fn watch_signals(cancel: CancellationToken, stopped: Arc<AtomicU8>) -> Result<()> {
     let listen = |kind: SignalKind| signal(kind).map_err(Error::io("signal handler"));

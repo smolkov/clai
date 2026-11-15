@@ -1,6 +1,6 @@
 //! Writing the user file: `[tui]` keys for the TUI's `/settings` and
 //! `/theme`, and `default_model` for the model picker, `/model --default` and
-//! `clai models --set-default` (see `spec/config.md`, "Writing the user
+//! `codeagent models --set-default` (see `spec/config.md`, "Writing the user
 //! file"). Everything else in the file stays as it is, comments and order
 //! included.
 
@@ -159,12 +159,12 @@ pub fn save_with(
     Ok(())
 }
 
-/// `.config.toml.clai-1234` next to the file.
+/// `.config.toml.codeagent-1234` next to the file.
 fn temporary(target: &Path) -> PathBuf {
     let name = target
         .file_name()
         .map_or_else(|| "config.toml".into(), |n| n.to_string_lossy());
-    target.with_file_name(format!(".{name}.clai-{}", std::process::id()))
+    target.with_file_name(format!(".{name}.codeagent-{}", std::process::id()))
 }
 
 #[cfg(test)]

@@ -137,7 +137,7 @@ impl Drop for Server {
 
 impl Server {
     /// Starts the process of `setup` and initializes it. The process gets
-    /// its own process group and the environment of `clai` plus
+    /// its own process group and the environment of `codeagent` plus
     /// `setup.env`.
     pub async fn start(setup: &Setup) -> Result<Server> {
         let Some((program, args)) = setup.command.split_first() else {
@@ -462,7 +462,7 @@ fn initialize_params(setup: &Setup) -> Value {
         .unwrap_or_else(|| "root".into());
     let mut params = json!({
         "processId": std::process::id(),
-        "clientInfo": {"name": "clai", "version": env!("CARGO_PKG_VERSION")},
+        "clientInfo": {"name": "codeagent", "version": env!("CARGO_PKG_VERSION")},
         "rootUri": uri,
         "workspaceFolders": [{"uri": uri, "name": name}],
         "capabilities": client_capabilities(),
@@ -476,7 +476,7 @@ fn initialize_params(setup: &Setup) -> Value {
     params
 }
 
-/// What `clai` handles of the protocol.
+/// What `codeagent` handles of the protocol.
 fn client_capabilities() -> Value {
     json!({
         "general": {"positionEncodings": ["utf-8", "utf-16"]},
@@ -620,7 +620,7 @@ fn server_request(
         | "window/showMessageRequest" => Ok(Value::Null),
         "workspace/applyEdit" => Ok(json!({
             "applied": false,
-            "failureReason": "clai does not apply edits of a language server",
+            "failureReason": "codeagent does not apply edits of a language server",
         })),
         _ => Err((METHOD_NOT_FOUND, format!("method not found: {method}"))),
     }

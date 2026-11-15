@@ -83,7 +83,7 @@ fn title(app: &App) -> String {
     if theming.colouring == Colouring::None {
         format!(" Theme {rule} {warning} colours are off (NO_COLOR) ")
     } else if let Some(env) = &theming.theme_env {
-        format!(" Theme {rule} {warning} CLAI_THEME={env} for this run ")
+        format!(" Theme {rule} {warning} CODEAGENT_THEME={env} for this run ")
     } else {
         " Theme ".to_owned()
     }

@@ -296,7 +296,7 @@ impl Stats {
 /// A client attached to the session.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ClientInfo {
-    /// `tui pts/3`, `clai chat`.
+    /// `tui pts/3`, `codeagent chat`.
     pub name: String,
     /// Whether it answers questions; a client that only watches does not.
     pub answers: bool,

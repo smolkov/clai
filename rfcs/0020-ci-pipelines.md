@@ -40,7 +40,7 @@ the same on both forges and on a developer's machine.
 - On Debian and Ubuntu machines a `.deb` is what admins expect: `apt`
   knows the file, removes it cleanly, and puts the shell completions
   where the shells find them.
-- Rust users expect `cargo install clai`. `Cargo.toml` has no
+- Rust users expect `cargo install codeagent`. `Cargo.toml` has no
   description, licence or repository, which crates.io requires, and
   nothing checks that the packed crate builds: `themes/` is compiled in
   with `include_str!`, and a forgotten file breaks only the published
@@ -55,7 +55,7 @@ In:
 - Targets, toolchain pinning, caching, artifacts.
 - The release process: version, tag, changelog, packages, checksums,
   provenance, release pages on both forges.
-- `clai --version` with the commit it was built from.
+- `codeagent --version` with the commit it was built from.
 - Debian packages: contents, metadata, version mapping, `lintian`, an
   install test, attached to the release.
 - crates.io: metadata, `include`, the packed crate checked, publishing
@@ -65,14 +65,14 @@ In:
 
 Out:
 
-- An apt repository (`apt install clai` after adding a source): the
+- An apt repository (`apt install codeagent` after adding a source): the
   `.deb` is a download for now (open question 8).
 - Packaging for Debian itself (a source package built from Debian's
   Rust crates, in the Debian archive), RPM, Homebrew, AUR. They can use
   the release archives later.
 - A man page (`clap_mangen`); the `.deb` ships the readme instead (open
   question 9).
-- Windows: `clai` uses Unix sockets, process groups and signals
+- Windows: `codeagent` uses Unix sockets, process groups and signals
   (`nix`); it does not build there.
 - Running the live tests (`tests/live.rs`) on every push: they need API
   keys and cost money. A manual job only.
@@ -91,10 +91,10 @@ call. Each runs locally too. **(proposal)**
 |--------|------|
 | `ci/check.sh` | `cargo fmt --all -- --check`; `cargo clippy --all-targets --locked -- -D warnings`. |
 | `ci/test.sh` | `cargo test --locked`. |
-| `ci/build.sh TARGET` | Release build for `TARGET`; on Linux checks that the binary is static (`file` says `statically linked`, or `ldd` says `not a dynamic executable`); runs `clai --version` and `clai completion bash` when the target runs on the host. |
-| `ci/package.sh TARGET VERSION` | `clai-VERSION-TARGET.tar.gz` with `clai`, `readme.md`, `LICENSE`, `CHANGELOG.md`, `completions/` (bash, zsh, fish from `clai completion`). |
-| `ci/deb.sh TARGET VERSION` | `clai_DEBVERSION_ARCH.deb` from the built binary with `cargo deb --no-build`; `lintian` on it. |
-| `ci/deb-test.sh DEB` | Installs the package with `apt-get install ./DEB` in the running container, checks `clai --version`, the completion files, then `apt-get remove` leaves nothing. |
+| `ci/build.sh TARGET` | Release build for `TARGET`; on Linux checks that the binary is static (`file` says `statically linked`, or `ldd` says `not a dynamic executable`); runs `codeagent --version` and `codeagent completion bash` when the target runs on the host. |
+| `ci/package.sh TARGET VERSION` | `codeagent-VERSION-TARGET.tar.gz` with `codeagent`, `readme.md`, `LICENSE`, `CHANGELOG.md`, `completions/` (bash, zsh, fish from `codeagent completion`). |
+| `ci/deb.sh TARGET VERSION` | `codeagent_DEBVERSION_ARCH.deb` from the built binary with `cargo deb --no-build`; `lintian` on it. |
+| `ci/deb-test.sh DEB` | Installs the package with `apt-get install ./DEB` in the running container, checks `codeagent --version`, the completion files, then `apt-get remove` leaves nothing. |
 | `ci/crate.sh` | `cargo package --locked`, then checks the file list against `include` (no `target/`, `rfcs/`, `.github/`) and the size (under 10 MiB). |
 | `ci/notes.sh VERSION` | Prints the section of `VERSION` from `CHANGELOG.md`; fails if there is none. |
 | `ci/version.sh TAG` | Fails unless `TAG` is `v` plus the `version` in `Cargo.toml`. |
@@ -132,7 +132,7 @@ stable to see breakage early.
 - GitHub builds aarch64 on its own arm runners, so the binary is also
   run there. GitLab cross-builds with `cargo-zigbuild` (no Docker in
   Docker), and runs the aarch64 binary only if an arm runner is
-  registered (`CLAI_ARM_RUNNER` set). **(proposal)**
+  registered (`CODEAGENT_ARM_RUNNER` set). **(proposal)**
 - macOS: tests also run there on GitHub, since `spec/readme.md` leaves
   the platforms open and `nix` covers it. If macOS is dropped (open
   question 1), these rows go.
@@ -220,11 +220,11 @@ and depends on nothing. **(proposal)**
 
 | Item | Value |
 |------|-------|
-| File | `clai_0.2.0-1_amd64.deb`, `clai_0.2.0-1_arm64.deb` |
-| `Package` | `clai` |
+| File | `codeagent_0.2.0-1_amd64.deb`, `codeagent_0.2.0-1_arm64.deb` |
+| `Package` | `codeagent` |
 | `Version` | The crate version, `-` before a pre-release part made `~` (`0.2.0~rc.1-1`), so it sorts before `0.2.0-1`; revision `-1`. |
 | `Architecture` | `amd64` from `x86_64-unknown-linux-musl`, `arm64` from `aarch64-unknown-linux-musl` |
-| `Depends` | none (static); `Recommends: git` (for `clai commit`); `Suggests: wl-clipboard \| xclip \| xsel` (copy, RFC 0016) |
+| `Depends` | none (static); `Recommends: git` (for `codeagent commit`); `Suggests: wl-clipboard \| xclip \| xsel` (copy, RFC 0016) |
 | `Section` / `Priority` | `devel` / `optional` |
 | `Maintainer` | From `Cargo.toml` `authors` |
 | `Description` | The crate `description`, and the first paragraph of the readme as the long text. |
@@ -233,30 +233,30 @@ Files:
 
 | Path | From |
 |------|------|
-| `/usr/bin/clai` | The release binary. |
-| `/usr/share/bash-completion/completions/clai` | `clai completion bash` |
-| `/usr/share/zsh/vendor-completions/_clai` | `clai completion zsh` |
-| `/usr/share/fish/vendor_completions.d/clai.fish` | `clai completion fish` |
-| `/usr/share/doc/clai/README.md` | `readme.md` |
-| `/usr/share/doc/clai/changelog.gz` | `CHANGELOG.md`, compressed |
-| `/usr/share/doc/clai/copyright` | Machine-readable copyright file, from `LICENSE` and the licences of the dependencies (`cargo deny list`). |
+| `/usr/bin/codeagent` | The release binary. |
+| `/usr/share/bash-completion/completions/codeagent` | `codeagent completion bash` |
+| `/usr/share/zsh/vendor-completions/_codeagent` | `codeagent completion zsh` |
+| `/usr/share/fish/vendor_completions.d/codeagent.fish` | `codeagent completion fish` |
+| `/usr/share/doc/codeagent/README.md` | `readme.md` |
+| `/usr/share/doc/codeagent/changelog.gz` | `CHANGELOG.md`, compressed |
+| `/usr/share/doc/codeagent/copyright` | Machine-readable copyright file, from `LICENSE` and the licences of the dependencies (`cargo deny list`). |
 
-- The completion files are the output of `clai completion SHELL`, saved
+- The completion files are the output of `codeagent completion SHELL`, saved
   at build time. That code holds no fixed list; it calls
-  `COMPLETE=<shell> clai` on each Tab (`spec/command.md`, "clai
+  `COMPLETE=<shell> codeagent` on each Tab (`spec/command.md`, "codeagent
   completion"), so the saved files stay right for the installed binary,
   with models and session names, and the user needs no line in
   `~/.bashrc`.
-- No maintainer scripts: `clai` has no system service; the server is per
+- No maintainer scripts: `codeagent` has no system service; the server is per
   user and starts on demand. Removing the package leaves the user's
-  files in `~/.config/clai` and `~/.local/state/clai`, as Debian expects.
+  files in `~/.config/codeagent` and `~/.local/state/codeagent`, as Debian expects.
 - No `/etc` files: the configuration is per user.
 - The metadata lives in `[package.metadata.deb]` in `Cargo.toml`; the
   completions are generated by `ci/deb.sh` into `target/completions/`
   first, which the `assets` list names.
 - `lintian` must pass with no errors; warnings that do not apply to a
   static Rust binary (`statically-linked-binary`,
-  `no-manual-page`) are overridden in `debian/clai.lintian-overrides`
+  `no-manual-page`) are overridden in `debian/codeagent.lintian-overrides`
   with a comment each.
 - The `.deb` files go into the release with the archives and are listed
   in `SHA256SUMS`. GitLab also uploads them to its generic package
@@ -264,7 +264,7 @@ Files:
 
 ### crates.io
 
-What `cargo install clai` needs **(proposal)**:
+What `cargo install codeagent` needs **(proposal)**:
 
 - `Cargo.toml` gains `description`, `license`, `repository`,
   `homepage`, `readme = "readme.md"`, `keywords` (at most five: `ai`,
@@ -284,11 +284,11 @@ What `cargo install clai` needs **(proposal)**:
   that the library is the binary's internals and has no stable API;
   semver applies to the command line, the configuration and the
   protocol, not to the Rust items. **(proposal)**
-- The name: `clai` must be free on crates.io. If it is taken, the
-  package is named otherwise (for example `clai-agent`) and
-  `[[bin]] name = "clai"` keeps the command (open question 6).
+- The name: `codeagent` must be free on crates.io. If it is taken, the
+  package is named otherwise (for example `codeagent-agent`) and
+  `[[bin]] name = "codeagent"` keeps the command (open question 6).
 - Building from crates.io links against glibc and compiles `aws-lc-sys`,
-  so the readme says `cargo install clai --locked` needs a C compiler.
+  so the readme says `cargo install codeagent --locked` needs a C compiler.
 
 Publishing **(proposal)**:
 
@@ -313,10 +313,10 @@ Publishing **(proposal)**:
 - `CHANGELOG.md` (new), one section per version, newest first, with an
   `Unreleased` section at the top that changes are written into. The
   release notes are the version's section. **(proposal)**
-- `clai --version` prints `clai 0.2.0 (abc1234 2026-11-11)`: the commit
-  and date come from `CLAI_BUILD_COMMIT` and `CLAI_BUILD_DATE`, set by
+- `codeagent --version` prints `codeagent 0.2.0 (abc1234 2026-11-11)`: the commit
+  and date come from `CODEAGENT_BUILD_COMMIT` and `CODEAGENT_BUILD_DATE`, set by
   `ci/build.sh` and read with `option_env!`; a local build without them
-  prints `clai 0.2.0`. No `build.rs`, no new dependency.
+  prints `codeagent 0.2.0`. No `build.rs`, no new dependency.
 
 The release process, for `readme.md`:
 
@@ -333,22 +333,22 @@ The release process, for `readme.md`:
 `readme.md` gains:
 
 ```sh
-curl -LO https://github.com/smolkov/clai/releases/download/v0.2.0/clai-0.2.0-x86_64-unknown-linux-musl.tar.gz
+curl -LO https://github.com/smolkov/codeagent/releases/download/v0.2.0/codeagent-0.2.0-x86_64-unknown-linux-musl.tar.gz
 sha256sum -c --ignore-missing SHA256SUMS
-tar xf clai-0.2.0-x86_64-unknown-linux-musl.tar.gz
-install clai-0.2.0-x86_64-unknown-linux-musl/clai ~/.local/bin/
+tar xf codeagent-0.2.0-x86_64-unknown-linux-musl.tar.gz
+install codeagent-0.2.0-x86_64-unknown-linux-musl/codeagent ~/.local/bin/
 ```
 
 On Debian and Ubuntu:
 
 ```sh
-sudo apt install ./clai_0.2.0-1_amd64.deb
+sudo apt install ./codeagent_0.2.0-1_amd64.deb
 ```
 
 From crates.io (builds from source, needs Rust and a C compiler):
 
 ```sh
-cargo install clai --locked
+cargo install codeagent --locked
 ```
 
 ### Licence
@@ -363,7 +363,7 @@ only a file and a key.
 
 ## Dependencies
 
-No new crates in `clai`. Tools in the pipelines only, at pinned
+No new crates in `codeagent`. Tools in the pipelines only, at pinned
 versions: `cargo-zigbuild` and `zig` (GitLab aarch64), `cargo-deny`
 (audit), `cargo-deb` and `lintian` (Debian packages), `release-cli`
 (GitLab), `gh` (GitHub, on the runners), `rust-lang/crates-io-auth-action`
@@ -372,7 +372,7 @@ versions: `cargo-zigbuild` and `zig` (GitLab aarch64), `cargo-deny`
 New files: `ci/*.sh`, `.github/workflows/ci.yml`,
 `.github/workflows/release.yml`, `.github/dependabot.yml`,
 `.gitlab-ci.yml`, `rust-toolchain.toml`, `deny.toml`, `CHANGELOG.md`,
-`LICENSE`, `debian/clai.lintian-overrides`. `Cargo.toml` gains the
+`LICENSE`, `debian/codeagent.lintian-overrides`. `Cargo.toml` gains the
 crates.io metadata, `include` and `[package.metadata.deb]`.
 
 ## Spec changes
@@ -383,7 +383,7 @@ crates.io metadata, `include` and `[package.metadata.deb]`.
 - `agent.md`, "Before committing": `ci/check.sh` and `ci/test.sh` as the
   short form.
 - `readme.md`: "Install" with the archives, the `.deb`
-  (`sudo apt install ./clai_0.2.0-1_amd64.deb`) and `cargo install clai
+  (`sudo apt install ./codeagent_0.2.0-1_amd64.deb`) and `cargo install codeagent
   --locked`; "Release" with the process, the first manual crates.io
   publish, and that publishing cannot be undone.
 - `todo.md`: the musl check items done; the Release milestone split into
@@ -396,15 +396,15 @@ crates.io metadata, `include` and `[package.metadata.deb]`.
 - `ci/notes.sh` and `ci/version.sh`: run on a small `CHANGELOG.md` and
   tags with and without a match, in `tests/ci.sh`, called by `ci/test.sh`.
 - `ci/deb.sh` and `ci/deb-test.sh` locally in a `debian:stable-slim`
-  container: `lintian` clean; install, `clai --version`, `bash -ic
-  'complete -p clai'` finds the completion; remove leaves no file of the
+  container: `lintian` clean; install, `codeagent --version`, `bash -ic
+  'complete -p codeagent'` finds the completion; remove leaves no file of the
   package. A pre-release version maps to `~rc` and sorts before the
   release (`dpkg --compare-versions`).
 - `ci/crate.sh`: the packed crate builds and its tests pass
   (`cargo package` builds it; `ci/crate.sh` also runs `cargo test` in the
   unpacked crate); a file left out of `include` fails it.
 - `--version`: a test in `tests/cli.rs` that the output starts with
-  `clai ` and the version, with and without the build variables.
+  `codeagent ` and the version, with and without the build variables.
 - The pipelines themselves: a branch with a deliberate `clippy` warning
   fails `check`; a pre-release tag `v0.1.1-rc.1` on a test branch runs
   the whole release on both forges, and the archives are downloaded and
@@ -412,7 +412,7 @@ crates.io metadata, `include` and `[package.metadata.deb]`.
   a Debian and an Ubuntu machine. `publish` is skipped for the
   pre-release. The pre-release is deleted after.
 - The first crates.io publish by hand, then the next release by the
-  `publish` job; `cargo install clai --locked` on a clean machine.
+  `publish` job; `cargo install codeagent --locked` on a clean machine.
 
 ## Implementation plan
 
@@ -450,7 +450,7 @@ crates.io metadata, `include` and `[package.metadata.deb]`.
 5. **Debian package**
    - Status: done
    - Files: `ci/deb.sh`, `ci/deb-test.sh`, `Cargo.toml`
-     (`[package.metadata.deb]`), `debian/clai.lintian-overrides`, the
+     (`[package.metadata.deb]`), `debian/codeagent.lintian-overrides`, the
      workflows, `.gitlab-ci.yml`
    - Result: a tag adds `.deb` files for amd64 and arm64 to the release,
      `lintian` clean and install-tested.
@@ -468,7 +468,7 @@ crates.io metadata, `include` and `[package.metadata.deb]`.
    - Files: `.github/workflows/release.yml`, `readme.md`
    - Result: the first version published by hand; trusted publishing
      set up; later release tags publish from GitHub.
-   - Tests: the first publish, then `cargo install clai --locked`.
+   - Tests: the first publish, then `cargo install codeagent --locked`.
 
 8. **Docs and spec**
    - Status: done
@@ -519,17 +519,17 @@ crates.io metadata, `include` and `[package.metadata.deb]`.
    stable?
 5. Is provenance (GitHub attestations) enough, or should archives also
    be signed with a key (`minisign`, cosign)?
-6. The crates.io name: `clai` if it is free (check with `cargo info
-   clai` before step 6), otherwise which (`clai-agent`, `clai-cli`)? The
-   command stays `clai` either way.
+6. The crates.io name: `codeagent` if it is free (check with `cargo info
+   codeagent` before step 6), otherwise which (`codeagent-agent`, `codeagent-cli`)? The
+   command stays `codeagent` either way.
 7. `rustls` brings `aws-lc-sys`, which needs a C (and on some targets a
    CMake) toolchain for each target. Keep it, or switch `reqwest` to the
    `ring` provider, which cross-builds more easily?
 
-8. An apt repository later (`apt install clai` after adding a source:
+8. An apt repository later (`apt install codeagent` after adding a source:
    GitLab's Debian registry, a self-hosted repository with `reprepro`,
    or a hosted service), or the `.deb` as a download only (proposal)?
-9. A man page (`clap_mangen`, `clai.1` in the `.deb` and the archives),
+9. A man page (`clap_mangen`, `codeagent.1` in the `.deb` and the archives),
    or the readme only (proposal)?
 10. Publish pre-releases (`0.2.0-rc.1`) to crates.io too, or releases
     only (proposal)?
@@ -544,8 +544,8 @@ Given by the user before building:
 3. Licence: `MIT OR Apache-2.0` (`LICENSE-MIT`, `LICENSE-APACHE`).
 4. The toolchain is pinned (`rust-toolchain.toml`, 1.99.1).
 5. Provenance attestations, no signing key.
-6. The crate name `clai` was free on crates.io (checked 2026-11-11 with
-   `cargo info clai`); it is not reserved until the first publish.
+6. The crate name `codeagent` was free on crates.io (checked 2026-11-11 with
+   `cargo info codeagent`); it is not reserved until the first publish.
 7. `aws-lc-sys` stays; the builds use `musl-gcc` or zig.
 8. The `.deb` is a download; no apt repository.
 9. No man page; lintian's `no-manual-page` is overridden.
@@ -571,18 +571,18 @@ address, as they chose.
 - GitHub retired `macos-13`; both macOS targets are built on `macos-15`
   (arm64), x86_64 by cross-compiling with the Apple SDK. That binary is not
   started in the pipeline.
-- `clai completion` writes the path it was started by into the script.
-  `ci/completions.sh` runs the binary as `clai` through `PATH`, so the
-  saved files call `clai`; it fails if a build path is left in them. No
+- `codeagent completion` writes the path it was started by into the script.
+  `ci/completions.sh` runs the binary as `codeagent` through `PATH`, so the
+  saved files call `codeagent`; it fails if a build path is left in them. No
   code change was needed.
 - Helpers beyond the RFC's table: `ci/common.sh` (shared functions),
   `ci/completions.sh`, `ci/host-bin.sh` (a binary that runs on the host,
-  for cross targets; `CLAI_HOST_BIN` overrides), `ci/checksums.sh`.
+  for cross targets; `CODEAGENT_HOST_BIN` overrides), `ci/checksums.sh`.
   `ci/version.sh` gained `deb` and `prerelease`. `ci/build.sh` sets
   `CC_<target>=musl-gcc` for native musl builds.
 - Debian: lintian wants a Debian changelog, so `ci/deb.sh` writes a short
   `changelog.Debian.gz` pointing to the project's `changelog.gz`. The
-  overrides (`debian/clai.lintian-overrides`, installed into the package)
+  overrides (`debian/codeagent.lintian-overrides`, installed into the package)
   are `empty-field Depends`, `no-manual-page`,
   `shared-library-lacks-prerequisites` (lintian takes a static-pie binary
   for a library) and `initial-upload-closes-no-bugs`. Slim images do not

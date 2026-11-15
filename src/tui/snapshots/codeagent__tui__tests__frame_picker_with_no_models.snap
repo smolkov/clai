@@ -1,6 +1,5 @@
 ---
 source: src/tui/tests.rs
-assertion_line: 2446
 expression: "screen(&mut app, 80, 24)"
 ---
                                                                                 
@@ -13,7 +12,7 @@ expression: "screen(&mut app, 80, 24)"
                                                                                 
 ── Model for "project" ─────────────────────────────────────────────────────────
 No model is configured. Add one to                                              
-/home/u/.config/clai/config.toml                                                
+/home/u/.config/codeagent/config.toml                                           
                                                                                 
 [providers.local]                                                               
 api      = "openai-compatible"                                                  

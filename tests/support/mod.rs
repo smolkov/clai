@@ -135,7 +135,7 @@ impl Env {
             .join(env!("CARGO_CRATE_NAME"))
             .join(name);
         let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(root.join("config/clai")).unwrap();
+        fs::create_dir_all(root.join("config/codeagent")).unwrap();
         fs::create_dir_all(root.join("work")).unwrap();
         let config = format!(
             r#"
@@ -154,7 +154,7 @@ context_window = 100000
 "#,
             server.port
         );
-        fs::write(root.join("config/clai/config.toml"), config).unwrap();
+        fs::write(root.join("config/codeagent/config.toml"), config).unwrap();
         Env { root }
     }
 
@@ -163,7 +163,7 @@ context_window = 100000
     }
 
     pub fn command(&self, args: &[&str]) -> Command {
-        let mut cmd = Command::new(env!("CARGO_BIN_EXE_clai"));
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_codeagent"));
         cmd.args(args)
             .current_dir(self.work())
             .env("HOME", &self.root)
@@ -172,8 +172,8 @@ context_window = 100000
             .env("LANG", "C.UTF-8")
             .env_remove("LC_ALL")
             .env_remove("LC_CTYPE")
-            .env_remove("CLAI_MODEL")
-            .env_remove("CLAI_THEME");
+            .env_remove("CODEAGENT_MODEL")
+            .env_remove("CODEAGENT_THEME");
         cmd
     }
 

@@ -55,7 +55,7 @@ In:
 Out:
 
 - Selection in the input editor and the boxes (status, settings).
-- `clai chat`: it prints plain text, and the terminal selects it already.
+- `codeagent chat`: it prints plain text, and the terminal selects it already.
 - Showing the file after an edit (more than the diff). The details view can
   get it later.
 - Search in the conversation. The details view has its own search; a search

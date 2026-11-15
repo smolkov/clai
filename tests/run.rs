@@ -1,4 +1,4 @@
-//! `clai run` as a process, against a local server that speaks the
+//! `codeagent run` as a process, against a local server that speaks the
 //! `openai-compatible` streaming format (`support`).
 
 #![allow(
@@ -177,7 +177,8 @@ fn secret_files_are_denied_with_yes() {
     );
     assert!(!content.contains("hunter2"));
     // Nothing of the file reached the log either.
-    let log = fs::read_to_string(env.root.join("state/clai/clai.log")).unwrap_or_default();
+    let log =
+        fs::read_to_string(env.root.join("state/codeagent/codeagent.log")).unwrap_or_default();
     assert!(!log.contains("hunter2"));
 }
 
@@ -192,7 +193,7 @@ fn task_from_stdin() {
 
     let out = env.run_with_input(&["run", "-"], " \n");
     assert_eq!(out.status.code(), Some(2));
-    assert_eq!(stderr(&out), "clai: the task is empty\n");
+    assert_eq!(stderr(&out), "codeagent: the task is empty\n");
 }
 
 #[test]
@@ -228,7 +229,7 @@ fn provider_error_exits_1() {
     let out = env.run(&["hi"]);
     assert_eq!(out.status.code(), Some(1));
     assert!(
-        stderr(&out).starts_with("clai: error: "),
+        stderr(&out).starts_with("codeagent: error: "),
         "{}",
         stderr(&out)
     );
@@ -243,7 +244,7 @@ fn limit_reached_exits_1() {
     let out = env.run(&["list"]);
     assert_eq!(out.status.code(), Some(1));
     assert!(
-        stderr(&out).ends_with("clai: limit reached\n"),
+        stderr(&out).ends_with("codeagent: limit reached\n"),
         "{}",
         stderr(&out)
     );
@@ -270,7 +271,7 @@ fn interrupt_exits_130() {
     let out = child.wait_with_output().unwrap();
     assert!(started.elapsed() < Duration::from_secs(5));
     assert_eq!(out.status.code(), Some(130), "{}", stderr(&out));
-    assert_eq!(stderr(&out), "clai: turn cancelled\n");
+    assert_eq!(stderr(&out), "codeagent: turn cancelled\n");
 }
 
 // Reports (RFC 0027).
@@ -436,7 +437,7 @@ fn report_is_asked_for_once_more() {
     assert_eq!(r["status"], "unknown");
     assert_eq!(r["summary"], "All fine.");
     assert!(
-        stderr(&out).contains("clai: the model gave no report; its status is unknown\n"),
+        stderr(&out).contains("codeagent: the model gave no report; its status is unknown\n"),
         "{}",
         stderr(&out)
     );
@@ -530,7 +531,28 @@ fn task_from_a_pipe_without_a_dash() {
     // Standard input closed and empty: an empty task.
     let out = env.run(&["run"]);
     assert_eq!(out.status.code(), Some(2));
-    assert_eq!(stderr(&out), "clai: the task is empty\n");
+    assert_eq!(stderr(&out), "codeagent: the task is empty\n");
     let out = env.run(&["run", "--report=xml", "x"]);
     assert_eq!(out.status.code(), Some(2));
+}
+
+#[test]
+fn old_directories_move_on_first_start() {
+    // `codeagent` was `clai`: its config moves once, with a note.
+    let server = Server::start(vec![say("Hi."), say("Again.")]);
+    let env = Env::new("old-dirs", &server, "");
+    fs::rename(
+        env.root.join("config/codeagent"),
+        env.root.join("config/clai"),
+    )
+    .unwrap();
+    let out = env.run(&["run", "hi"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert_eq!(
+        stderr(&out),
+        "codeagent: moved ~/config/clai to ~/config/codeagent\n"
+    );
+    assert!(env.root.join("config/codeagent/config.toml").is_file());
+    let out = env.run(&["run", "hi"]);
+    assert_eq!(stderr(&out), "", "only once");
 }

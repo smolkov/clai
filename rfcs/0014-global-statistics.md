@@ -5,7 +5,7 @@
 - Spec: [`spec/tui.md`](../spec/tui.md), "Status box";
   [`spec/sessions.md`](../spec/sessions.md), "Persistence";
   [`spec/architecture.md`](../spec/architecture.md) (protocol);
-  [`spec/command.md`](../spec/command.md) (`clai chat`)
+  [`spec/command.md`](../spec/command.md) (`codeagent chat`)
 
 ## Summary
 
@@ -19,7 +19,7 @@ The status box gets two tabs. **Session** is the box of RFC 0007, unchanged.
 
 A range applies to the whole tab: the last 7 days, the last 30 days, or all
 time. The data comes from a new server request, `global_stats`, that counts
-the logs of all saved sessions. `clai chat` gets `/stats` with the same data as
+the logs of all saved sessions. `codeagent chat` gets `/stats` with the same data as
 text.
 
 ## Motivation
@@ -27,7 +27,7 @@ text.
 - `/status` answers "what did this session cost?", but not "what did I use
   this week?" or "which model do I use most?". Today the user has to open
   every session and add the numbers.
-- Tokens are the closest thing to cost that `clai` knows. A view per model and
+- Tokens are the closest thing to cost that `codeagent` knows. A view per model and
   per day shows trends and spikes: a day with a runaway turn, or a switch to a
   more expensive model.
 - RFC 0007 left "Statistics across sessions or across the server" out of
@@ -46,18 +46,18 @@ In:
 - Counting per model: tokens and requests are given to the model the session
   used at that time.
 - Counting per day, in the client's local time.
-- `/stats [7d|30d|all]` in `clai chat`, as text.
+- `/stats [7d|30d|all]` in `codeagent chat`, as text.
 
 Out:
 
 - Cost in money, as in RFC 0007: there are no prices in the configuration.
 - Sessions that were deleted: their log is gone, so their tokens are gone too.
   See the open questions.
-- Exported bundles (`clai export`) that are not imported: they are not
+- Exported bundles (`codeagent export`) that are not imported: they are not
   sessions of the server.
 - Charts other than tokens per day (requests per day, tool calls per day).
   The data has them; the chart can follow.
-- `clai stats` in the terminal without the TUI or chat.
+- `codeagent stats` in the terminal without the TUI or chat.
 
 ## Design
 
@@ -155,7 +155,7 @@ it keeps the model in effect:
 - It starts with the `from` of the first `model_changed`, or with the model in
   `session.json` when the session never changed it.
 - Each `model_changed` sets the model for the events after it.
-- A first `model_changed` without `from` (logs of an older `clai`) gives the
+- A first `model_changed` without `from` (logs of an older `codeagent`) gives the
   events before it to `unknown`.
 
 **(proposal)** New `usage` events also get `model`. It makes the count exact
@@ -214,12 +214,12 @@ Old events without it are counted as above.
     so it is tested by snapshots alone. ratatui's `BarChart` does not stack
     two series and has no y axis, so the chart draws its own cells.
   - `text/global.rs` (new): the rows of the Totals and Models sections, for the
-    box and for `clai chat`, as `text::status` does.
+    box and for `codeagent chat`, as `text::status` does.
 - **In `App`:** `/stats [RANGE]` opens the box on the Global tab with that
   range, 7 days by default **(proposal)**. `/stats` goes into the command list
   and its argument into completion.
 
-### `clai chat`
+### `codeagent chat`
 
 `/stats [7d|30d|all]` prints the Totals and Models sections as text, and the
 days as one line each with a bar:
@@ -237,7 +237,7 @@ Tokens per day (in + out)
   - `/stats [RANGE]` in the command table.
   - "Status box": the tabs, their keys, and a new part "Global tab" with the
     sections and the chart above.
-- `spec/command.md`: `/stats` in `clai chat`.
+- `spec/command.md`: `/stats` in `codeagent chat`.
 - `spec/sessions.md`, "Persistence": `model` in `usage`; how statistics are
   counted per model and per day.
 - `spec/architecture.md`: `global_stats`; protocol 7.
@@ -258,7 +258,7 @@ Tokens per day (in + out)
   days, all days empty, ASCII, and a narrow box.
 - **TUI:** App tests for `/stats`, `/stats 30d`, switching tabs and ranges,
   `R`, and a status box that keeps its Session tab working as before.
-- **`clai chat`:** the text output of `/stats`.
+- **`codeagent chat`:** the text output of `/stats`.
 
 ## Implementation plan
 
@@ -291,7 +291,7 @@ Tokens per day (in + out)
    - Files: `tui/view/day_chart.rs`, `tui/view/status_box.rs`
    - Result: the chart for all three ranges
    - Tests: chart snapshots
-6. **`clai chat`**
+6. **`codeagent chat`**
    - Status: done
    - Files: `command/chat/talk.rs`, `spec/command.md`
    - Result: `/stats [RANGE]` as text

@@ -1,13 +1,13 @@
 # Agent information file
 
-`clai` AI-Coding-Agent
+`codeagent` AI-Coding-Agent
 
 ## Project files
 
 | File                     | Purpose                                                        |
 |--------------------------|----------------------------------------------------------------|
 | `spec/`                  | Source of truth for behaviour, one file per topic. The user edits it directly. |
-| `spec/readme.md`         | Start of the specification: purpose, goals, terms; it is the source of truth for `clai`. |
+| `spec/readme.md`         | Start of the specification: purpose, goals, terms; it is the source of truth for `codeagent`. |
 | `readme.md`              | User documentation.                                            |
 | `implementation.md`      | Architecture, modules, dependencies and milestone order of the implementation. |
 | `todo.md`                | Tasks and their status.                                        |
@@ -50,7 +50,7 @@ the `ci/` scripts) run the same as the pipelines do.
 
 ## Never crash (outranks feature work)
 
-`clai` runs sessions in a long-lived background server; a panic would end every
+`codeagent` runs sessions in a long-lived background server; a panic would end every
 session of the user.
 
 - Non-test code never panics. Forbidden: `unwrap()`, `expect()`, `panic!`,

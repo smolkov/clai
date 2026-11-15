@@ -6,7 +6,7 @@
 - Spec: [`spec/tui.md`](../spec/tui.md), "Model picker";
   [`spec/config.md`](../spec/config.md), "Providers and models",
   "Reading and writing `[tui]`", "Environment variables";
-  [`spec/command.md`](../spec/command.md), "clai models", "clai chat"
+  [`spec/command.md`](../spec/command.md), "codeagent models", "codeagent chat"
 
 ## Summary
 
@@ -15,10 +15,10 @@ the default for new sessions`. `Space` ticks it; `Enter` then switches the
 session (or creates the new one) and writes `default_model` into the
 user config file, the same safe way `/settings` writes `[tui]`. The row
 marks show the new default as soon as the server reloads. When something
-stronger than the user file decides the default (`CLAI_MODEL`, or a
+stronger than the user file decides the default (`CODEAGENT_MODEL`, or a
 project file's `default_model`), the picker says so, before and after
 saving. The same is possible without the picker: `/model NAME --default`
-in the TUI and `clai chat`, and `clai models --set-default NAME`.
+in the TUI and `codeagent chat`, and `codeagent models --set-default NAME`.
 
 ## Motivation
 
@@ -26,7 +26,7 @@ in the TUI and `clai chat`, and `clai models --set-default NAME`.
   default the user leaves the TUI, finds the user file, and edits
   `default_model` by hand with the exact `provider/model` spelling the
   picker just showed.
-- New sessions (`/new`, `n` in the session list, `clai`) open the picker
+- New sessions (`/new`, `n` in the session list, `codeagent`) open the picker
   on `default_model`. A user who keeps choosing another model there has
   to choose it every time.
 - The spec says a model change "applies to this session only … and
@@ -44,18 +44,18 @@ In:
 - The picker: the "default" choice, its key, the footer, the notes.
 - Writing `default_model` into the user file: placement, checks, errors.
 - Which source decides the default, and how the picker shows it.
-- `/model NAME --default` in the TUI and `clai chat`;
-  `clai models --set-default NAME`.
+- `/model NAME --default` in the TUI and `codeagent chat`;
+  `codeagent models --set-default NAME`.
 - The `models` answer: where the default comes from.
 
 Out:
 
 - Removing `default_model`. It is required (`spec/config.md`,
   "Validation"), so the user always changes it to another model.
-- Writing the project file. It comes with the repository; `clai` writes
+- Writing the project file. It comes with the repository; `codeagent` writes
   only the user's own file, as for `[tui]`.
 - `[commit] model` and other per-purpose models.
-- A default per workspace kept by `clai` itself (outside the config
+- A default per workspace kept by `codeagent` itself (outside the config
   files).
 
 ## Design
@@ -73,7 +73,7 @@ Out:
 │   qwen        qwen3-coder:30b            32k   ⚠ history 41k > 32k        │
 │                                                                           │
 │ [x] Also make it the default for new sessions                             │
-│     saved as default_model in ~/.config/clai/config.toml                  │
+│     saved as default_model in ~/.config/codeagent/config.toml                  │
 │                                                                           │
 │ Enter select ─ Space default ─ Esc cancel                                 │
 └───────────────────────────────────────────────────────────────────────────┘
@@ -112,7 +112,7 @@ Out:
 ### Where the default comes from
 
 The default of a new session is, in order (`spec/config.md`):
-`CLAI_MODEL` in the server's environment, then the project file's
+`CODEAGENT_MODEL` in the server's environment, then the project file's
 `default_model` for that workspace, then the user file. Saving into the
 user file changes only the last.
 
@@ -121,7 +121,7 @@ The `models` answer gains `default_from` **(proposal)**:
 | Value | Meaning |
 |-------|---------|
 | `user` | The user file's `default_model`. |
-| `env` | `CLAI_MODEL` of the server. |
+| `env` | `CODEAGENT_MODEL` of the server. |
 | `project` | The project file of the workspace asked about. |
 
 The `models` request gains an optional `workspace`, the attached
@@ -133,15 +133,15 @@ what wins, in the warning colour, and the tick still saves:
 
 ```
 │ [x] Also make it the default for new sessions                             │
-│     ⚠ CLAI_MODEL=local/qwen overrides the saved default                   │
+│     ⚠ CODEAGENT_MODEL=local/qwen overrides the saved default                   │
 ```
 
 ```
-│     ⚠ .clai/config.toml of this workspace sets default_model = local/qwen │
+│     ⚠ .codeagent/config.toml of this workspace sets default_model = local/qwen │
 ```
 
 The save still happens, because the user file is what other workspaces
-and a later server without `CLAI_MODEL` use.
+and a later server without `CODEAGENT_MODEL` use.
 
 ### Saving
 
@@ -163,7 +163,7 @@ and a later server without `CLAI_MODEL` use.
   change on its next poll (every 2 s) and sends `config_reloaded`; the
   TUI then asks for `models` again, and the `default` mark moves.
 - After a save the status line shows
-  `default model: anthropic/opus (saved in ~/.config/clai/config.toml)`,
+  `default model: anthropic/opus (saved in ~/.config/codeagent/config.toml)`,
   or the error. A failed save does not undo the model selection.
 - Sessions that run keep their model; only new sessions use the new
   default.
@@ -175,18 +175,18 @@ file and not in the TUI's or the server's memory:
 
 | Start | Model |
 |-------|-------|
-| `clai`, `clai new` without `--model` | The saved default. |
+| `codeagent`, `codeagent new` without `--model` | The saved default. |
 | `/new`, `n` in the session list | The picker opens on the saved default. |
-| `clai run TASK` without `--model` | The saved default (it reads the file itself). |
-| `clai commit` without `--model` and `[commit] model` | The saved default. |
+| `codeagent run TASK` without `--model` | The saved default (it reads the file itself). |
+| `codeagent commit` without `--model` and `[commit] model` | The saved default. |
 | A server started later, or after a reboot | Reads the file; the saved default. |
 | Saved sessions, resumed | Their own model, as now. |
 
-`CLAI_MODEL` and a project file's `default_model` still win for the
+`CODEAGENT_MODEL` and a project file's `default_model` still win for the
 starts they apply to; the picker warns about them (above).
 
 **No 2-second gap.** The server reloads the file on its poll, every 2 s.
-A `clai` started right after the save (quit the TUI, start it again)
+A `codeagent` started right after the save (quit the TUI, start it again)
 would reach the running server before the poll and get the old default.
 So before the server creates a session without a model, and before it
 answers `models`, it compares the user and project files' stamps with
@@ -199,16 +199,16 @@ both share the stamp check, validation and atomic write.
 
 ### Without the picker
 
-- TUI and `clai chat`: `/model NAME --default` switches the session to
+- TUI and `codeagent chat`: `/model NAME --default` switches the session to
   `NAME` and saves it as the default; `/model --default` saves the
   session's current model. The command list (`/` in the input) and
   argument completion know the flag.
-- `clai models --set-default NAME` saves the default without a session,
+- `codeagent models --set-default NAME` saves the default without a session,
   through the same `config::edit` code, and prints
   `default model: anthropic/opus (saved in …)` and the override warning
   if there is one. It does not need the server. **(proposal)**
-- `clai models` (and `--json`) marks where the default comes from:
-  `default (CLAI_MODEL)`, `default (project)`.
+- `codeagent models` (and `--json`) marks where the default comes from:
+  `default (CODEAGENT_MODEL)`, `default (project)`.
 
 ## Spec changes
 
@@ -218,8 +218,8 @@ both share the stamp check, validation and atomic write.
   affected" gains "unless the default tick is set".
 - `spec/config.md`: "Reading and writing `[tui]`" becomes "Writing the
   user file", covering `[tui]` and `default_model`.
-- `spec/command.md`: `clai models --set-default`; the source marks;
-  `/model NAME --default` in `clai chat`.
+- `spec/command.md`: `codeagent models --set-default`; the source marks;
+  `/model NAME --default` in `codeagent chat`.
 - `spec/architecture.md`, "Protocol": the next version; `models` with
   `workspace`, the answer with `default_from`.
 
@@ -241,11 +241,11 @@ both share the stamp check, validation and atomic write.
 - `src/server/tests.rs`: after the user file's `default_model` changes,
   a `new` request without a model, sent before the next poll, gets the
   new default; so does `models`.
-- `tests/server.rs`: save the default, stop the TUI, run `clai new -d`
-  at once: the session has the saved model; `clai server stop`, start
+- `tests/server.rs`: save the default, stop the TUI, run `codeagent new -d`
+  at once: the session has the saved model; `codeagent server stop`, start
   again: still the saved model.
-- `tests/models.rs`: `clai models --set-default` writes the file, refuses
-  an unknown model with the list, warns about `CLAI_MODEL`.
+- `tests/models.rs`: `codeagent models --set-default` writes the file, refuses
+  an unknown model with the list, warns about `CODEAGENT_MODEL`.
 
 ## Implementation plan
 
@@ -276,7 +276,7 @@ both share the stamp check, validation and atomic write.
    - Files: `src/tui/commands.rs`, `src/command/chat/`,
      `src/command/models.rs`, `tests/models.rs`
    - Result: `/model NAME --default`, `/model --default`,
-     `clai models --set-default`, source marks in `clai models`.
+     `codeagent models --set-default`, source marks in `codeagent models`.
    - Tests: command tests, `tests/models.rs`.
 
 5. **Spec and readme**
@@ -311,8 +311,8 @@ both share the stamp check, validation and atomic write.
 1. ~~The key for the tick~~: answered, `Space` (see "The picker").
 2. Should the tick stay set between openings of the picker in one TUI
    run, or start unticked each time (proposal)?
-3. `clai models --set-default NAME` (proposal), or a general
-   `clai config set KEY VALUE` that also covers `[tui]` keys?
+3. `codeagent models --set-default NAME` (proposal), or a general
+   `codeagent config set KEY VALUE` that also covers `[tui]` keys?
 4. When a project file sets `default_model`, should the tick offer to
    write the project file instead? (Proposal: no, it belongs to the
    repository.)
@@ -323,8 +323,8 @@ both share the stamp check, validation and atomic write.
 
 1. `Space`, chosen by the user.
 2. to 5. The user asked to build it, so the proposals hold: the tick
-   starts unticked each time; `clai models --set-default`, no general
-   `clai config set`; the project file is never written; no tick for
+   starts unticked each time; `codeagent models --set-default`, no general
+   `codeagent config set`; the project file is never written; no tick for
    `[commit] model`.
 
 ## Notes from building
@@ -341,7 +341,7 @@ both share the stamp check, validation and atomic write.
   notice. A test with an hour-long poll checks that a `new` right after the
   save gets the new default; without the call it fails.
 - **Saving** is `config::save_default_model(options, path, model)`, used by
-  the TUI (the `SaveDefault` effect), `clai chat` and `clai models`. It
+  the TUI (the `SaveDefault` effect), `codeagent chat` and `codeagent models`. It
   resolves the short form against the file, writes with
   `config::edit::set_top` through `edit::save_with` (the `[tui]` `save` now
   calls that too), checks the new text with the workspace's project file,
@@ -358,15 +358,15 @@ both share the stamp check, validation and atomic write.
 - **The command list** keeps `/model [PROVIDER/MODEL]`; the description
   is now "Change or choose the model; --default saves it". The longer
   usage made the column wide enough to cut other descriptions.
-- `/model` parsing is `tui::model_argument`, shared with `clai chat`;
+- `/model` parsing is `tui::model_argument`, shared with `codeagent chat`;
   `--default` may come before or after the model.
-- `clai chat` asks the server for `models` to learn the file it reads, then
-  saves with `CLAI_MODEL` from its own environment; its `/model --default`
+- `codeagent chat` asks the server for `models` to learn the file it reads, then
+  saves with `CODEAGENT_MODEL` from its own environment; its `/model --default`
   has no test of its own (the shared save and texts are tested).
-- `clai models --json` gained `default_from`.
+- `codeagent models --json` gained `default_from`.
 - Tests: 22 new (843 in all): `set_top` and `save_with`, `default_from`, saving (short
   form, unchanged, unknown model, no file, overrides), the protocol fields,
   the server's refresh and `default_from` per workspace, the picker keys,
-  effects and notes, `/model --default`, two snapshots, `clai models
+  effects and notes, `/model --default`, two snapshots, `codeagent models
   --set-default` as a process.
 

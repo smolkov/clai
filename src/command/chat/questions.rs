@@ -1,4 +1,4 @@
-//! `clai chat --questions`: answer the questions of several sessions,
+//! `codeagent chat --questions`: answer the questions of several sessions,
 //! without their conversations.
 
 use std::collections::HashMap;
@@ -164,7 +164,7 @@ impl Interactive {
         self.current = Some((open.session, dialog));
     }
 
-    /// Handles a message from the server; `false` ends `clai chat`.
+    /// Handles a message from the server; `false` ends `codeagent chat`.
     async fn message(&mut self, message: ServerMessage) -> Result<bool> {
         match message {
             // The log of an attached session: its open question came with

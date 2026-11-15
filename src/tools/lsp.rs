@@ -474,7 +474,7 @@ impl Op {
         }
     }
 
-    /// `Start language server rust-analyzer in ~/ws/clai`.
+    /// `Start language server rust-analyzer in ~/ws/codeagent`.
     pub fn start_summary(&self, env: &Env) -> String {
         format!(
             "start language server {} in {}",

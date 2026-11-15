@@ -6,7 +6,7 @@
   [`spec/sessions.md`](../spec/sessions.md), "Persistence";
   [`spec/architecture.md`](../spec/architecture.md) (protocol);
   [`spec/agent-loop.md`](../spec/agent-loop.md) (limits, retries);
-  [`spec/command.md`](../spec/command.md) (`clai chat`)
+  [`spec/command.md`](../spec/command.md) (`codeagent chat`)
 
 ## Summary
 
@@ -26,7 +26,7 @@ it. The box updates while it is open.
 The data comes from a new server request, `session_status`. The session keeps
 running counters for it, and builds them from its log on resume. Time needs a
 timestamp per logged event, so the event log gets one. Retries need an event of
-their own. `clai chat` gets the same data as text with `/status`, and `/usage`
+their own. `codeagent chat` gets the same data as text with `/status`, and `/usage`
 stays as a short form.
 
 ## Motivation
@@ -41,7 +41,7 @@ stays as a short form.
   - How often did the provider have to retry?
 - A detached session that waits or works can only be inspected by attaching
   to it.
-- `clai chat` has only `/usage`: two token totals.
+- `codeagent chat` has only `/usage`: two token totals.
 
 ## Scope
 
@@ -56,14 +56,14 @@ In:
   without one has an unknown time.
 - A `retry` event when a model request is tried again, with a notice in the
   conversation.
-- `/status [NAME]` in `clai chat`, as text. `/usage` stays and shows the token
+- `/status [NAME]` in `codeagent chat`, as text. `/usage` stays and shows the token
   lines only.
 
 Out:
 
 - Cost in money: there are no prices in the configuration. This can come
   later with a `price` key per model.
-- `clai status NAME` in the terminal: the data is there, so the command can
+- `codeagent status NAME` in the terminal: the data is there, so the command can
   follow in its own RFC.
 - Times in replayed conversation lines (`tui.timestamps` for old events): the
   timestamp makes this possible, but it is not part of this RFC.
@@ -74,17 +74,17 @@ Out:
 ### What the box shows
 
 ```
-┌ Status ─ clai ───────────────────────────────────────────────────────────┐
+┌ Status ─ codeagent ───────────────────────────────────────────────────────────┐
 │ Session                                                                  │
-│   name         clai  (id 9)                                              │
+│   name         codeagent  (id 9)                                              │
 │   state        ● waiting: run_command asks                               │
-│   workspace    ~/ws/rust/clai                                            │
+│   workspace    ~/ws/rust/codeagent                                            │
 │   extra dirs   ~/ws/shared-lib  ⚠ missing                                │
 │   created      2026-11-07 17:46  (2h 10m ago)                            │
 │   last active  3m ago                                                    │
 │   clients      2: tui pts/3 (this), chat pts/5 (watching)                │
 │   queued       1 message                                                 │
-│   saved in     ~/.local/state/clai/sessions/9  (1.2 MB)                  │
+│   saved in     ~/.local/state/codeagent/sessions/9  (1.2 MB)                  │
 │                                                                          │
 │ Model                                                                    │
 │   model        anthropic/sonnet  (claude-sonnet-5-5)                     │
@@ -130,7 +130,7 @@ Out:
   `≥ 1h 02m`.
 - The context bar uses the theme's `user` / `dim` colours and turns `warning`
   at 80 % **(proposal)**. With an ASCII terminal it is `[######......]`.
-- The model's `key` row comes from `models` (as in `clai models`).
+- The model's `key` row comes from `models` (as in `codeagent models`).
   `api_key_cmd` is not run.
 - For a saved session: "state" says `saved`. There are no clients and no
   "This turn". "context" is the last `usage` of the log.
@@ -186,7 +186,7 @@ for every event the session logs:
 - The agent emits `retry { attempt, max, reason }`. The event is logged and
   sent to clients.
 - The TUI shows it as a notice: `retrying (2/3): rate limited`. The next
-  successful text replaces nothing. `clai chat` prints the same line.
+  successful text replaces nothing. `codeagent chat` prints the same line.
 
 ### Protocol
 
@@ -224,7 +224,7 @@ for every event the session logs:
 - **Commands and completion:** `/status` is added to the command list and to
   argument completion with the session names.
 
-### `clai chat`
+### `codeagent chat`
 
 `/status [NAME]` prints the same sections as text, without the bar, and
 aligned as in the box. `/usage` prints only the "tokens" and "context" rows.
@@ -235,7 +235,7 @@ aligned as in the box. `/usage` prints only the "tokens" and "context" rows.
   - `/status [NAME]` in the command table.
   - A new section "Status box" with the rows and keys above.
   - The `retry` notice.
-- `spec/command.md`: `/status` and `/usage` in `clai chat`.
+- `spec/command.md`: `/status` and `/usage` in `codeagent chat`.
 - `spec/sessions.md`, "Persistence": `at` in `events.jsonl`, and the counting
   of statistics from the log.
 - `spec/architecture.md`: `session_status`, and the `retry` event; protocol 4.
@@ -259,7 +259,7 @@ aligned as in the box. `/usage` prints only the "tokens" and "context" rows.
     while working and none when idle, close on switch and on question.
   - Snapshot tests of the box: a full one, a saved session, ASCII, a narrow
     terminal.
-- **`clai chat`:** the text output of `/status` and `/usage`.
+- **`codeagent chat`:** the text output of `/status` and `/usage`.
 
 ## Implementation plan
 
@@ -293,7 +293,7 @@ aligned as in the box. `/usage` prints only the "tokens" and "context" rows.
      `tui/commands.rs`, `tui/tests.rs`, `spec/tui.md`
    - Result: `/status [NAME]`, live, scrollable
    - Tests: App and snapshot tests
-6. **`clai chat`**
+6. **`codeagent chat`**
    - Status: done
    - Files: `command/chat/talk.rs`, `spec/command.md`
    - Result: `/status [NAME]` as text; `/usage` short
@@ -341,7 +341,7 @@ were taken:
 - The session directory comes as a display path (`~/…`) from the server,
   like the workspace, so clients need no home directory.
 - The box also closes with `q`, and scrolls with `Home` / `End`.
-- `text::status` builds the sections once, for the box and for `clai chat`.
+- `text::status` builds the sections once, for the box and for `codeagent chat`.
 - Check: a pseudo-terminal run of the real TUI with a fake model server. It
   covered a turn with a question, `/status`, scrolling and closing, and a 503
   that shows `retrying (1/2): HTTP 503: busy` and `1 retry` in the box.

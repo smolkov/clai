@@ -1,4 +1,4 @@
-//! A session's conversation as a stream of text for `clai chat`: user
+//! A session's conversation as a stream of text for `codeagent chat`: user
 //! messages, model text as it arrives, tool lines, notices.
 
 use std::collections::{HashMap, VecDeque};
@@ -92,7 +92,7 @@ impl Conversation {
             }
             SessionEvent::Notice { text } => self.note(text),
             SessionEvent::Error { message } => {
-                let line = format!("clai: error: {message}");
+                let line = format!("codeagent: error: {message}");
                 format!("{}{}\n", self.break_line(), self.paint(RED, &line))
             }
             SessionEvent::Retry {
@@ -114,9 +114,9 @@ impl Conversation {
         }
     }
 
-    /// `clai: <text>`, dimmed.
+    /// `codeagent: <text>`, dimmed.
     pub fn note(&mut self, text: &str) -> String {
-        let line = format!("clai: {text}");
+        let line = format!("codeagent: {text}");
         format!("{}{}\n", self.break_line(), self.paint(DIM, &line))
     }
 }

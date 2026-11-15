@@ -58,7 +58,7 @@ pub struct Setup {
     /// The system prompt; see [`system_prompt`].
     pub system: String,
     /// Someone can answer questions from the model (`ask_user`): a session
-    /// on the server, `clai run` on a terminal.
+    /// on the server, `codeagent run` on a terminal.
     pub can_ask: bool,
 }
 
@@ -168,7 +168,7 @@ pub struct Agent {
     /// The last question number; shared by all sessions of a server.
     questions: Arc<AtomicU64>,
     journal: Option<Journal>,
-    /// The model gets the `report` tool (`clai run --report`).
+    /// The model gets the `report` tool (`codeagent run --report`).
     offers_report: bool,
     /// The last valid `report` call.
     report: Option<Reported>,

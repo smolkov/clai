@@ -173,24 +173,24 @@ pub enum Source {
         line: Option<usize>,
     },
     Session,
-    /// The rules for secret files that `clai` ships (see [`builtin_rules`]).
+    /// The rules for secret files that `codeagent` ships (see [`builtin_rules`]).
     BuiltIn,
 }
 
 impl fmt::Display for Source {
-    /// `config.toml:31`, `.clai/config.toml:3`, `session`, `built-in`.
+    /// `config.toml:31`, `.codeagent/config.toml:3`, `session`, `built-in`.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Source::Session => f.write_str("session"),
             Source::BuiltIn => f.write_str("built-in"),
             Source::File { path, line } => {
                 let name = path.file_name().map(|n| n.to_string_lossy());
-                let in_clai = path
+                let in_codeagent = path
                     .parent()
                     .and_then(Path::file_name)
-                    .is_some_and(|d| d == ".clai");
-                match (name, in_clai) {
-                    (Some(name), true) => write!(f, ".clai/{name}")?,
+                    .is_some_and(|d| d == ".codeagent");
+                match (name, in_codeagent) {
+                    (Some(name), true) => write!(f, ".codeagent/{name}")?,
                     (Some(name), false) => f.write_str(&name)?,
                     (None, _) => write!(f, "{}", path.display())?,
                 }
@@ -856,15 +856,15 @@ mod tests {
     #[test]
     fn source_display() {
         let user = Source::File {
-            path: PathBuf::from("/home/u/.config/clai/config.toml"),
+            path: PathBuf::from("/home/u/.config/codeagent/config.toml"),
             line: Some(31),
         };
         assert_eq!(user.to_string(), "config.toml:31");
         let project = Source::File {
-            path: PathBuf::from("/ws/.clai/config.toml"),
+            path: PathBuf::from("/ws/.codeagent/config.toml"),
             line: Some(3),
         };
-        assert_eq!(project.to_string(), ".clai/config.toml:3");
+        assert_eq!(project.to_string(), ".codeagent/config.toml:3");
         assert_eq!(Source::Session.to_string(), "session");
     }
 

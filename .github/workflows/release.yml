@@ -86,7 +86,7 @@ jobs:
       - if: matrix.deb
         run: |
           cargo install --locked cargo-deb@3.8.0
-          CLAI_REQUIRE_LINTIAN=1 sh ci/deb.sh "${{ matrix.target }}" "$VERSION"
+          CODEAGENT_REQUIRE_LINTIAN=1 sh ci/deb.sh "${{ matrix.target }}" "$VERSION"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dist-${{ matrix.target }}
@@ -145,7 +145,7 @@ jobs:
           pre=""
           if [ "$PRERELEASE" = true ]; then pre="--prerelease"; fi
           gh release create "$GITHUB_REF_NAME" $pre --verify-tag \
-            --title "clai $VERSION" --notes-file notes.md \
+            --title "codeagent $VERSION" --notes-file notes.md \
             dist/*.tar.gz dist/*.deb dist/SHA256SUMS
 
   # The first version is published by hand (see readme.md, "Release"); then

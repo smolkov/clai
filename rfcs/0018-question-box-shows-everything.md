@@ -72,7 +72,7 @@ Out:
 
 - The tool, its limits, the question kind and its answers (RFC 0012).
   Nothing changes in the protocol.
-- `clai chat` and `clai run`: the text dialog prints everything already.
+- `codeagent chat` and `codeagent run`: the text dialog prints everything already.
 - Other boxes (status, settings, help). They may adopt the same footer
   and marks later.
 - Keeping what was chosen across a session switch (already in

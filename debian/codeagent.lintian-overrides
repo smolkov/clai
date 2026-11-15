@@ -1,19 +1,19 @@
-# lintian tags that do not apply to clai (RFC 0020); one comment each.
+# lintian tags that do not apply to codeagent (RFC 0020); one comment each.
 
 # The binary is static (musl): it needs no other package, so Depends is empty.
 empty-field Depends
 
-# No man page: `clai --help` and the readme are the documentation (RFC 0020,
+# No man page: `codeagent --help` and the readme are the documentation (RFC 0020,
 # open question 9).
-no-manual-page [usr/bin/clai]
+no-manual-page [usr/bin/codeagent]
 
 # A static-pie executable looks like a shared library without dependencies;
 # `ldd` saying "statically linked" is what is wanted.
-shared-library-lacks-prerequisites [usr/bin/clai]
+shared-library-lacks-prerequisites [usr/bin/codeagent]
 
 # On aarch64 the musl binary is a plain static executable, not a static
 # PIE; lintian names that differently. Static is what is wanted.
-statically-linked-binary [usr/bin/clai]
+statically-linked-binary [usr/bin/codeagent]
 
 # The package is not uploaded to Debian, so its changelog closes no bugs.
-initial-upload-closes-no-bugs [usr/share/doc/clai/changelog.Debian.gz:1]
+initial-upload-closes-no-bugs [usr/share/doc/codeagent/changelog.Debian.gz:1]

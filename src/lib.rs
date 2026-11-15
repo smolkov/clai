@@ -1,4 +1,4 @@
-//! `clai`: AI coding agent for the terminal. Behaviour: `spec/`.
+//! `codeagent`: AI coding agent for the terminal. Behaviour: `spec/`.
 
 pub mod agent;
 pub mod cli;

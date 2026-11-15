@@ -23,8 +23,8 @@ fn permission(details: Details) -> Question {
     Question {
         id: "q7".into(),
         session: SessionRef {
-            name: "clai".into(),
-            workspace: "~/ws/clai".into(),
+            name: "codeagent".into(),
+            workspace: "~/ws/codeagent".into(),
         },
         opened: 1_793_491_200,
         turn: TurnInfo {
@@ -72,7 +72,7 @@ fn questions_round_trip() {
 
     let command = permission(Details::RunCommand {
         command: "cargo test > out.txt".into(),
-        cwd: "~/ws/clai".into(),
+        cwd: "~/ws/codeagent".into(),
         timeout_s: 120,
         env: vec![("A".into(), "1".into())],
         parts: vec![PartDecision {
@@ -183,7 +183,7 @@ fn events_round_trip() {
                 answer: Answer::AllowAlways {
                     rules: vec!["run_command(ls)".into()],
                 },
-                by: "clai chat".into(),
+                by: "codeagent chat".into(),
             },
         },
         SessionEvent::QuestionClosed {
@@ -220,7 +220,7 @@ fn wire_format() {
     let request = ClientMessage::Request {
         id: 4,
         request: Request::Answer {
-            session: "clai".into(),
+            session: "codeagent".into(),
             question: "q3".into(),
             answer: Answer::DenyMessage { text: "no".into() },
         },
@@ -228,23 +228,23 @@ fn wire_format() {
     assert_eq!(
         serde_json::to_value(&request).unwrap(),
         json!({"type": "request", "id": 4, "request": {
-            "command": "answer", "session": "clai", "question": "q3",
+            "command": "answer", "session": "codeagent", "question": "q3",
             "answer": {"choice": "deny_message", "text": "no"}}})
     );
     let response = ServerMessage::Response {
         id: 4,
-        result: Outcome::Error(ErrorReply::failed("already answered by clai chat")),
+        result: Outcome::Error(ErrorReply::failed("already answered by codeagent chat")),
     };
     assert_eq!(
         serde_json::to_value(&response).unwrap(),
         json!({"type": "response", "id": 4,
-               "result": {"error": {"message": "already answered by clai chat"}}})
+               "result": {"error": {"message": "already answered by codeagent chat"}}})
     );
     assert_eq!(round_trip(&response), response);
     let hello = ClientMessage::Hello(ClientHello {
         version: VERSION,
         kind: ClientKind::Chat,
-        name: "clai chat".into(),
+        name: "codeagent chat".into(),
         answers: true,
     });
     assert_eq!(round_trip(&hello), hello);
@@ -334,7 +334,7 @@ fn models_round_trip() {
                 default: true,
                 key: "missing".into(),
             }],
-            config: PathBuf::from("/home/u/.config/clai/config.toml"),
+            config: PathBuf::from("/home/u/.config/codeagent/config.toml"),
             default_from: DefaultFrom::Env,
         }),
     };
@@ -349,7 +349,7 @@ fn models_round_trip() {
 
 #[test]
 fn model_changed_without_from() {
-    // A log of an older `clai` has no `from`, and none is written when empty.
+    // A log of an older `codeagent` has no `from`, and none is written when empty.
     let old: SessionEvent =
         serde_json::from_value(json!({"event": "model_changed", "model": "a/b"})).unwrap();
     assert_eq!(
@@ -413,11 +413,11 @@ fn session_info_of_an_older_server() {
 fn lsp_requests_and_answers() {
     let restart = Request::LspRestart {
         name: "rust-analyzer".into(),
-        root: "/ws/clai".into(),
+        root: "/ws/codeagent".into(),
     };
     assert_eq!(
         serde_json::to_value(&restart).unwrap(),
-        json!({"command": "lsp_restart", "name": "rust-analyzer", "root": "/ws/clai"})
+        json!({"command": "lsp_restart", "name": "rust-analyzer", "root": "/ws/codeagent"})
     );
     assert_eq!(round_trip(&restart), restart);
     assert_eq!(

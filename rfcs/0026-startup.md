@@ -11,7 +11,7 @@
 
 ## Summary
 
-`clai` reads its environment, works out its directories and loads its
+`codeagent` reads its environment, works out its directories and loads its
 configuration in many places: each command, the TUI, the client that
 starts the server, the server, logging and the completion code do it on
 their own. This RFC moves that into one step at startup. `main` reads the
@@ -24,11 +24,11 @@ cases are listed and made one.
 
 ## Motivation
 
-What `clai` reads at startup, and where:
+What `codeagent` reads at startup, and where:
 
 | What | Read in |
 |------|---------|
-| `HOME`, `XDG_CONFIG_HOME`, `CLAI_MODEL`, `CLAI_THEME` | `config::Environment::from_process`, called from `command::Context`, `client::start`, `command::server`, `chat::talk`, `complete` |
+| `HOME`, `XDG_CONFIG_HOME`, `CODEAGENT_MODEL`, `CODEAGENT_THEME` | `config::Environment::from_process`, called from `command::Context`, `client::start`, `command::server`, `chat::talk`, `complete` |
 | `HOME` alone | `command::common::shown`, `tui::sessions`, `tui::view::settings`, `log::state_dir` |
 | `XDG_STATE_HOME` | `log::state_dir` (log file and saved sessions) |
 | `XDG_RUNTIME_DIR`, the user id | `server::paths::runtime_dir` |
@@ -45,14 +45,14 @@ Problems this causes:
   be absolute in one place and is not checked in another
   (`skills::search_dirs` checks it again).
 - **The workspace is resolved three ways.** `command::common::workspace`
-  makes the path absolute, `clai skills` and `clai run --skill` also
+  makes the path absolute, `codeagent skills` and `codeagent run --skill` also
   resolve links, the server resolves links for sessions, and
-  `clai models` uses the current directory as it is. RFC 0025's
+  `codeagent models` uses the current directory as it is. RFC 0025's
   `last_session` has to compare both forms for this reason.
 - **Every command loads the configuration itself,** with its own
   `LoadOptions` and its own choice of workspace: the TUI attaching to a
   session loads it for the runtime directory, so that no project file
-  applies; `clai chat` for the current directory; `client::start` for the
+  applies; `codeagent chat` for the current directory; `client::start` for the
   runtime directory, to check the user file before it starts a server.
 - **Every command builds its runtime.** `current_thread()` or
   `multi_thread()` is called in thirteen places, each with the same
@@ -68,8 +68,8 @@ Problems this causes:
 
 In:
 
-- A `Startup` value: the environment `clai` reads, read once in `main`.
-- `Paths`: every directory and file `clai` uses, worked out from `Startup`
+- A `Startup` value: the environment `codeagent` reads, read once in `main`.
+- `Paths`: every directory and file `codeagent` uses, worked out from `Startup`
   in one module.
 - `Context`: what every command gets, with `Startup`, `Paths`, `--config`,
   and the helpers for a workspace, the configuration, a client and a
@@ -90,7 +90,7 @@ Out:
 ### Startup
 
 ```rust
-/// What `clai` reads from its process, once, in `main`.
+/// What `codeagent` reads from its process, once, in `main`.
 pub struct Startup {
     pub home: Option<PathBuf>,
     pub xdg_config_home: Option<PathBuf>,   // only if absolute
@@ -98,8 +98,8 @@ pub struct Startup {
     pub xdg_runtime_dir: Option<PathBuf>,   // only if absolute
     pub uid: u32,
     pub current_dir: Option<PathBuf>,
-    pub model: Option<String>,              // CLAI_MODEL, not empty
-    pub theme: Option<String>,              // CLAI_THEME, not empty
+    pub model: Option<String>,              // CODEAGENT_MODEL, not empty
+    pub theme: Option<String>,              // CODEAGENT_THEME, not empty
     pub stdin_terminal: bool,
     pub stdout_terminal: bool,
 }
@@ -113,19 +113,19 @@ pub struct Startup {
 - `config::Environment` becomes a part of `Startup` (or is replaced by
   it); `LoadOptions` takes `&Startup`.
 - Tests build a `Startup` by hand.
-- The server keeps its rule that `CLAI_MODEL` and `CLAI_THEME` come from
+- The server keeps its rule that `CODEAGENT_MODEL` and `CODEAGENT_THEME` come from
   each client: it clears them in its copy, as `command::server` does now.
 
 ### Paths
 
 ```rust
 pub struct Paths {
-    pub user_file: Option<PathBuf>,   // --config, else $XDG_CONFIG_HOME/clai/config.toml
+    pub user_file: Option<PathBuf>,   // --config, else $XDG_CONFIG_HOME/codeagent/config.toml
     pub themes: Option<PathBuf>,      // next to the user file
-    pub state: Option<PathBuf>,       // $XDG_STATE_HOME/clai
+    pub state: Option<PathBuf>,       // $XDG_STATE_HOME/codeagent
     pub sessions: Option<PathBuf>,    // state/sessions
-    pub log: Option<PathBuf>,         // state/clai.log
-    pub runtime: PathBuf,             // $XDG_RUNTIME_DIR/clai or /tmp/clai-UID
+    pub log: Option<PathBuf>,         // state/codeagent.log
+    pub runtime: PathBuf,             // $XDG_RUNTIME_DIR/codeagent or /tmp/codeagent-UID
     pub socket: PathBuf,              // runtime/server.sock
     pub lock: PathBuf,                // runtime/server.lock
 }
@@ -137,7 +137,7 @@ pub struct Paths {
   lock_path}`. `server::paths::prepare` stays where it is.
 - A path that cannot be worked out (no `HOME`) is `None`, and the command
   that needs it fails with today's message; commands that do not need it
-  (`clai completion`, `clai --help`) never look.
+  (`codeagent completion`, `codeagent --help`) never look.
 - `~/…` for messages: one function `Paths::tilde(path)` with the home of
   `Startup`, instead of the four copies that read `HOME`.
 
@@ -148,7 +148,7 @@ current directory, which must be a directory, made absolute and with links
 resolved. **(proposal)** That is what the server does with a session's
 workspace today, so client and server compare the same paths.
 
-- `clai models` and `clai chat` use it too, so the project file they read is
+- `codeagent models` and `codeagent chat` use it too, so the project file they read is
   the one of the resolved directory (today: the same file, found through
   another spelling of the path).
 - A workspace path in a message stays as the user sees it (`~/ws/project`).
@@ -169,12 +169,12 @@ impl Context {
     /// The configuration with the project file of `workspace`.
     pub fn config(&self, workspace: &Path) -> Result<Config>;
     /// The user file only: for commands about a session elsewhere
-    /// (`clai attach`, the server start check).
+    /// (`codeagent attach`, the server start check).
     pub fn user_config(&self) -> Result<Config>;
     /// Runs `f` on a current-thread runtime with a connected client.
     pub fn with_client<T>(&self, connect: Connect, f: impl AsyncFnOnce(&mut Client) -> Result<T>) -> Result<T>;
     /// Runs `f` on a runtime: current-thread for clients, multi-thread for
-    /// the server and `clai run`.
+    /// the server and `codeagent run`.
     pub fn block_on<T>(&self, kind: Runtime, f: impl Future<Output = Result<T>>) -> Result<T>;
 }
 ```
@@ -192,9 +192,9 @@ impl Context {
   `client`, `server` or `run`; every line carries it and the pid
   (`role=server pid=4242`). **(proposal)**
 - A log that cannot be opened is a warning only for the server and
-  `clai run`, which do work worth logging; a client goes on without one
+  `codeagent run`, which do work worth logging; a client goes on without one
   quietly. **(proposal)** See "Open questions".
-- `clai completion` and the completion callback (`COMPLETE=…`) do not open
+- `codeagent completion` and the completion callback (`COMPLETE=…`) do not open
   the log.
 
 ### main
@@ -218,7 +218,7 @@ paths, log, command.
 
 Only these, each from two copies that differ today:
 
-- `clai models` and `clai chat` resolve links in the workspace, as the
+- `codeagent models` and `codeagent chat` resolve links in the workspace, as the
   server does.
 - A relative `XDG_STATE_HOME` or `XDG_RUNTIME_DIR` is ignored everywhere
   (today: ignored, but by each reader on its own).
@@ -231,14 +231,14 @@ Only these, each from two copies that differ today:
   "Roles": startup order of a process.
 - `spec/config.md`, "Environment variables": read once at startup; relative
   `XDG_*` ignored. "Logging": role and pid in each line; the warning only
-  for the server and `clai run`.
+  for the server and `codeagent run`.
 - `spec/command.md`, "Conventions": the workspace rule (absolute, links
   resolved).
 
 ## Testing
 
 - `src/startup.rs`: `from_process` with relative and absolute `XDG_*`,
-  empty `CLAI_MODEL`, no `HOME` (in a child process, as now).
+  empty `CODEAGENT_MODEL`, no `HOME` (in a child process, as now).
 - `src/paths.rs` unit tests: every path from a `Startup` built by hand;
   `--config`; no `HOME`; `tilde`.
 - `Context::workspace`: a link, a relative directory, a file, a missing
@@ -291,13 +291,13 @@ Only these, each from two copies that differ today:
 ## Alternatives
 
 - **Leave it, fix the copies when they drift.** No work now, but every new
-  command (`clai skills`, `--continue` this week) adds a copy, and the
+  command (`codeagent skills`, `--continue` this week) adds a copy, and the
   workspace forms already differ.
 - **A global `OnceLock<Startup>`.** Fewer parameters, but tests could not
   give different environments to code in one process, which is the point.
 - **An application struct that owns the runtime, the client and the
   configuration for the whole process.** Fewer calls, but the server, the
-  TUI and `clai run` need different runtimes and lifetimes of the
+  TUI and `codeagent run` need different runtimes and lifetimes of the
   configuration (the server reloads it); one owner would have to know all
   of them.
 
@@ -308,7 +308,7 @@ All answered; see "Answers".
 1. Should `Startup` replace `config::Environment` entirely (proposal), or
    wrap it, so the config module keeps its own type for its tests?
 2. Workspace with links resolved for every command (proposal), or keep the
-   current directory as typed for `clai models` and `clai chat`?
+   current directory as typed for `codeagent models` and `codeagent chat`?
 3. Clients without a log file: quiet (proposal), or keep the warning on
    every command?
 4. Should the check "no `std::env::var` outside `startup.rs`" be in

@@ -1,8 +1,8 @@
 # Tools
 
-Tools are the actions the model may ask `clai` to run: read, list and
+Tools are the actions the model may ask `codeagent` to run: read, list and
 search files, change files, run commands, ask a language server. The model sends a tool call with
-JSON arguments; `clai` checks the permission (see [`config.md`](config.md),
+JSON arguments; `codeagent` checks the permission (see [`config.md`](config.md),
 "Permissions"), runs the tool, and sends the result back to the model.
 
 | Tool | Does | Default permission |
@@ -15,7 +15,7 @@ JSON arguments; `clai` checks the permission (see [`config.md`](config.md),
 | [`run_command`](#run_command) | Run a shell command in the workspace. | `ask` |
 | [`lsp`](#lsp) | Ask a language server: definitions, references, types, callers, symbols, errors. | `allow`; starting a server asks; only offered when a server is configured or found |
 | [`ask_user`](#ask_user) | Ask the user questions with options. | `allow`; only offered when someone can answer |
-| [`report`](#report) | Hand in the result of `clai run --report`. | not checked; only offered in `clai run --report` |
+| [`report`](#report) | Hand in the result of `codeagent run --report`. | not checked; only offered in `codeagent run --report` |
 
 Statements marked **(assumption)** need a decision from the user.
 
@@ -122,8 +122,8 @@ A call that asks opens a permission question in the session (see below).
 
 When a call asks, the tool prepares the `details` of the permission question
 (see [`sessions.md`](sessions.md), "Questions") before anything is changed or
-run. The details are the same for every client: the TUI, `clai chat`,
-`clai run` on a terminal, or a web UI.
+run. The details are the same for every client: the TUI, `codeagent chat`,
+`codeagent run` on a terminal, or a web UI.
 
 Every question about a file tool has, for each path: the path as the model
 wrote it, the resolved path (relative to the workspace, or absolute), and
@@ -136,7 +136,7 @@ whether it is in the workspace or in an `extra_dirs` entry.
 | `search_files` | Regular expression, `ignore_case`, start path, glob. |
 | `edit_file` | Unified diff with 3 lines of context, changed line range, number of occurrences replaced; file size and modification time, used to check again before writing. |
 | `write_file` | Whether the file exists; for a new file the full content and its line count, for `overwrite` a unified diff against the old content; directories that will be created. |
-| `run_command` | The command line exactly as it will run; working directory; `timeout_s`; the environment variables `clai` adds; the parts of the command, each with its own decision (`allow`, `ask`, `deny`) and the rule that decided; redirection targets with their resolved paths. |
+| `run_command` | The command line exactly as it will run; working directory; `timeout_s`; the environment variables `codeagent` adds; the parts of the command, each with its own decision (`allow`, `ask`, `deny`) and the rule that decided; redirection targets with their resolved paths. |
 | `lsp` | The path (none for `workspace_symbols` without one), the operation, the server's name and its project root. |
 | `lsp_start` (starting a language server, see [lsp](#lsp)) | The server's name, its command, its project root (the working directory, with `~`), and its extra environment variables. |
 
@@ -161,7 +161,7 @@ line range instead. **(assumption)**
 | Write into a read-only extra directory | `denied: ~/ws/docs is read-only` |
 | Denied by the user (`n`) | `denied by the user` |
 | Denied with a message (`e`) | `denied by the user: <message>` |
-| `ask` without a client that can answer (`clai run` without a terminal) | `denied: needs permission, and no one can answer` |
+| `ask` without a client that can answer (`codeagent run` without a terminal) | `denied: needs permission, and no one can answer` |
 | Turn cancelled before or while the call ran | `cancelled by the user` (with the output so far, for `run_command`, `list_files` and `search_files`) |
 
 ### Cancellation
@@ -195,7 +195,7 @@ The short name is used on the call's summary line, in the prompt bar of a
 permission question and in the title of the details view. The rule text of
 a question (`asks: default for edit_file`), the rules `a` proposes
 (`edit_file(src/**)`), the status box, the settings, configuration errors
-and the output of `clai chat` and `clai run` keep the real name.
+and the output of `codeagent chat` and `codeagent run` keep the real name.
 
 ## read_file
 
@@ -488,7 +488,7 @@ they run, are in [`config.md`](config.md), "LSP".
 | `include_declaration` | no | `references`: also list the definition. Default `false`. |
 
 The model names a symbol, not a column: models count characters badly,
-and the name is on the line it just read. `clai` finds the symbol as a
+and the name is on the line it just read. `codeagent` finds the symbol as a
 whole word on the line and converts the column to the server's encoding
 (UTF-16 unless the server offers UTF-8).
 
@@ -589,7 +589,7 @@ first call that needs a server in a session asks, after the call's own
 permission check:
 
 ```
-Start language server rust-analyzer in ~/ws/clai?
+Start language server rust-analyzer in ~/ws/codeagent?
 command: rust-analyzer  It may run build scripts and macros of the project.
 [y] yes  [n] no  [e] explain  [Esc] cancel
 ```
@@ -606,7 +606,7 @@ command: rust-analyzer  It may run build scripts and macros of the project.
 - When the server already runs for another session, the question is still
   asked: the permission belongs to the session, as session rules do.
 - `[lsp] start = "allow"` skips the question, and so does `--yes` in
-  `clai run`. With `"deny"`, or where no one can answer and starting is not
+  `codeagent run`. With `"deny"`, or where no one can answer and starting is not
   allowed, the tool is not offered.
 
 **When it is offered.** The tool is in the request when `[lsp]` is on, at
@@ -631,7 +631,7 @@ src/parse.rs:13:9: error[E0425]: cannot find value `lnes` in this scope
 
 - The server gets the new text at once: `didChange` (and `didSave` when it
   asks for it) for an open file, `didOpen` for one it does not have open.
-- `clai` waits up to 3 s for diagnostics published after the edit, of the
+- `codeagent` waits up to 3 s for diagnostics published after the edit, of the
   new version or later when both sides count versions; a server that
   offers pulling is asked with `textDocument/diagnostic` within the same
   3 s. Nothing comes in time: nothing is added.
@@ -696,7 +696,7 @@ option it recommends first.
 
 **When it is offered.** The tool is in the request only when someone can
 answer: in a session on the server (clients may attach later), and in
-`clai run` when standard input is a terminal and neither `--yes` nor
+`codeagent run` when standard input is a terminal and neither `--yes` nor
 `--no-ask` is given. `ask_user = "deny"` in `[permissions]` leaves it out
 too (see [`config.md`](config.md), "Permissions"). A call where it is not
 offered (e.g. from history), or a question no one can answer, gives the
@@ -730,7 +730,7 @@ Shown: `ask_user` with the headers; when done, the answers
 
 ## report
 
-Hands in the result of a run with `clai run --report` (RFC 0027; see
+Hands in the result of a run with `codeagent run --report` (RFC 0027; see
 [`command.md`](command.md), "Reports"). It is not permission-checked and
 changes nothing: the agent keeps the report, and the command prints it.
 

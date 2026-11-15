@@ -1,4 +1,4 @@
-//! The server and the session commands as processes: `clai new -d`, `ls`,
+//! The server and the session commands as processes: `codeagent new -d`, `ls`,
 //! `send`, `chat`, `kill`, `server`, against a local server that speaks the
 //! `openai-compatible` streaming format.
 
@@ -105,7 +105,7 @@ impl Env {
             .join("srv")
             .join(name);
         let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(root.join("config/clai")).unwrap();
+        fs::create_dir_all(root.join("config/codeagent")).unwrap();
         fs::create_dir_all(root.join("ws")).unwrap();
         let config = format!(
             r#"
@@ -121,7 +121,7 @@ id = "model-1"
 context_window = 100000
 "#
         );
-        fs::write(root.join("config/clai/config.toml"), config).unwrap();
+        fs::write(root.join("config/codeagent/config.toml"), config).unwrap();
         Env { root }
     }
 
@@ -130,7 +130,7 @@ context_window = 100000
     }
 
     fn command(&self, args: &[&str]) -> Command {
-        let mut cmd = Command::new(env!("CARGO_BIN_EXE_clai"));
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_codeagent"));
         cmd.args(args)
             .current_dir(self.ws())
             .env("HOME", &self.root)
@@ -140,8 +140,8 @@ context_window = 100000
             .env("LANG", "C.UTF-8")
             .env_remove("LC_ALL")
             .env_remove("LC_CTYPE")
-            .env_remove("CLAI_MODEL")
-            .env_remove("CLAI_THEME");
+            .env_remove("CODEAGENT_MODEL")
+            .env_remove("CODEAGENT_THEME");
         cmd
     }
 
@@ -166,7 +166,7 @@ context_window = 100000
         child.wait_with_output().unwrap()
     }
 
-    /// `clai ls --json`.
+    /// `codeagent ls --json`.
     fn sessions(&self) -> Vec<Value> {
         let out = self.run(&["ls", "--json"]);
         assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
@@ -234,7 +234,7 @@ fn sessions_through_the_server() {
     );
     let out = env.run(&["new", "-d", "--name", "s"]);
     assert_eq!(code(&out), Some(1));
-    assert_eq!(text(&out.stderr), "clai: the name s is taken\n");
+    assert_eq!(text(&out.stderr), "codeagent: the name s is taken\n");
     let out = env.run(&["new", "-d", "--model", "nope"]);
     assert_eq!(code(&out), Some(2));
 
@@ -245,7 +245,10 @@ fn sessions_through_the_server() {
 
     let out = env.run(&["server"]);
     assert_eq!(code(&out), Some(1));
-    assert_eq!(text(&out.stderr), "clai: a server is already running\n");
+    assert_eq!(
+        text(&out.stderr),
+        "codeagent: a server is already running\n"
+    );
     let out = env.run(&["server", "status"]);
     assert_eq!(code(&out), Some(0));
     assert!(
@@ -271,7 +274,7 @@ fn sessions_through_the_server() {
     assert_eq!(code(&out), Some(1));
     assert_eq!(
         text(&out.stderr),
-        format!("clai: the open question of s is {id}, not q999\n")
+        format!("codeagent: the open question of s is {id}, not q999\n")
     );
     let out = env.run(&["chat", "s", "continue"]);
     assert_eq!(code(&out), Some(1));
@@ -286,20 +289,20 @@ fn sessions_through_the_server() {
     assert_eq!(fs::read_to_string(env.ws().join("a.txt")).unwrap(), "hi\n");
     let out = env.run(&["chat", "s", "allow"]);
     assert_eq!(code(&out), Some(1));
-    assert_eq!(text(&out.stderr), "clai: s has no open question\n");
+    assert_eq!(text(&out.stderr), "codeagent: s has no open question\n");
 
-    // A question, answered in `clai chat --questions`.
+    // A question, answered in `codeagent chat --questions`.
     // An empty message is a usage error.
     let out = env.run(&["send", "s", "-"]);
     assert_eq!(code(&out), Some(2));
-    assert_eq!(text(&out.stderr), "clai: the message is empty\n");
+    assert_eq!(text(&out.stderr), "codeagent: the message is empty\n");
     let out = env.run(&["send", "s", " "]);
     assert_eq!(code(&out), Some(2));
-    assert_eq!(text(&out.stderr), "clai: the message is empty\n");
+    assert_eq!(text(&out.stderr), "codeagent: the message is empty\n");
     // `--list` names the sessions it does not know, and fails.
     let out = env.run(&["chat", "--list", "nope"]);
     assert_eq!(code(&out), Some(1));
-    assert_eq!(text(&out.stderr), "clai: no session named nope\n");
+    assert_eq!(text(&out.stderr), "codeagent: no session named nope\n");
     let out = env.run_with_input(&["send", "s", "-"], "write b.txt\n");
     assert_eq!(code(&out), Some(0), "{}", text(&out.stderr));
     env.wait_for("a question", |s| !s["question"].is_null());
@@ -315,7 +318,7 @@ fn sessions_through_the_server() {
     // Kill: unknown names fail, the known ones still end.
     let out = env.run(&["kill", "ws", "nope"]);
     assert_eq!(code(&out), Some(1));
-    assert_eq!(text(&out.stderr), "clai: no session named nope\n");
+    assert_eq!(text(&out.stderr), "codeagent: no session named nope\n");
     assert_eq!(env.sessions().len(), 1);
     assert_eq!(code(&env.run(&["kill", "--all"])), Some(0));
     assert!(env.sessions().is_empty());
@@ -329,7 +332,7 @@ fn sessions_through_the_server() {
 fn invalid_config_does_not_start_a_server() {
     let env = Env::new("invalid", 9);
     fs::write(
-        env.root.join("config/clai/config.toml"),
+        env.root.join("config/codeagent/config.toml"),
         "default_model = 3\n",
     )
     .unwrap();
@@ -338,7 +341,7 @@ fn invalid_config_does_not_start_a_server() {
     assert_eq!(code(&env.run(&["server", "status"])), Some(1));
 }
 
-/// A running `clai chat`: lines go to its standard input; standard output
+/// A running `codeagent chat`: lines go to its standard input; standard output
 /// and error are collected together.
 struct Live {
     child: Child,
@@ -407,7 +410,10 @@ impl Live {
             }
             if Instant::now() > deadline {
                 let _ = self.child.kill();
-                panic!("clai chat did not exit:\n{}", self.seen.lock().unwrap());
+                panic!(
+                    "codeagent chat did not exit:\n{}",
+                    self.seen.lock().unwrap()
+                );
             }
             thread::sleep(Duration::from_millis(10));
         };
@@ -427,9 +433,9 @@ fn chat_with_a_session() {
     ]);
     let env = Env::new("chat", port);
 
-    // `clai chat` starts the server and a new session in this directory.
+    // `codeagent chat` starts the server and a new session in this directory.
     let mut chat = Live::start(&env, &["chat"]);
-    chat.expect("clai: attached to ws (");
+    chat.expect("codeagent: attached to ws (");
     chat.send("write c.txt please");
     chat.expect("[y] allow  [a] always");
     chat.expect("? ");
@@ -439,13 +445,13 @@ fn chat_with_a_session() {
     chat.expect("I wrote c.txt.");
     chat.expect("✓ write_file c.txt");
     chat.send("/model");
-    chat.expect("clai: model: test/m");
+    chat.expect("codeagent: model: test/m");
     chat.send("/nope");
     chat.expect("unknown command /nope");
     let (status, seen) = chat.finish();
     assert_eq!(status, Some(0), "{seen}");
     assert!(
-        seen.contains("clai: detached; `clai chat ws` returns to ws"),
+        seen.contains("codeagent: detached; `codeagent chat ws` returns to ws"),
         "{seen}"
     );
     assert_eq!(fs::read_to_string(env.ws().join("c.txt")).unwrap(), "hi\n");
@@ -471,7 +477,7 @@ fn chat_with_a_session() {
 
     let out = env.run(&["chat", "nope"]);
     assert_eq!(code(&out), Some(1));
-    assert_eq!(text(&out.stderr), "clai: no session named nope\n");
+    assert_eq!(text(&out.stderr), "codeagent: no session named nope\n");
     let out = env.run(&["chat", "a", "b"]);
     assert_eq!(code(&out), Some(2));
 }
@@ -481,11 +487,11 @@ fn chat_switches_sessions() {
     let port = model_server(vec![say("in other")]);
     let env = Env::new("chat-switch", port);
     let mut chat = Live::start(&env, &["chat"]);
-    chat.expect("clai: attached to ws (");
+    chat.expect("codeagent: attached to ws (");
     chat.send("/models");
     chat.expect("test/m");
     chat.send("/new other test/m");
-    chat.expect("clai: attached to other (");
+    chat.expect("codeagent: attached to other (");
     chat.send("hello other");
     chat.expect("in other");
     chat.send("/sessions");
@@ -493,7 +499,7 @@ fn chat_switches_sessions() {
     chat.send("/attach nope");
     chat.expect("no session named nope");
     chat.send("/attach ws");
-    chat.expect("clai: attached to ws (");
+    chat.expect("codeagent: attached to ws (");
     chat.send("/attach other");
     // The history of the session it comes back to.
     chat.expect("> hello other");
@@ -503,7 +509,7 @@ fn chat_switches_sessions() {
     let (status, seen) = chat.finish();
     assert_eq!(status, Some(0), "{seen}");
     assert!(
-        seen.contains("`clai chat other` returns to other"),
+        seen.contains("`codeagent chat other` returns to other"),
         "{seen}"
     );
     let mut names: Vec<String> = env
@@ -521,7 +527,7 @@ fn sessions_are_saved_and_resumed() {
     let env = Env::new("saved", port);
 
     let mut chat = Live::start(&env, &["chat", "--new", "--name", "s"]);
-    chat.expect("clai: attached to s (");
+    chat.expect("codeagent: attached to s (");
     chat.send("remember 42");
     chat.expect("noted: 42");
     let (status, seen) = chat.finish();
@@ -529,7 +535,7 @@ fn sessions_are_saved_and_resumed() {
 
     let out = env.run(&["server", "stop"]);
     assert_eq!(code(&out), Some(0), "{}", text(&out.stderr));
-    let files = fs::read_dir(env.root.join("state/clai/sessions"))
+    let files = fs::read_dir(env.root.join("state/codeagent/sessions"))
         .unwrap()
         .count();
     assert_eq!(files, 1);
@@ -564,7 +570,7 @@ fn sessions_are_saved_and_resumed() {
 
     // Kill deletes the files.
     assert_eq!(code(&env.run(&["kill", "--all"])), Some(0));
-    let files = fs::read_dir(env.root.join("state/clai/sessions"))
+    let files = fs::read_dir(env.root.join("state/codeagent/sessions"))
         .unwrap()
         .count();
     assert_eq!(files, 0);
@@ -579,9 +585,9 @@ fn token_totals_in_ls_and_chat() {
     let env = Env::new("totals", port);
 
     let mut chat = Live::start(&env, &["chat", "--new", "--name", "s"]);
-    chat.expect("clai: attached to s (");
+    chat.expect("codeagent: attached to s (");
     chat.send("/usage");
-    chat.expect("clai: tokens: in 0, out 0; context 0");
+    chat.expect("codeagent: tokens: in 0, out 0; context 0");
     chat.send("one");
     chat.expect("first");
     chat.send("two");
@@ -590,7 +596,7 @@ fn token_totals_in_ls_and_chat() {
     assert_eq!(s["input_tokens"], 45_100);
     assert_eq!(s["output_tokens"], 3_200);
     chat.send("/usage");
-    chat.expect("clai: tokens: in 45.1k, out 3.2k; context 300");
+    chat.expect("codeagent: tokens: in 45.1k, out 3.2k; context 300");
     let (status, seen) = chat.finish();
     assert_eq!(status, Some(0), "{seen}");
 
@@ -598,7 +604,7 @@ fn token_totals_in_ls_and_chat() {
     let mut chat = Live::start(&env, &["chat", "s"]);
     chat.expect("second");
     chat.send("/usage");
-    chat.expect("clai: tokens: in 45.1k, out 3.2k; context 300");
+    chat.expect("codeagent: tokens: in 45.1k, out 3.2k; context 300");
     let (status, seen) = chat.finish();
     assert_eq!(status, Some(0), "{seen}");
 
@@ -625,7 +631,7 @@ fn send_continue_goes_to_the_last_session_of_the_workspace() {
     let out = env.run(&["send", "--continue", "hello"]);
     assert_eq!(code(&out), Some(1), "{}", text(&out.stderr));
     assert!(
-        text(&out.stderr).starts_with("clai: no session in "),
+        text(&out.stderr).starts_with("codeagent: no session in "),
         "{}",
         text(&out.stderr)
     );

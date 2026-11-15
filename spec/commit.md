@@ -1,15 +1,15 @@
 # Commit messages
 
-`clai commit` writes a commit message for the changes staged in git (with
+`codeagent commit` writes a commit message for the changes staged in git (with
 `-a`, for all changes of tracked files) and prints it on standard output; it
 commits nothing (see
-[`command.md`](command.md), "clai commit"). The TUI command `/commit`
+[`command.md`](command.md), "codeagent commit"). The TUI command `/commit`
 (later version, see [`tui.md`](tui.md), "Commit") stages the workspace's
 changes first and then writes its message the same way.
 
 ```sh
-git add -A && clai commit | git commit -F -
-clai commit -a | git commit -a -F -
+git add -A && codeagent commit | git commit -F -
+codeagent commit -a | git commit -a -F -
 ```
 
 Designed in [RFC 0013](../rfcs/0013-commit-message.md).
@@ -20,13 +20,13 @@ What the matching `git commit` would commit:
 
 | Command | Described | Compared |
 |---------|-----------|----------|
-| `clai commit` | The staged changes, as `git commit` commits them. Unstaged changes and untracked files are not described, and not named. | The index with `HEAD` (`git diff --cached`). |
-| `clai commit -a` | Also the unstaged changes of tracked files (changed or deleted), as `git commit -a` commits them. Untracked files are still left out; a new file counts once it is staged. | The work tree with `HEAD` (`git diff HEAD`); before the first commit, with the empty tree. |
+| `codeagent commit` | The staged changes, as `git commit` commits them. Unstaged changes and untracked files are not described, and not named. | The index with `HEAD` (`git diff --cached`). |
+| `codeagent commit -a` | Also the unstaged changes of tracked files (changed or deleted), as `git commit -a` commits them. Untracked files are still left out; a new file counts once it is staged. | The work tree with `HEAD` (`git diff HEAD`); before the first commit, with the empty tree. |
 
 `DIR` (default: the current directory) only picks the repository. The
 message covers every staged file of the repository, not only those below
 `DIR`. The configuration is loaded for the repository's root as workspace,
-so its `.clai/config.toml` applies.
+so its `.codeagent/config.toml` applies.
 
 ## Steps
 
@@ -51,7 +51,7 @@ diff has `--no-color --no-ext-diff --no-textconv --find-renames
 
 No program from the repository's configuration runs: no external diff, no
 text conversion, no file system monitor. A cloned repository cannot run code
-through `clai commit`. The old content of a deleted file is not sent; the
+through `codeagent commit`. The old content of a deleted file is not sent; the
 model only learns that it was deleted.
 
 A missing `git` program is an error: `git not found`, exit `1`.
@@ -147,7 +147,7 @@ The answer is cleaned:
 
 Standard output gets only the message, ending with one newline. An answer
 that is empty after cleaning is an error (`the model wrote no message`,
-exit `1`), so `git commit -F -` never gets an empty message from `clai`.
+exit `1`), so `git commit -F -` never gets an empty message from `codeagent`.
 
 While the request runs, standard error shows one line, but only when it is
 a terminal:

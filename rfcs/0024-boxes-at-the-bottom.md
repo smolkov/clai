@@ -51,7 +51,7 @@ Out:
   like: they already lie directly above the input and stay there.
 - The question from the model and the permission prompt (RFC 0022): they
   stay as they are and set the pattern.
-- `clai chat`: it has no boxes.
+- `codeagent chat`: it has no boxes.
 
 ## Design
 
@@ -128,7 +128,7 @@ Enter select ─ Space default ─ Esc cancel
 ### Settings on the whole screen
 
 ```
-── Settings ─ ~/.config/clai/config.toml ──────────────────────────────────────
+── Settings ─ ~/.config/codeagent/config.toml ──────────────────────────────────────
 ▶ theme              dark
   symbols            auto            ⚠ the terminal is not UTF-8
   mouse              on

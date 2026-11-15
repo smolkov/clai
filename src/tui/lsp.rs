@@ -1,4 +1,4 @@
-//! The box of `/lsp`: the language servers of the clai server, their
+//! The box of `/lsp`: the language servers of the codeagent server, their
 //! state and last error lines; `r` restarts, `k` stops (RFC 0019).
 
 use std::path::Path;

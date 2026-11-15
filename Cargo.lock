@@ -292,40 +292,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "clai"
-version = "0.4.0"
-dependencies = [
- "clap",
- "clap_complete",
- "crossterm",
- "futures-util",
- "globset",
- "ignore",
- "indexmap",
- "insta",
- "lsp-types",
- "nix 0.31.3",
- "pulldown-cmark",
- "ratatui",
- "regex",
- "reqwest",
- "serde",
- "serde_json",
- "similar 3.2.1",
- "syntect",
- "tempfile",
- "thiserror 2.0.21",
- "tokio",
- "tokio-util",
- "toml",
- "toml_edit",
- "tracing",
- "tracing-subscriber",
- "unicode-width",
- "webpki-root-certs",
-]
-
-[[package]]
 name = "clap"
 version = "4.6.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -384,6 +350,40 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c0f78a02292a74a88ac736019ab962ece0bc380e3f977bf72e376c5d78ff0678"
 dependencies = [
  "cc",
+]
+
+[[package]]
+name = "codeagent"
+version = "0.4.0"
+dependencies = [
+ "clap",
+ "clap_complete",
+ "crossterm",
+ "futures-util",
+ "globset",
+ "ignore",
+ "indexmap",
+ "insta",
+ "lsp-types",
+ "nix 0.31.3",
+ "pulldown-cmark",
+ "ratatui",
+ "regex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "similar 3.2.1",
+ "syntect",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-util",
+ "toml",
+ "toml_edit",
+ "tracing",
+ "tracing-subscriber",
+ "unicode-width",
+ "webpki-root-certs",
 ]
 
 [[package]]

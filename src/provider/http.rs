@@ -46,7 +46,7 @@ impl Http {
         let client = reqwest::Client::builder()
             .connect_timeout(timeout)
             .tls_certs_merge(bundled)
-            .user_agent(concat!("clai/", env!("CARGO_PKG_VERSION")))
+            .user_agent(concat!("codeagent/", env!("CARGO_PKG_VERSION")))
             .build()
             .map_err(|e| ProviderError::new(ErrorKind::Network, format!("HTTP client: {e}")))?;
         Ok(Http { client, timeout })

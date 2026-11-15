@@ -98,7 +98,7 @@ pub struct Theming {
     pub colouring: Colouring,
     /// Whether the locale is UTF-8, for `symbols = "auto"`.
     pub unicode_locale: bool,
-    /// `CLAI_THEME`: wins over `tui.theme` for this run.
+    /// `CODEAGENT_THEME`: wins over `tui.theme` for this run.
     pub theme_env: Option<String>,
     /// The offset of local time from UTC in seconds, for `tui.timestamps`.
     pub offset: i64,
@@ -108,7 +108,7 @@ pub struct Theming {
     pub home: Option<PathBuf>,
 }
 
-/// `[tui]` as the user file has it, without `CLAI_THEME`.
+/// `[tui]` as the user file has it, without `CODEAGENT_THEME`.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct FileTui {
     pub tui: Tui,
@@ -121,7 +121,7 @@ pub struct FileTui {
 /// `[tui]` and the themes as loaded again from the user file.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Reloaded {
-    /// With `CLAI_THEME` applied, as at start.
+    /// With `CODEAGENT_THEME` applied, as at start.
     pub tui: Tui,
     pub themes: IndexMap<String, Theme>,
     pub warnings: Vec<ThemeWarning>,
@@ -318,7 +318,7 @@ pub struct App {
     pub status_box: Option<StatusBox>,
     /// The box of `/lsp`.
     pub lsp_box: Option<LspBox>,
-    /// A theme taken in this run: it wins over `CLAI_THEME` on a reload.
+    /// A theme taken in this run: it wins over `CODEAGENT_THEME` on a reload.
     chosen_theme: Option<String>,
     /// What the save on its way is for.
     saving: Option<Saving>,
@@ -558,7 +558,7 @@ impl App {
     }
 
     /// The theme in effect without a box open: one taken in this run, then
-    /// `CLAI_THEME`, then the file's.
+    /// `CODEAGENT_THEME`, then the file's.
     fn base_theme(&self, file_theme: &str) -> String {
         self.chosen_theme
             .clone()
@@ -567,7 +567,7 @@ impl App {
     }
 
     /// The settings the open box shows, as applied: its theme only if the user
-    /// changed it there, since `CLAI_THEME` may decide it otherwise.
+    /// changed it there, since `CODEAGENT_THEME` may decide it otherwise.
     fn box_preview(&self) -> Tui {
         let Some(settings) = &self.settings_box else {
             return self.settings.tui.clone();
@@ -1529,7 +1529,7 @@ impl App {
     }
 
     /// A new session was made: attach to it, with a note if others work in
-    /// the same workspace, as `clai new` prints.
+    /// the same workspace, as `codeagent new` prints.
     fn created(&mut self, session: &SessionInfo) -> Vec<Effect> {
         let others: Vec<&str> = self
             .sessions
@@ -1647,7 +1647,7 @@ impl App {
     }
 
     /// Opens the session list on the last `list`. After the attached session
-    /// ended, and at start for `clai attach` without a name, `Esc` leaves.
+    /// ended, and at start for `codeagent attach` without a name, `Esc` leaves.
     pub fn show_sessions(&mut self) {
         let mut list = SessionList::new(self.sessions.clone(), &self.session, now_secs());
         list.home.clone_from(&self.settings.theming.home);
@@ -1655,7 +1655,7 @@ impl App {
         self.session_list = Some(list);
     }
 
-    /// `clai attach` with several sessions: the list over the first one;
+    /// `codeagent attach` with several sessions: the list over the first one;
     /// `Esc` there leaves.
     pub fn choose_session(&mut self) {
         self.show_sessions();

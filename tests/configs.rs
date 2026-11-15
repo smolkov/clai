@@ -27,7 +27,7 @@ fn files(dir: &str) -> Vec<PathBuf> {
     files
 }
 
-/// `clai --config FILE models` in an empty workspace, with a private home.
+/// `codeagent --config FILE models` in an empty workspace, with a private home.
 fn models(name: &str, config: &Path, project: Option<&Path>) -> (Output, PathBuf) {
     let root = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
         .join("configs")
@@ -36,10 +36,10 @@ fn models(name: &str, config: &Path, project: Option<&Path>) -> (Output, PathBuf
     let work = root.join("work");
     fs::create_dir_all(&work).unwrap();
     if let Some(project) = project {
-        fs::create_dir_all(work.join(".clai")).unwrap();
-        fs::copy(project, work.join(".clai/config.toml")).unwrap();
+        fs::create_dir_all(work.join(".codeagent")).unwrap();
+        fs::copy(project, work.join(".codeagent/config.toml")).unwrap();
     }
-    let out = Command::new(env!("CARGO_BIN_EXE_clai"))
+    let out = Command::new(env!("CARGO_BIN_EXE_codeagent"))
         .arg("--config")
         .arg(config)
         .arg("models")
@@ -47,8 +47,8 @@ fn models(name: &str, config: &Path, project: Option<&Path>) -> (Output, PathBuf
         .env("HOME", root.join("home"))
         .env("XDG_CONFIG_HOME", root.join("config"))
         .env("XDG_STATE_HOME", root.join("state"))
-        .env_remove("CLAI_MODEL")
-        .env_remove("CLAI_THEME")
+        .env_remove("CODEAGENT_MODEL")
+        .env_remove("CODEAGENT_THEME")
         .output()
         .unwrap();
     (out, work)
@@ -112,7 +112,7 @@ fn project_file_may_not_loosen() {
         .unwrap()
         .replace(
             "PROJECT",
-            &work.join(".clai/config.toml").display().to_string(),
+            &work.join(".codeagent/config.toml").display().to_string(),
         )
         .replace("USER", &user.display().to_string());
     assert_eq!(out.status.code(), Some(2));

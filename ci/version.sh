@@ -22,7 +22,7 @@ case "$1" in
         ;;
     toolchain)
         want=$(toolchain_version)
-        file=${CLAI_GITLAB_CI:-.gitlab-ci.yml}
+        file=${CODEAGENT_GITLAB_CI:-.gitlab-ci.yml}
         have=$(sed -n 's/^ *RUST_VERSION: "\(.*\)"$/\1/p' "$file" | head -n 1)
         [ "$want" = "$have" ] || fail "rust-toolchain.toml pins $want, $file uses $have"
         ;;

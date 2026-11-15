@@ -1,4 +1,4 @@
-# Gruvbox (dark), bundled with clai. Copy it to ~/.config/clai/themes/gruvbox-dark.toml
+# Gruvbox (dark), bundled with codeagent. Copy it to ~/.config/codeagent/themes/gruvbox-dark.toml
 # to change it there; that file then replaces this one.
 base        = "dark"
 background  = "#282828"

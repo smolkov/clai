@@ -1,7 +1,7 @@
-//! `clai completion` (see `spec/command.md`).
+//! `codeagent completion` (see `spec/command.md`).
 //!
-//! Prints the shell code that registers `clai` for Tab completion. The code
-//! calls `COMPLETE=<shell> clai -- <words>` on every Tab; `main` answers
+//! Prints the shell code that registers `codeagent` for Tab completion. The code
+//! calls `COMPLETE=<shell> codeagent -- <words>` on every Tab; `main` answers
 //! that through `clap_complete::CompleteEnv` before anything else runs.
 
 use std::path::{Path, PathBuf};
@@ -13,7 +13,7 @@ use super::{Context, Execute};
 use crate::error::{Error, Result};
 use crate::output::write_stdout;
 
-/// Environment variable that switches `clai` into completion mode.
+/// Environment variable that switches `codeagent` into completion mode.
 pub const COMPLETE_ENV: &str = "COMPLETE";
 
 #[derive(Debug, Args)]
@@ -52,7 +52,7 @@ pub fn registration(shell: &str, completer: &str) -> Result<String> {
     };
     let mut buf = Vec::new();
     env_completer
-        .write_registration(COMPLETE_ENV, "clai", "clai", completer, &mut buf)
+        .write_registration(COMPLETE_ENV, "codeagent", "codeagent", completer, &mut buf)
         .map_err(Error::io("completion script"))?;
     Ok(String::from_utf8_lossy(&buf).into_owned())
 }
@@ -66,16 +66,17 @@ fn shell_from_env(shell: Option<&std::ffi::OsStr>) -> Result<String> {
         .filter(|n| Shells::builtins().completer(n).is_some());
     name.map(str::to_owned).ok_or_else(|| {
         Error::Usage(
-            "cannot tell the shell from $SHELL; name it, e.g. `clai completion bash`".to_owned(),
+            "cannot tell the shell from $SHELL; name it, e.g. `codeagent completion bash`"
+                .to_owned(),
         )
     })
 }
 
-/// How the script calls `clai`: as started, found through `PATH`, or as an
+/// How the script calls `codeagent`: as started, found through `PATH`, or as an
 /// absolute path when it was started by a path (as `CompleteEnv` does).
 fn completer(cwd: Option<&std::path::Path>) -> String {
     let Some(argv0) = std::env::args_os().next() else {
-        return "clai".to_owned();
+        return "codeagent".to_owned();
     };
     let mut path = PathBuf::from(argv0);
     if path.components().count() > 1
@@ -92,17 +93,17 @@ mod tests {
     use std::ffi::OsStr;
 
     #[test]
-    fn scripts_call_clai_with_complete() {
+    fn scripts_call_codeagent_with_complete() {
         for shell in ["bash", "zsh", "fish", "elvish", "powershell"] {
-            let script = registration(shell, "/opt/bin/clai").unwrap();
+            let script = registration(shell, "/opt/bin/codeagent").unwrap();
             assert!(script.contains("COMPLETE"), "{shell}: {script}");
-            assert!(script.contains("/opt/bin/clai"), "{shell}: {script}");
+            assert!(script.contains("/opt/bin/codeagent"), "{shell}: {script}");
         }
     }
 
     #[test]
     fn unknown_shell() {
-        let err = registration("tcsh", "clai").unwrap_err();
+        let err = registration("tcsh", "codeagent").unwrap_err();
         assert_eq!(err.exit_code(), 2);
         assert!(err.to_string().contains("bash"), "{err}");
     }

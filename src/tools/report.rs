@@ -1,4 +1,4 @@
-//! `report`: the model hands in the result of `clai run --report` (see
+//! `report`: the model hands in the result of `codeagent run --report` (see
 //! `spec/tools.md`, "report", and RFC 0027). Pure: the agent keeps the
 //! report; this checks the arguments and makes the spec.
 

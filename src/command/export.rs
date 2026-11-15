@@ -1,4 +1,4 @@
-//! `clai export` (see `spec/command.md`).
+//! `codeagent export` (see `spec/command.md`).
 
 use std::path::PathBuf;
 

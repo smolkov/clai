@@ -1,4 +1,4 @@
-//! `clai server`, `clai server stop`, `clai server status` (see `spec/command.md`).
+//! `codeagent server`, `codeagent server stop`, `codeagent server status` (see `spec/command.md`).
 
 use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::PathBuf;
@@ -73,7 +73,7 @@ fn foreground(ctx: &Context, detached: bool) -> Result<()> {
         LoadOptions {
             config_file: ctx.config_file.clone(),
             workspace: PathBuf::new(),
-            // `CLAI_MODEL` and `CLAI_THEME` come from each client, not from
+            // `CODEAGENT_MODEL` and `CODEAGENT_THEME` come from each client, not from
             // the environment the server happened to start in.
             env: ctx.startup.for_server(),
         },

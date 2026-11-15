@@ -3,13 +3,13 @@
 The agent loop runs one turn of a session: it sends the conversation to the
 model, streams the answer, runs the tool calls the model asks for, sends
 their results back, and repeats until the model answers without tool calls.
-It is the only part of `clai` that talks to both the provider (see
+It is the only part of `codeagent` that talks to both the provider (see
 [`providers.md`](providers.md)) and the tools (see [`tools.md`](tools.md)).
 
 The loop knows no transport and no client (see
 [`architecture.md`](architecture.md)). It takes user messages, answers and
 cancellation as input and emits session events as output. The session
-actor in the server and the one-shot `clai run` both drive the same loop.
+actor in the server and the one-shot `codeagent run` both drive the same loop.
 
 Statements marked **(assumption)** need a decision from the user.
 
@@ -65,10 +65,10 @@ pub trait Asker: Send + Sync {
 ```
 
 `Asker` is how the loop gets a decision. The session opens a question for
-its clients and waits; `clai run` asks on the terminal, or answers by its
+its clients and waits; `codeagent run` asks on the terminal, or answers by its
 policy without asking (`PolicyAsker`): `ask` is denied (no terminal,
 `--no-ask`) or allowed (`--yes`), and a limit question gets `NoOne`, which
-counts as `stop` (see [`command.md`](command.md), "clai run").
+counts as `stop` (see [`command.md`](command.md), "codeagent run").
 
 The loop checks every answer itself: the choice must be one of the
 question's `choices`, a `deny_message` needs a text, and the rules of an
@@ -128,7 +128,7 @@ A request is built from:
 | `model` | The session's model `id`. A model change during a turn applies from the next request. **(assumption)** |
 | `system` | The [system prompt](#system-prompt). |
 | `messages` | The whole session history, oldest first, including this turn so far. |
-| `tools` | The specs of all six tools (`tools::specs()`), also for tools whose default is `deny`, so the model gets a clear denial instead of not knowing the tool. **(assumption)** Then the tools offered only sometimes: `lsp` when a language server is configured or found, `ask_user` when someone can answer, `report` in `clai run --report`. |
+| `tools` | The specs of all six tools (`tools::specs()`), also for tools whose default is `deny`, so the model gets a clear denial instead of not knowing the tool. **(assumption)** Then the tools offered only sometimes: `lsp` when a language server is configured or found, `ask_user` when someone can answer, `report` in `codeagent run --report`. |
 | `max_output_tokens`, `temperature` | From the model's configuration. |
 
 The history is sent in full. If it no longer fits, the provider returns
@@ -143,12 +143,12 @@ these values filled in:
 
 | Value | Example |
 |-------|---------|
-| Workspace path | `/home/user/ws/rust/clai` |
+| Workspace path | `/home/user/ws/rust/codeagent` |
 | Extra directories and their access, with the directories of active skills | `~/ws/docs (read only)` |
 | Platform and shell | `linux, commands run with sh -c` |
 | Today's date | `2026-11-01` |
 
-The prompt says what `clai` is (a coding agent working in that
+The prompt says what `codeagent` is (a coding agent working in that
 workspace), that paths are relative to the workspace, that commands start in
 the workspace each time and get no input, that edits need `read_file`
 first to get the exact text, that denied calls should not be repeated
@@ -290,7 +290,7 @@ Each command has its own timeout (see [`tools.md`](tools.md),
 ## Cancellation
 
 A turn can be cancelled at any point: `Esc` in the TUI, `cancel` as a
-question's answer, `clai kill`, `Ctrl-C` in `clai run`. The loop stops what
+question's answer, `codeagent kill`, `Ctrl-C` in `codeagent run`. The loop stops what
 it is doing at once and keeps the history valid:
 
 | Cancelled while | The loop |

@@ -1,4 +1,4 @@
-//! `clai attach` (see `spec/command.md`).
+//! `codeagent attach` (see `spec/command.md`).
 
 use clap::Args;
 use clap_complete::ArgValueCompleter;

@@ -1,4 +1,4 @@
-//! `clai models`: list configured providers and models.
+//! `codeagent models`: list configured providers and models.
 
 use clap::Args;
 
@@ -63,7 +63,7 @@ fn default_mark(from: DefaultFrom) -> &'static str {
     match from {
         DefaultFrom::User => "default",
         DefaultFrom::Project => "default (project)",
-        DefaultFrom::Env => "default (CLAI_MODEL)",
+        DefaultFrom::Env => "default (CODEAGENT_MODEL)",
     }
 }
 

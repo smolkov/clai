@@ -1,4 +1,4 @@
-//! The running language servers of a clai server (or of `clai run`), keyed
+//! The running language servers of a codeagent server (or of `codeagent run`), keyed
 //! by server name and project root, shared by the sessions that use them.
 //!
 //! - A server starts on the first [`Pool::get`] for its key; callers that
@@ -212,8 +212,8 @@ impl Pool {
         }
     }
 
-    /// Stops all servers and forgets them: when the clai server or
-    /// `clai run` exits, and when `[lsp]` changes.
+    /// Stops all servers and forgets them: when the codeagent server or
+    /// `codeagent run` exits, and when `[lsp]` changes.
     pub async fn stop_all(&self) {
         let entries: Vec<Arc<Entry>> = lock(&self.inner.entries)
             .drain(..)

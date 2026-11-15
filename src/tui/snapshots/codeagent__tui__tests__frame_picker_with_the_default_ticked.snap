@@ -1,6 +1,5 @@
 ---
 source: src/tui/tests.rs
-assertion_line: 2317
 expression: "screen(&mut app, 80, 24)"
 ---
                                                                                 
@@ -21,7 +20,7 @@ local
   qwen    qwen3-coder:30b     32k  ⚠ no key                                     
                                                                                 
 [x] Also make it the default for new sessions                                   
-    saved as default_model in /home/u/.config/clai/config.toml                  
+    saved as default_model in /home/u/.config/codeagent/config.toml             
                                                                                 
 Enter select ─ Space default ─ Esc cancel                                       
 ────────────────────────────────────────────────────────────────────────────────

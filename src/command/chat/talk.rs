@@ -1,4 +1,4 @@
-//! `clai chat [NAME]`: a conversation with one session in the terminal.
+//! `codeagent chat [NAME]`: a conversation with one session in the terminal.
 //! Lines typed are messages; the session's questions are answered inline.
 
 use std::io::{self, Write};
@@ -127,7 +127,7 @@ fn stats_text(stats: &crate::protocol::GlobalStats, unicode: bool, offset: i64) 
 }
 
 /// The name this client has for the server.
-const CLIENT_NAME: &str = "clai chat";
+const CLIENT_NAME: &str = "codeagent chat";
 
 /// Attaches and says so on standard error.
 async fn attach(client: &mut Client, name: &str) -> Result<SessionInfo> {
@@ -164,7 +164,7 @@ fn new_words(argument: &str) -> std::result::Result<(Option<String>, Option<Stri
     Ok((name, model))
 }
 
-/// `/sessions`: the table of `clai ls`, the attached session marked `*`.
+/// `/sessions`: the table of `codeagent ls`, the attached session marked `*`.
 fn sessions_text(sessions: &[SessionInfo], attached: u64, now: u64) -> String {
     let mut out = String::new();
     for (line, session) in table(sessions, now).lines().zip(sessions) {
@@ -177,7 +177,7 @@ fn sessions_text(sessions: &[SessionInfo], attached: u64, now: u64) -> String {
     out
 }
 
-/// `/models`: as `clai models` prints them.
+/// `/models`: as `codeagent models` prints them.
 fn models_text(models: &[ModelInfo]) -> String {
     let width = |f: fn(&ModelInfo) -> usize| models.iter().map(f).max().unwrap_or(0);
     let w_model = width(|m| m.model.chars().count());
@@ -211,7 +211,7 @@ fn models_text(models: &[ModelInfo]) -> String {
 /// What happens after a line or an event.
 enum Flow {
     Go,
-    /// Leave `clai chat`; the session keeps running unless it ended.
+    /// Leave `codeagent chat`; the session keeps running unless it ended.
     Leave,
 }
 
@@ -521,12 +521,12 @@ impl Talk {
         self.out(end);
         if self.session.state != State::Idle || self.dialog.is_some() {
             note(&format!(
-                "detached; {} keeps working; `clai chat {}` returns to it",
+                "detached; {} keeps working; `codeagent chat {}` returns to it",
                 self.session.name, self.session.name
             ));
         } else {
             note(&format!(
-                "detached; `clai chat {}` returns to {}",
+                "detached; `codeagent chat {}` returns to {}",
                 self.session.name, self.session.name
             ));
         }
@@ -939,18 +939,18 @@ mod tests {
     #[test]
     fn lsp_lists_servers_with_state_and_sessions() {
         use crate::protocol::LspServerInfo;
-        let ws = std::path::Path::new("/ws/clai");
+        let ws = std::path::Path::new("/ws/codeagent");
         assert_eq!(
             lsp_text(&[], ws, true),
             "no language server has run; one starts when the model uses lsp\n"
         );
         let ready = LspServerInfo {
             name: "rust-analyzer".into(),
-            root: "/ws/clai".into(),
+            root: "/ws/codeagent".into(),
             state: "ready".into(),
             percent: None,
             reason: None,
-            sessions: vec!["clai".into(), "fix".into()],
+            sessions: vec!["codeagent".into(), "fix".into()],
             stderr: vec!["ignored".into()],
         };
         let failed = LspServerInfo {
@@ -964,7 +964,7 @@ mod tests {
         };
         assert_eq!(
             lsp_text(&[ready, failed], ws, false),
-            "rust-analyzer  .       ready - clai, fix\n\
+            "rust-analyzer  .       ready - codeagent, fix\n\
              gopls          /ws/go  failed: exited\n  error: no go.mod\n"
         );
     }
@@ -1013,7 +1013,7 @@ mod tests {
     }
 
     #[test]
-    fn models_as_clai_models_prints_them() {
+    fn models_as_codeagent_models_prints_them() {
         let model = |model: &str, id: &str, default: bool, key: &str| ModelInfo {
             model: model.into(),
             provider: String::new(),
@@ -1086,11 +1086,14 @@ mod tests {
         let mut status = crate::text::status::tests::saved();
         status.session.state = State::Idle;
         status.clients = vec![crate::protocol::ClientInfo {
-            name: "clai chat".into(),
+            name: "codeagent chat".into(),
             answers: true,
         }];
         let text = status_text(&status, true, 0);
-        assert!(text.contains("clients      1: clai chat (this)"), "{text}");
+        assert!(
+            text.contains("clients      1: codeagent chat (this)"),
+            "{text}"
+        );
         assert!(text.contains("⚠ not configured"), "{text}");
     }
 

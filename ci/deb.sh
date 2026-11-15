@@ -4,8 +4,8 @@
 #
 #   ci/deb.sh TARGET [VERSION]
 #
-# Needs target/TARGET/release/clai (ci/build.sh) and cargo-deb. lintian is
-# required when CLAI_REQUIRE_LINTIAN=1 (the pipelines); otherwise skipped
+# Needs target/TARGET/release/codeagent (ci/build.sh) and cargo-deb. lintian is
+# required when CODEAGENT_REQUIRE_LINTIAN=1 (the pipelines); otherwise skipped
 # when missing. Prints the package's path.
 
 . "$(dirname -- "$0")/common.sh"
@@ -17,7 +17,7 @@ case "$target" in
     *-linux-musl) ;;
     *) fail "Debian packages are built from the static musl binaries, not $target" ;;
 esac
-bin="target/$target/release/clai"
+bin="target/$target/release/codeagent"
 [ -x "$bin" ] || fail "$bin missing; run ci/build.sh $target first"
 
 assets=target/deb-assets
@@ -34,21 +34,21 @@ maintainer=$(sed -n 's/^maintainer = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
 epoch=${SOURCE_DATE_EPOCH:-$(git log -1 --format=%ct HEAD 2>/dev/null || date +%s)}
 when=$(LC_ALL=C date -u -R -d "@$epoch" 2>/dev/null || LC_ALL=C date -u -R -r "$epoch")
 {
-    printf 'clai (%s) unstable; urgency=medium\n\n' "$debversion"
+    printf 'codeagent (%s) unstable; urgency=medium\n\n' "$debversion"
     printf '  * Release %s; the changes are in\n' "$version"
-    printf '    /usr/share/doc/clai/changelog.gz.\n\n'
+    printf '    /usr/share/doc/codeagent/changelog.gz.\n\n'
     printf ' -- %s  %s\n' "$maintainer" "$when"
 } | gzip -9n >"$assets/changelog.Debian.gz"
 arch=$(deb_arch "$target")
-deb="dist/clai_${debversion}_${arch}.deb"
+deb="dist/codeagent_${debversion}_${arch}.deb"
 cargo deb --no-build --no-strip --target "$target" --deb-version "$debversion" \
     --output "$deb" >&2
 
 if command -v lintian >/dev/null 2>&1; then
     say "lintian $deb"
     lintian --fail-on error,warning "$deb" >&2
-elif [ "${CLAI_REQUIRE_LINTIAN:-0}" = 1 ]; then
-    fail "lintian is required (CLAI_REQUIRE_LINTIAN=1) but not installed"
+elif [ "${CODEAGENT_REQUIRE_LINTIAN:-0}" = 1 ]; then
+    fail "lintian is required (CODEAGENT_REQUIRE_LINTIAN=1) but not installed"
 else
     say "lintian not installed; not checked"
 fi

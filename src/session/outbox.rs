@@ -19,7 +19,7 @@ pub type ClientId = u64;
 #[derive(Debug, Clone)]
 pub struct Outbox {
     pub id: ClientId,
-    /// `tui pts/3`, `clai chat`.
+    /// `tui pts/3`, `codeagent chat`.
     pub name: String,
     tx: mpsc::UnboundedSender<ServerMessage>,
     queued: Arc<AtomicUsize>,

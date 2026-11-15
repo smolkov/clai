@@ -13,7 +13,7 @@ use crate::startup::Startup;
 
 use super::Context;
 
-/// The `new` request: `--model` or else this client's `CLAI_MODEL`, which
+/// The `new` request: `--model` or else this client's `CODEAGENT_MODEL`, which
 /// the server checks; `DIR` or the current directory.
 pub fn request(
     ctx: &Context,
@@ -103,7 +103,7 @@ pub async fn continue_session(
     Ok(create(client, request).await?.name)
 }
 
-/// The session `clai send --continue` goes to; none is an error (exit `1`).
+/// The session `codeagent send --continue` goes to; none is an error (exit `1`).
 pub fn last_session_name(
     sessions: &[SessionInfo],
     workspace: &Path,

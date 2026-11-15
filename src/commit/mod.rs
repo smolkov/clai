@@ -1,5 +1,5 @@
 //! Commit messages: the staged (or all) changes of a repository, the project's commit
-//! rules and one model request (see `spec/commit.md`). Used by `clai
+//! rules and one model request (see `spec/commit.md`). Used by `codeagent
 //! commit`; it commits nothing.
 
 pub mod changes;

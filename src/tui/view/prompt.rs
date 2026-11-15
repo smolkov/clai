@@ -65,7 +65,7 @@ fn choices(out: &mut Vec<Line<'static>>, prompt: &Prompt, width: usize, look: &L
     match &question.kind {
         QuestionKind::Permission(p) => {
             if let Details::LspStart { command, .. } = &p.details {
-                // `Start language server rust-analyzer in ~/ws/clai?`
+                // `Start language server rust-analyzer in ~/ws/codeagent?`
                 let mut summary = question.summary.clone();
                 if let Some(first) = summary.get(..1) {
                     summary = format!(

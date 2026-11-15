@@ -16,7 +16,7 @@
 A new tool, `lsp`, lets the model ask a language server about the code:
 where a symbol is defined, where it is used, what type it has, which
 symbols a file or the workspace has, who calls a function, and which
-errors a file has. `clai` starts the servers the user configured (and
+errors a file has. `codeagent` starts the servers the user configured (and
 well-known ones found on `PATH`), keeps them running while sessions use
 them, and keeps them in sync with the files. After `edit_file` and
 `write_file`, the errors a running server reports for the changed file
@@ -57,12 +57,12 @@ In:
 - Starting a server as a permission question; `lsp` in the `read` group
   for paths.
 - Server processes: one per server and root, shared by the sessions of
-  the clai server; start, readiness, sync of files, stop.
+  the codeagent server; start, readiness, sync of files, stop.
 - Diagnostics added to `edit_file` and `write_file` results.
 - TUI: the tool line, details, the start question, `/lsp` with the
-  servers' state. `clai chat`: the tool line, the start question,
+  servers' state. `codeagent chat`: the tool line, the start question,
   `/lsp`.
-- `clai run`: the same, with servers stopped when it exits.
+- `codeagent run`: the same, with servers stopped when it exits.
 
 Out:
 
@@ -71,7 +71,7 @@ Out:
   diff question for many files at once.
 - Completion and signature help: made for a cursor in an editor, not for
   a model that writes whole edits.
-- Installing language servers. `clai` uses what is on `PATH` or
+- Installing language servers. `codeagent` uses what is on `PATH` or
   configured.
 - The Debug Adapter Protocol, and any language support of its own
   (tree-sitter outlines and the like).
@@ -105,7 +105,7 @@ not nine.
 | `include_declaration` | no | `references`: also list the definition. Default `false`. |
 
 The model names a symbol, not a column: models count characters badly,
-and the name is in the line it just read. `clai` finds the symbol as a
+and the name is in the line it just read. `codeagent` finds the symbol as a
 whole word on the line and converts the position to the server's
 encoding (UTF-16 by default, UTF-8 when the server offers it).
 
@@ -263,7 +263,7 @@ gopls runs `go list`, the TypeScript server loads plugins from
 session asks:
 
 ```
-Start language server rust-analyzer in ~/ws/clai?
+Start language server rust-analyzer in ~/ws/codeagent?
   command: rust-analyzer
   It may run build scripts and macros of the project.
 [y] yes  [a] always for this server  [n] no
@@ -278,7 +278,7 @@ Start language server rust-analyzer in ~/ws/clai?
 - When the server already runs for another session, the question is
   still asked: the permission belongs to the session, as session rules
   do (`spec/architecture.md`, "State and ownership").
-- Where no one can answer (`clai run` without a terminal, `--no-ask`),
+- Where no one can answer (`codeagent run` without a terminal, `--no-ask`),
   `ask` is `deny`, and the tool is left out of the request unless
   `start = "allow"`. `--yes` allows.
 
@@ -288,19 +288,19 @@ name, command, root and environment. Protocol `8`.
 ### Servers and their processes
 
 ```
- clai server
- ├─ session "clai" ──┐
- ├─ session "fix" ───┼──▶ lsp pool ──▶ rust-analyzer  (root ~/ws/clai)
+ codeagent server
+ ├─ session "codeagent" ──┐
+ ├─ session "fix" ───┼──▶ lsp pool ──▶ rust-analyzer  (root ~/ws/codeagent)
  └─ session "docs" ──┘              └─▶ pyright        (root ~/ws/docs)
 ```
 
-- **Pool.** The clai server (or the `clai run` process) owns a pool of
+- **Pool.** The codeagent server (or the `codeagent run` process) owns a pool of
   servers, keyed by server name and root. Sessions with the same root
   share one process.
 - **Start.** On the first call that needs it, after the start question.
-  `initialize` with the root, the client capabilities `clai` handles,
+  `initialize` with the root, the client capabilities `codeagent` handles,
   and `settings`; then `initialized`. The process gets its own process
-  group, as `run_command`, and the environment of the clai server plus
+  group, as `run_command`, and the environment of the codeagent server plus
   `env`.
 - **Readiness.** A request waits until `initialize` answered, then sends.
   While the server reports `$/progress` work (indexing), a request that
@@ -309,14 +309,14 @@ name, command, root and environment. Protocol `8`.
   `start_timeout_s`.
 - **Stop.** A server without requests for 10 minutes is shut down
   (`shutdown`, `exit`, then the process group is killed after 2 s). All
-  stop when the clai server or `clai run` exits, and when `[lsp]` changes
+  stop when the codeagent server or `codeagent run` exits, and when `[lsp]` changes
   on reload.
 - **Stderr** goes to the log at `debug`; the last 50 lines are kept for
   `/lsp` and error results.
 - **Server requests.** `workspace/configuration` gets `settings`;
   `window/workDoneProgress/create` and `client/registerCapability` are
   acknowledged; `window/showMessageRequest` gets no choice; anything else
-  gets "method not found". `clai` never applies a `workspace/applyEdit`.
+  gets "method not found". `codeagent` never applies a `workspace/applyEdit`.
 - **Malformed messages** fail the server, never the session (`agent.md`,
   "Never crash"). A header without `Content-Length`, a header line over
   1 KiB, a body over 64 MiB or a body that is not JSON-RPC is malformed.
@@ -354,7 +354,7 @@ src/parse.rs:13:9: error[E0425]: cannot find value `lnes` in this scope
 (and 2 warnings; lsp diagnostics lists them)
 ```
 
-- `clai` waits for diagnostics of the new version, from
+- `codeagent` waits for diagnostics of the new version, from
   `textDocument/publishDiagnostics` or a `textDocument/diagnostic` pull,
   up to 3 s; then it adds what it has, or nothing.
 - Errors only, at most 10; warnings counted.
@@ -369,7 +369,7 @@ src/parse.rs:13:9: error[E0425]: cannot find value `lnes` in this scope
 | Tool line | `lsp references parse src/parse.rs:3`, `lsp document_symbols src/parse.rs`; when done, the count (`3 references`). |
 | Details | The result. |
 | Start question | A permission prompt with the command and root, keys as above. |
-| `/lsp` (TUI, `clai chat`) | Servers with root, state (`starting`, `indexing 42 %`, `ready`, `failed`), the sessions using them, and the last stderr lines; in the TUI, `r` restarts and `k` stops the selected one. |
+| `/lsp` (TUI, `codeagent chat`) | Servers with root, state (`starting`, `indexing 42 %`, `ready`, `failed`), the sessions using them, and the last stderr lines; in the TUI, `r` restarts and `k` stops the selected one. |
 | `/status` | The number of `lsp` calls, with the other tools. |
 
 `lsp_status` and `lsp_restart` requests; protocol `8`.
@@ -451,7 +451,7 @@ No new `tokio` features: `process` and `io-util` are on.
     failed.
 - `src/agent/tests.rs`: the start question opens once per server and
   session; `n`, `a`, `start = "allow"`, `"deny"` leaves the tool out;
-  `clai run` without a terminal leaves it out.
+  `codeagent run` without a terminal leaves it out.
 - `src/config/tests.rs`: `[lsp]` validation; two servers for one
   extension; a project file may set only `enabled = false` and
   `start = "deny"`.
@@ -520,7 +520,7 @@ No new `tokio` features: `process` and `io-util` are on.
      - The pool takes a starter function, so the tests run it with the
        in-process fake server; `spawn_reaper` checks every minute (a
        tenth of the idle time when shorter).
-     - Not used yet outside the tests; the clai server and `clai run` own
+     - Not used yet outside the tests; the codeagent server and `codeagent run` own
        a pool from step 3.
 
 3. **The tool**
@@ -528,15 +528,15 @@ No new `tokio` features: `process` and `io-util` are on.
    - Files: `src/tools/lsp.rs`, `src/tools/mod.rs`,
      `src/config/permissions.rs`, `src/agent/`, `src/server/`,
      `src/command/run.rs`, `src/protocol/`, `src/agent/system_prompt.md`
-   - Result: the model can call `lsp` in a session and in `clai run`;
+   - Result: the model can call `lsp` in a session and in `codeagent run`;
      the start question; filtering; protocol `8`.
    - Tests: tool tests, agent tests, protocol tests.
    - Built: `src/tools/lsp.rs` (`LspEnv`, `Operation`, `prepare`, the
      operations and their texts) with `src/tools/lsp_tests.rs`;
      `Tool::Lsp` in `[permissions]` and the `read` group;
      `Details::Lsp` and `Details::LspStart`; the start question in
-     `src/agent/mod.rs`; the pool owned by the clai server and by
-     `clai run`; protocol `8`. The fake server moved to
+     `src/agent/mod.rs`; the pool owned by the codeagent server and by
+     `codeagent run`; protocol `8`. The fake server moved to
      `src/lsp/fake.rs`, shared by the tests. Choices made while building
      it:
      - **No "always" in the start question.** Its choices are allow,
@@ -548,7 +548,7 @@ No new `tokio` features: `process` and `io-util` are on.
        once; the next turn asks again.
      - The tool is offered when `[lsp]` is on, a server is in use,
        `start` is not `deny`, and someone can answer or `start` is
-       `allow`. In `clai run`, `--yes` counts as `allow`.
+       `allow`. In `codeagent run`, `--yes` counts as `allow`.
      - The question's reason is `starting a language server ([lsp]
        start = "ask")`. It comes after the path's own question, if that
        asks.
@@ -561,10 +561,10 @@ No new `tokio` features: `process` and `io-util` are on.
      - `diagnostics` pulls (`textDocument/diagnostic`) when the server
        offers it, else waits up to 3 s for the published ones of the
        file's version.
-     - The clai server checks `[lsp]` at start and on each reload
+     - The codeagent server checks `[lsp]` at start and on each reload
        (`Pool::apply_config`), and stops the servers when it stops;
-       `clai run` stops its servers after the turn.
-     - Clients show the new details only plainly (`clai chat`/`clai run`
+       `codeagent run` stops its servers after the turn.
+     - Clients show the new details only plainly (`codeagent chat`/`codeagent run`
        questions, the TUI's call body); step 5 does the rest.
      - Left for step 5: `/lsp` names sessions by a token (`u1`), and a
        deleted session is not yet removed from the pool's list.
@@ -600,7 +600,7 @@ No new `tokio` features: `process` and `io-util` are on.
    - Built: requests `lsp_status`, `lsp_restart`, `lsp_stop` with
      `Payload::Lsp` (`LspServerInfo`); the `/lsp` box (`src/tui/lsp.rs`,
      `src/tui/view/lsp.rs`; `r`, `k`, `Up`/`Down`, `Enter` asks again,
-     `Esc`); `/lsp`, `/lsp restart NAME`, `/lsp stop NAME` in `clai chat`;
+     `Esc`); `/lsp`, `/lsp restart NAME`, `/lsp stop NAME` in `codeagent chat`;
      the start question in the prompt bar (command and warning, no
      `[a]`); short results on the tool line (`3 references`,
      `1 error, 2 warnings`, `12 symbols`). Choices made while building it:
@@ -624,14 +624,14 @@ No new `tokio` features: `process` and `io-util` are on.
    - Built: `spec/tools.md` ("lsp", "Errors after an edit"),
      `spec/config.md` ("LSP"), and the other spec files above; a
      "Language servers" section in the readme;
-     `tests/live.rs::rust_analyzer_through_clai_run`, which runs
-     `clai run --yes` with a scripted model against rust-analyzer on a
+     `tests/live.rs::rust_analyzer_through_codeagent_run`, which runs
+     `codeagent run --yes` with a scripted model against rust-analyzer on a
      small crate: definition, references, and the errors after a broken
      edit. Choices made while building it:
-     - The live test goes through `clai run`, not the `lsp` module, so it
+     - The live test goes through `codeagent run`, not the `lsp` module, so it
        also covers the pool, the tool texts and the edit hook. It skips
        when `rust-analyzer --version` fails (the rustup proxy without the
-       component); `CLAI_LIVE_RUST_ANALYZER` names another program.
+       component); `CODEAGENT_LIVE_RUST_ANALYZER` names another program.
      - `spec/architecture.md` said protocol `6`; it says `8` now.
 
 ## Alternatives

@@ -368,7 +368,7 @@ impl Actor {
             skills_handle.set(skills.clone());
         }
         let queue = spec.meta.queued.iter().cloned().collect();
-        // The log is the truth: this covers a session of an older `clai`, and a
+        // The log is the truth: this covers a session of an older `codeagent`, and a
         // crash between writing an event and writing the meta.
         let meta = Meta {
             usage: spec.stats.tokens,

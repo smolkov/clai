@@ -56,8 +56,8 @@ impl Renderer {
                 }
                 out
             }
-            SessionEvent::Notice { text } => format!("clai: {text}\n"),
-            SessionEvent::Error { message } => format!("clai: error: {message}\n"),
+            SessionEvent::Notice { text } => format!("codeagent: {text}\n"),
+            SessionEvent::Error { message } => format!("codeagent: error: {message}\n"),
             SessionEvent::TurnEnd(end) => {
                 if end.reason == EndReason::Done {
                     self.answer = Some(std::mem::take(&mut self.pending));

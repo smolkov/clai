@@ -1,9 +1,9 @@
 #!/bin/sh
-# Packs the built binary of TARGET into dist/clai-VERSION-TARGET.tar.gz.
+# Packs the built binary of TARGET into dist/codeagent-VERSION-TARGET.tar.gz.
 #
 #   ci/package.sh TARGET [VERSION]
 #
-# Needs target/TARGET/release/clai (ci/build.sh). VERSION defaults to the
+# Needs target/TARGET/release/codeagent (ci/build.sh). VERSION defaults to the
 # version in Cargo.toml. Prints the archive's path.
 
 . "$(dirname -- "$0")/common.sh"
@@ -11,15 +11,15 @@
 [ $# -ge 1 ] && [ $# -le 2 ] || fail "usage: ci/package.sh TARGET [VERSION]"
 target=$1
 version=${2:-$(crate_version)}
-bin="target/$target/release/clai"
+bin="target/$target/release/codeagent"
 [ -x "$bin" ] || fail "$bin missing; run ci/build.sh $target first"
 
-name="clai-$version-$target"
+name="codeagent-$version-$target"
 stage="target/dist-stage/$name"
 rm -rf "$stage"
 mkdir -p "$stage/completions" dist
 
-cp "$bin" "$stage/clai"
+cp "$bin" "$stage/codeagent"
 cp readme.md CHANGELOG.md LICENSE-MIT LICENSE-APACHE "$stage/"
 sh ci/completions.sh "$(sh ci/host-bin.sh "$target")" "$stage/completions"
 

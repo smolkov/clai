@@ -8,12 +8,12 @@
 - Spec: [`spec/tui.md`](../spec/tui.md), "Layout", "Model picker", "Keys";
   [`spec/sessions.md`](../spec/sessions.md), "Persistence";
   [`spec/architecture.md`](../spec/architecture.md), "Protocol";
-  [`spec/command.md`](../spec/command.md), "clai ls", "clai chat"
+  [`spec/command.md`](../spec/command.md), "codeagent ls", "codeagent chat"
 
 ## Summary
 
 A session counts the input and output tokens it has used, keeps the count
-when saved, and shows it in the TUI, `clai chat` and `clai ls --json`. The
+when saved, and shows it in the TUI, `codeagent chat` and `codeagent ls --json`. The
 model of a session can be changed with a picker (`Ctrl-O`, `/model`), and
 the faults of the model change are fixed. The session code that these
 changes touch is refactored first, without a change of behaviour.
@@ -106,8 +106,8 @@ pub struct TokenTotals {
 - `Actor::publish` adds each `usage` event to `meta.usage` and saves the meta.
   That is at most one small atomic write per model request.
 - `Actor::new` computes the totals by summing the log. The log is the truth: this
-  covers sessions saved by an older `clai`, and a crash between writing the
-  event and writing the meta. An old saved session shows zero in `clai ls` until
+  covers sessions saved by an older `codeagent`, and a crash between writing the
+  event and writing the meta. An old saved session shows zero in `codeagent ls` until
   it is first resumed. **(proposal)**
 
 Clients:
@@ -126,11 +126,11 @@ Clients:
   for the context size. It does not read `SessionInfo.usage`: the attach response
   comes before the replay, so adding the two would count everything twice, and a
   reconnect must not add to the old sum.
-- **`clai chat`:** a new `/usage` prints `tokens: in 45.1k, out 3.2k; context
+- **`codeagent chat`:** a new `/usage` prints `tokens: in 45.1k, out 3.2k; context
   12.3k`. **(proposal)**
-- **`clai ls --json`:** new fields `input_tokens` and `output_tokens`. The table
+- **`codeagent ls --json`:** new fields `input_tokens` and `output_tokens`. The table
   stays as it is. **(proposal)**
-- `clai run` prints nothing new.
+- `codeagent run` prints nothing new.
 
 `tui::view::info::tokens` and `command::models::short_tokens` move to `text`, so
 that all clients share them.
@@ -174,7 +174,7 @@ pub struct ModelInfo {
     pub id: String,
     pub context_window: u64,
     pub default: bool,
-    /// The key's status as in `clai models --json`; `api_key_cmd` is not run.
+    /// The key's status as in `codeagent models --json`; `api_key_cmd` is not run.
     pub key: String,
 }
 ```
@@ -209,7 +209,7 @@ and the selected row. `Dialog` stays as it is, since it is `Copy` and has no sta
 - With no models it shows the path of the configuration file and a short example.
 - `src/tui/view/picker.rs` draws it; `popup.rs` shares its box code.
 
-`clai chat` keeps `/model NAME` and gets no picker.
+`codeagent chat` keeps `/model NAME` and gets no picker.
 
 ## Spec changes
 
@@ -223,7 +223,7 @@ Written when the RFC is accepted.
   `model_changed`, `usage` in the session info.
 - `spec/sessions.md`, "Persistence": token totals in `session.json`, summed from
   the log on resume; a model change on a saved session is logged.
-- `spec/command.md`: `/usage` in `clai chat`; new fields in `clai ls --json`.
+- `spec/command.md`: `/usage` in `codeagent chat`; new fields in `codeagent ls --json`.
 - `readme.md`: `Ctrl-O`, `/model`, `/usage`. `/help` in the TUI likewise.
 
 ## Testing
@@ -244,7 +244,7 @@ Written when the RFC is accepted.
   prompt is open); `insta` snapshots with marks, in Unicode and ASCII, and with no
   match.
 - Protocol: round trips of the new messages; a version mismatch with `2`.
-- Binary: `clai ls --json` has the new fields.
+- Binary: `codeagent ls --json` has the new fields.
 
 ## Implementation plan
 
@@ -264,7 +264,7 @@ Written when the RFC is accepted.
    - Status: done
    - Files: `src/session/store.rs`, `src/session/mod.rs`, `src/protocol/mod.rs`,
      `src/command/ls.rs`
-   - Result: `usage` in `session.json` and `SessionInfo`; `clai ls --json`.
+   - Result: `usage` in `session.json` and `SessionInfo`; `codeagent ls --json`.
    - Tests: Totals section above.
 4. **Counters in the clients**
    - Status: done
@@ -301,7 +301,7 @@ Written when the RFC is accepted.
 ## Alternatives
 
 - **Only the clients sum the log, nothing is saved.** No store or protocol change,
-  and the TUI works the same. Rejected because `clai ls` and the later session
+  and the TUI works the same. Rejected because `codeagent ls` and the later session
   list could not show totals without loading each session's whole log.
 - **The TUI reads the totals from `SessionInfo`.** One source, but the attach
   response comes before the replay, and live events after it must be told apart
@@ -321,8 +321,8 @@ Answered when the RFC was accepted, each as this RFC assumed:
 1. **Does "model change" include the picker?** Yes.
 2. **Which refactoring points?** The three that the session work touches; the
    rest of B stays in `todo.md`.
-3. **Where should the counter show?** The TUI, `clai chat` `/usage` and
-   `clai ls --json`; no column in `clai ls`, no line after `clai run`.
+3. **Where should the counter show?** The TUI, `codeagent chat` `/usage` and
+   `codeagent ls --json`; no column in `codeagent ls`, no line after `codeagent run`.
 
 ## Notes from building
 

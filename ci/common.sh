@@ -17,14 +17,14 @@ fail() {
     exit 1
 }
 
-# The `version` of the package in Cargo.toml (or $CLAI_CARGO_TOML).
+# The `version` of the package in Cargo.toml (or $CODEAGENT_CARGO_TOML).
 crate_version() {
-    sed -n '/^\[package\]/,/^\[/s/^version = "\(.*\)"$/\1/p' "${CLAI_CARGO_TOML:-Cargo.toml}" | head -n 1
+    sed -n '/^\[package\]/,/^\[/s/^version = "\(.*\)"$/\1/p' "${CODEAGENT_CARGO_TOML:-Cargo.toml}" | head -n 1
 }
 
-# The pinned toolchain in rust-toolchain.toml (or $CLAI_TOOLCHAIN_TOML).
+# The pinned toolchain in rust-toolchain.toml (or $CODEAGENT_TOOLCHAIN_TOML).
 toolchain_version() {
-    sed -n 's/^channel = "\(.*\)"$/\1/p' "${CLAI_TOOLCHAIN_TOML:-rust-toolchain.toml}" | head -n 1
+    sed -n 's/^channel = "\(.*\)"$/\1/p' "${CODEAGENT_TOOLCHAIN_TOML:-rust-toolchain.toml}" | head -n 1
 }
 
 # The host's target triple.

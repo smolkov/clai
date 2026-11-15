@@ -1,4 +1,4 @@
-//! `clai commit` (see `spec/command.md` and `spec/commit.md`): prints a
+//! `codeagent commit` (see `spec/command.md` and `spec/commit.md`): prints a
 //! message for the staged changes, or with `-a` all changes of tracked
 //! files; commits nothing.
 

@@ -1,4 +1,4 @@
-//! `clai skills`: list the skills the current workspace would find (see
+//! `codeagent skills`: list the skills the current workspace would find (see
 //! `spec/skills.md`).
 
 use std::path::Path;

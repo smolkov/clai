@@ -1,5 +1,5 @@
 [book]
-title = "clai specification"
+title = "codeagent specification"
 authors = ["Aleksandr Smolkov"]
 language = "en"
 src = "."

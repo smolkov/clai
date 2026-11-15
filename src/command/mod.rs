@@ -37,7 +37,7 @@ pub trait Execute {
 pub enum Runtime {
     /// One connection, little work: the client commands.
     Client,
-    /// Sessions, tools and signals at once: the server and `clai run`.
+    /// Sessions, tools and signals at once: the server and `codeagent run`.
     Work,
 }
 

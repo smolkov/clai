@@ -1,5 +1,5 @@
 # A local model through Ollama; no API key. Try it with
-#   clai --config tests/configs/valid/ollama.toml run "list the files"
+#   codeagent --config tests/configs/valid/ollama.toml run "list the files"
 default_model = "local/qwen"
 
 [providers.local]

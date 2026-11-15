@@ -17,7 +17,7 @@ while it runs, from the box and from an edited file, and draws the themes of
 `spec/config.md` (`terminal`, `dark`, `light`, `[themes.NAME]`), which it
 validates today but does not use. Themes can also be files in a `themes/`
 directory next to the user file, one per theme (`themes/nord.toml`), and
-`clai` brings four of them: `atom-one-dark`, `nord`, `gruvbox-dark` and
+`codeagent` brings four of them: `atom-one-dark`, `nord`, `gruvbox-dark` and
 `solarized-light`. The theme also has a
 command of its own: `/theme` opens a list of all themes, previews the selected
 one, and `Enter` takes it; `/theme NAME` switches at once.
@@ -43,10 +43,10 @@ In:
   validation as loading.
 - Applying `[tui]` live in the TUI: from the box, and when the user file
   changes (`config_reloaded`).
-- Marks for values that something else overrides: `CLAI_THEME`, `NO_COLOR`,
+- Marks for values that something else overrides: `CODEAGENT_THEME`, `NO_COLOR`,
   a locale that is not UTF-8.
 - Themes: `terminal`, `dark`, `light` and custom `[themes.NAME]` drawn, with
-  `CLAI_THEME`, `NO_COLOR` and the 256-colour fallback for `#rrggbb`.
+  `CODEAGENT_THEME`, `NO_COLOR` and the 256-colour fallback for `#rrggbb`.
 - `/theme [NAME]`: the theme list, and switching by name, with argument
   completion of theme names.
 - Theme files: a `themes/` directory next to the user file, one `NAME.toml`
@@ -69,7 +69,7 @@ Out:
 ### The box
 
 ```
-┌ Settings ─ ~/.config/clai/config.toml ────────────────────────────────────┐
+┌ Settings ─ ~/.config/codeagent/config.toml ────────────────────────────────────┐
 │ ▶ theme              terminal   Colour theme                              │
 │   symbols            auto       Unicode or ASCII symbols                  │
 │   mouse            * off        Capture the mouse for scrolling           │
@@ -91,7 +91,7 @@ Out:
 - `*` marks a value changed and not saved yet. A value not set in the file shows
   the default, dim.
 - A value something else decides is marked and its row explains it:
-  `theme` with `CLAI_THEME` set (`⚠ CLAI_THEME=dark`), any colour with `NO_COLOR`,
+  `theme` with `CODEAGENT_THEME` set (`⚠ CODEAGENT_THEME=dark`), any colour with `NO_COLOR`,
   `symbols = unicode` in a locale that is not UTF-8 (still applied, as the
   setting asks). **(proposal)**
 - The title names the file that `s` writes: the TUI's own user file (`--config`
@@ -145,7 +145,7 @@ What applying means per key:
   and writes nothing. Changes are never merged silently.
 - After a save the server notices the file within 2 s and sends
   `config_reloaded` to every client; other TUIs then apply it as below.
-- `CLAI_THEME` is not touched by saving: it still wins for this run, and the
+- `CODEAGENT_THEME` is not touched by saving: it still wins for this run, and the
   row says so.
 
 ### Live reload of `[tui]`
@@ -193,9 +193,9 @@ of all tests stay as they are.
   and `COLORTERM` (`truecolor` or `24bit`), detected once at start. Without true
   colour, `#rrggbb` becomes the nearest of the 6×6×6 cube and the grey ramp of
   the 256 colours.
-- `CLAI_THEME` names the theme for this run; an unknown name is a usage error at
+- `CODEAGENT_THEME` names the theme for this run; an unknown name is a usage error at
   start, as for `tui.theme`. In the settings box the `theme` row then says
-  `⚠ CLAI_THEME=NAME`, and changing it there previews, but does not outlast
+  `⚠ CODEAGENT_THEME=NAME`, and changing it there previews, but does not outlast
   the run.
 - Changing the theme lays out the conversation again, since cached lines carry
   their styles.
@@ -206,13 +206,13 @@ Besides `[themes.NAME]` tables, a theme can be a file of its own, so themes can
 be shared and copied without editing the configuration.
 
 - **Directory:** `themes/` next to the user file, so
-  `$XDG_CONFIG_HOME/clai/themes/` by default, or next to the `--config` file.
+  `$XDG_CONFIG_HOME/codeagent/themes/` by default, or next to the `--config` file.
   Each `NAME.toml` there is the theme `NAME`, e.g. `themes/nord.toml` is
   `nord`. Other files are ignored; so is a missing directory.
 - **Content:** the keys of a `[themes.NAME]` table, at the top level of the file:
 
   ```toml
-  # ~/.config/clai/themes/nord.toml
+  # ~/.config/codeagent/themes/nord.toml
   base        = "dark"
   background  = "#2e3440"
   text        = "#d8dee9"
@@ -228,7 +228,7 @@ be shared and copied without editing the configuration.
   diff_remove = "#bf616a"
   ```
 
-- **Bundled themes:** `clai` brings `atom-one-dark`, `nord`, `gruvbox-dark` and
+- **Bundled themes:** `codeagent` brings `atom-one-dark`, `nord`, `gruvbox-dark` and
   `solarized-light`, built into the binary from `themes/*.toml` in the
   repository, with the colours of the published palettes (Atom One Dark, Nord,
   Gruvbox and Solarized, all MIT). They are listed like any other theme and are
@@ -263,15 +263,15 @@ be shared and copied without editing the configuration.
   file cannot build on another file.
 - **Errors** name the theme file with its line, like errors of the user file.
   A broken theme file is a load error only if it is the theme in use
-  (`tui.theme` or `CLAI_THEME`); otherwise it is left out of the list and the
-  settings box shows `⚠ themes/x.toml: …` under the `theme` row. One bad file in a shared directory then does not stop `clai`.
+  (`tui.theme` or `CODEAGENT_THEME`); otherwise it is left out of the list and the
+  settings box shows `⚠ themes/x.toml: …` under the `theme` row. One bad file in a shared directory then does not stop `codeagent`.
 - **Reloading:** the TUI reads the directory at start, on `config_reloaded`, and
   when the settings box opens. A theme file edited on its own is seen then; the
   server does not watch the directory. **(proposal)**
 - In the settings box, `theme` steps through `terminal`, `dark`, `light`, the
   bundled themes, the files of the directory (by name), then the tables of the
   user file (in file order). A theme from a file shows its file under the list.
-- `clai` never writes into the theme directory; saving only sets `tui.theme`.
+- `codeagent` never writes into the theme directory; saving only sets `tui.theme`.
 
 ### Theme list
 
@@ -288,7 +288,7 @@ of `spec/tui.md`):
 │   light                                                                   │
 │ bundled                                                                   │
 │ ▶ atom-one-dark                                                           │
-│   nord                                         ~/.config/clai/themes/     │
+│   nord                                         ~/.config/codeagent/themes/     │
 │ user file                                                                 │
 │   solar                                        base dark                  │
 │                                                                           │
@@ -315,8 +315,8 @@ of `spec/tui.md`):
 - `/theme NAME` switches to `NAME` and saves it the same way, without the list;
   an unknown name is a notice that names `/theme` for the list, and the input
   stays. The argument list of RFC 0005 offers the theme names after `/theme `.
-- With `CLAI_THEME` set, the list says so in its title
-  (`Theme ─ ⚠ CLAI_THEME=nord for this run`), and `Enter` saves the choice for
+- With `CODEAGENT_THEME` set, the list says so in its title
+  (`Theme ─ ⚠ CODEAGENT_THEME=nord for this run`), and `Enter` saves the choice for
   later runs while this run keeps the chosen one too.
 - With `NO_COLOR` the list still opens, but says that colours are off, since the
   preview would show nothing.
@@ -398,7 +398,7 @@ Written when the RFC is accepted.
 1. **Themes**
    - Status: done
    - Files: `src/tui/style.rs`, `src/tui/mod.rs`, `src/config/tui.rs`
-   - Result: `dark`, `light` and custom themes drawn; `CLAI_THEME`; the
+   - Result: `dark`, `light` and custom themes drawn; `CODEAGENT_THEME`; the
      256-colour fallback; the `background` key. `terminal` looks as before.
    - Tests: palettes per theme, a custom theme over its base, `NO_COLOR`, nearest
      colour, a painted background; frames of each built-in theme; existing
@@ -495,7 +495,7 @@ Still open:
 Details the design left open, or changed while building:
 
 - `Theming` in `App` holds what the look is made of besides `[tui]`: the
-  themes, broken files, the colours of the terminal, the locale, `CLAI_THEME`,
+  themes, broken files, the colours of the terminal, the locale, `CODEAGENT_THEME`,
   the offset for timestamps, and the user file with its stamp and the keys it
   sets. The shell reads all of it; `App` stays free of I/O, and saving is
   `Effect::Save`, answered by `Input::Saved`.

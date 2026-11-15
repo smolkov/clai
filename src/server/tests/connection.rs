@@ -4,7 +4,7 @@ use tokio::sync::oneshot;
 
 use super::*;
 use crate::client::Connection;
-use crate::error::Result as ClaiResult;
+use crate::error::Result as CodeagentResult;
 
 /// A client connected and attached, its socket moved into a connection.
 async fn connected(fx: &Fixture, name: &str, session: &str) -> Connection {
@@ -13,7 +13,7 @@ async fn connected(fx: &Fixture, name: &str, session: &str) -> Connection {
     Connection::spawn(client)
 }
 
-async fn response(rx: oneshot::Receiver<ClaiResult<Payload>>) -> ClaiResult<Payload> {
+async fn response(rx: oneshot::Receiver<CodeagentResult<Payload>>) -> CodeagentResult<Payload> {
     tokio::time::timeout(WAIT, rx)
         .await
         .expect("no response in time")

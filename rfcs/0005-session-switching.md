@@ -6,17 +6,17 @@
   [`implementation.md`](../implementation.md))
 - Spec: [`spec/tui.md`](../spec/tui.md), "Sessions", "Switching sessions",
   "Model picker", "Input editor", "Keys";
-  [`spec/command.md`](../spec/command.md), "clai attach", "clai chat";
+  [`spec/command.md`](../spec/command.md), "codeagent attach", "codeagent chat";
   [`spec/sessions.md`](../spec/sessions.md), "Session lifecycle"
 
 ## Summary
 
-From the TUI, from `clai chat` and from the shell the user can start a new
+From the TUI, from `codeagent chat` and from the shell the user can start a new
 session with a model of their choice, pick a session from the list of all
-sessions, and attach the TUI or `clai chat` to it without leaving. In the TUI
+sessions, and attach the TUI or `codeagent chat` to it without leaving. In the TUI
 this is the session list (`Ctrl-S`, `/sessions`), `/new` with the model picker,
-`/attach NAME` and `Ctrl-N` / `Ctrl-P`; in `clai chat` it is `/sessions`,
-`/new` and `/attach`; in the shell `clai attach` without a name opens the
+`/attach NAME` and `Ctrl-N` / `Ctrl-P`; in `codeagent chat` it is `/sessions`,
+`/new` and `/attach`; in the shell `codeagent attach` without a name opens the
 session list when there are several sessions.
 
 ## Motivation
@@ -25,10 +25,10 @@ session list when there are several sessions.
   none of it is built: the commands say "comes with a later version", and
   `Ctrl-S`, `Ctrl-N`, `Ctrl-P` do nothing.
 - To work in a second session, or the same workspace with another model, the
-  user has to detach, run `clai new --model …` or `clai attach NAME`, and
+  user has to detach, run `codeagent new --model …` or `codeagent attach NAME`, and
   start the TUI again. The `●1` on the session row says another session waits
   for an answer, but the TUI offers no way to go there.
-- `clai attach` with several sessions fails with "several sessions: a, b, c;
+- `codeagent attach` with several sessions fails with "several sessions: a, b, c;
   name one", a placeholder until the list exists.
 - A killed session leaves the TUI with a disabled input where any key exits;
   the spec says it opens the session list.
@@ -41,9 +41,9 @@ In:
   `Ctrl-S`; `/new [NAME]` with the model picker; `/attach NAME`; `Ctrl-N` /
   `Ctrl-P`; view state kept per session; the list after the attached session
   ended.
-- `clai attach` without a name and several sessions: the TUI opens on the
+- `codeagent attach` without a name and several sessions: the TUI opens on the
   session list.
-- `clai chat`: `/sessions`, `/new [NAME] [MODEL]`, `/attach NAME`.
+- `codeagent chat`: `/sessions`, `/new [NAME] [MODEL]`, `/attach NAME`.
 - Argument completion in the command list for `/attach` (session names) and
   `/model` (models), since both lists are at hand now. **(proposal)**
 
@@ -125,7 +125,7 @@ enum Mode {
 }
 ```
 
-- Opens with `Ctrl-S`, `/sessions`, and at start for `clai attach` with
+- Opens with `Ctrl-S`, `/sessions`, and at start for `codeagent attach` with
   several sessions. It sends `list` and opens on the answer, like the picker
   on `models`; the 2 s `list` keeps it fresh, the selection stays on the same
   session id.
@@ -157,7 +157,7 @@ enum Mode {
   marks `✓ current`) or `New { workspace, name }` (no `current` mark, no history
   mark, `Enter` on any model creates).
 - `n` in the list ends in the same picker.
-- The note "other sessions work in this workspace" of `clai new` becomes a
+- The note "other sessions work in this workspace" of `codeagent new` becomes a
   notice in the new session's conversation. **(proposal)**
 
 ### Attach
@@ -173,10 +173,10 @@ enum Mode {
 The spec's rule replaces the placeholder: when the attached session ends, the
 TUI shows the notice and opens the session list. If other sessions exist, keys
 work in the list and `Esc` exits with `0`. With none left, the box says
-`no sessions` with `n new ─ Esc exit`. `clai server stop` still exits as
+`no sessions` with `n new ─ Esc exit`. `codeagent server stop` still exits as
 today: the TUI does not start the server again.
 
-### `clai attach`
+### `codeagent attach`
 
 Without `NAME`: one session attaches as today; none fails with `no sessions`;
 several open the TUI with the session list over the first one in the list.
@@ -184,13 +184,13 @@ several open the TUI with the session list over the first one in the list.
 **(proposal)** Attaching to the first one first keeps `App` simple: it always
 has a session.
 
-### `clai chat`
+### `codeagent chat`
 
-`clai chat` stays one session at a time; switching means detach, then attach
+`codeagent chat` stays one session at a time; switching means detach, then attach
 on the same connection (`detach` + `attach`; the replay is printed as on
 start).
 
-- `/sessions` prints the `clai ls` table, the attached session marked with `*`.
+- `/sessions` prints the `codeagent ls` table, the attached session marked with `*`.
 - `/new [NAME] [MODEL]` creates a session in the attached session's
   workspace and attaches to it. `MODEL` is `PROVIDER/MODEL` or the short form;
   without it, `default_model`. A word with a `/` is taken as the model, so
@@ -217,9 +217,9 @@ Written when the RFC is accepted.
   `/attach` without a name; the picker for a new session; the status row while
   attaching; the list after a session ended, replacing the placeholder;
   argument completion, replacing "not built yet".
-- `spec/command.md`: `clai attach` with several sessions; `/sessions`, `/new`,
-  `/attach`, `/models` in `clai chat`.
-- `readme.md`: the new keys and commands; `/help` in the TUI and `clai chat`.
+- `spec/command.md`: `codeagent attach` with several sessions; `/sessions`, `/new`,
+  `/attach`, `/models` in `codeagent chat`.
+- `readme.md`: the new keys and commands; `/help` in the TUI and `codeagent chat`.
 
 ## Testing
 
@@ -235,10 +235,10 @@ Written when the RFC is accepted.
   argument completion.
 - Server, in-process: a client that switches by a new connection is detached
   from the old session, and a question there goes on to other clients.
-- `clai chat`, in-process: `/new` with and without a model, `/attach`,
+- `codeagent chat`, in-process: `/new` with and without a model, `/attach`,
   `/sessions`; the replay of the second session is printed and events of the
   first stop.
-- Binary: `clai attach` with several sessions needs a terminal; the old error
+- Binary: `codeagent attach` with several sessions needs a terminal; the old error
   test changes.
 
 ## Implementation plan
@@ -264,12 +264,12 @@ Written when the RFC is accepted.
    - Result: `/new [NAME]` and `n` in the list create with a chosen model and
      switch.
    - Tests: picker purpose, `n` steps, snapshots.
-4. **`clai attach` without a name**
+4. **`codeagent attach` without a name**
    - Status: done
    - Files: `src/tui/mod.rs`, `src/command/attach.rs`, `tests/`
    - Result: several sessions open the list.
    - Tests: unit test of the target choice; binary test.
-5. **`clai chat`**
+5. **`codeagent chat`**
    - Status: done
    - Files: `src/command/chat/talk.rs`
    - Result: `/sessions`, `/new`, `/attach`, `/models`.
@@ -291,7 +291,7 @@ Written when the RFC is accepted.
 - **`detach` + `attach` on the TUI's connection.** One socket, but the replay
   then streams into the running event loop, mixed with live events of nothing
   yet: the first frame of the new session would show a half-built
-  conversation, and the code path differs from start-up and reconnect. `clai
+  conversation, and the code path differs from start-up and reconnect. `codeagent
   chat` uses it because it prints lines and has no frame.
 - **Attach to all sessions at once and filter.** Instant switching and live
   `●` counts, but every event of every session goes to every TUI, and the
@@ -308,10 +308,10 @@ Written when the RFC is accepted.
 
 Answered when the RFC was accepted, each as this RFC proposed:
 
-1. **`clai chat /new` syntax.** `/new [NAME] [MODEL]`; a word with a `/` is the
+1. **`codeagent chat /new` syntax.** `/new [NAME] [MODEL]`; a word with a `/` is the
    model.
 2. **Argument completion.** In this RFC.
-3. **`clai attach` with several sessions.** The TUI opens on the list over the
+3. **`codeagent attach` with several sessions.** The TUI opens on the list over the
    first session.
 4. **Workspace step of `n`.** Asked, with the attached session's as default.
 
@@ -331,9 +331,9 @@ Details the design left open, or changed while building:
   are searched by name and id.
 - The `models` request for `/model ` is sent when that list first opens and no
   models are known yet; it opens no picker.
-- `clai chat` attaches to the new session before it detaches from the old one,
+- `codeagent chat` attaches to the new session before it detaches from the old one,
   so a failed attach leaves it where it was.
-- With `clai server stop` the TUI opens no list, since it must not start the
+- With `codeagent server stop` the TUI opens no list, since it must not start the
   server again; it ends as before.
 - The user asked during the build that a new session starts on the default
   model: the picker for `/new` and `n` opens on `default_model`, so one `Enter`

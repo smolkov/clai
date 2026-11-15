@@ -24,7 +24,7 @@ ignore = [
 ]
 
 [licenses]
-# clai is MIT OR Apache-2.0; these licences of dependencies are compatible.
+# codeagent is MIT OR Apache-2.0; these licences of dependencies are compatible.
 allow = [
   "MIT",
   "MIT-0",

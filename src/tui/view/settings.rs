@@ -16,7 +16,7 @@ use crate::tui::wrap::fit;
 /// keys.
 const CHROME: usize = 3;
 
-/// What else decides a value, if anything: `⚠ CLAI_THEME=nord`.
+/// What else decides a value, if anything: `⚠ CODEAGENT_THEME=nord`.
 fn override_mark(app: &App, settings: &SettingsBox, row: &Row) -> Option<String> {
     let warning = app.settings.look.symbols.warning;
     let theming = &app.settings.theming;
@@ -26,9 +26,9 @@ fn override_mark(app: &App, settings: &SettingsBox, row: &Row) -> Option<String>
         }
         "theme" => theming.theme_env.as_ref().map(|t| {
             if settings.current.theme == settings.saved.theme {
-                format!("{warning} CLAI_THEME={t} for this run")
+                format!("{warning} CODEAGENT_THEME={t} for this run")
             } else {
-                format!("{warning} CLAI_THEME={t} after this run")
+                format!("{warning} CODEAGENT_THEME={t} after this run")
             }
         }),
         "symbols" if settings.current.symbols == Symbols::Unicode && !theming.unicode_locale => {

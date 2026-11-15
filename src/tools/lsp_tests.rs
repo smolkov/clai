@@ -545,14 +545,14 @@ fn details_on_the_wire() {
     let start = Details::LspStart {
         server: "rust-analyzer".into(),
         command: vec!["rust-analyzer".into()],
-        root: "~/ws/clai".into(),
+        root: "~/ws/codeagent".into(),
         env: vec![("RA_LOG".into(), "info".into())],
     };
     let wire = serde_json::to_value(&start).unwrap();
     assert_eq!(
         wire,
         json!({"tool": "lsp_start", "server": "rust-analyzer", "command": ["rust-analyzer"],
-               "root": "~/ws/clai", "env": [["RA_LOG", "info"]]})
+               "root": "~/ws/codeagent", "env": [["RA_LOG", "info"]]})
     );
     assert_eq!(serde_json::from_value::<Details>(wire).unwrap(), start);
     let ask = Details::Lsp {

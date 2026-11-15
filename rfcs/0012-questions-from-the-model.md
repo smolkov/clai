@@ -6,7 +6,7 @@
 - Spec: [`spec/tools.md`](../spec/tools.md);
   [`spec/sessions.md`](../spec/sessions.md), "Questions";
   [`spec/tui.md`](../spec/tui.md), "Permission prompts";
-  [`spec/command.md`](../spec/command.md), "clai chat", "clai run";
+  [`spec/command.md`](../spec/command.md), "codeagent chat", "codeagent run";
   [`spec/agent-loop.md`](../spec/agent-loop.md), "System prompt";
   [`spec/config.md`](../spec/config.md), "Permissions"
 
@@ -17,7 +17,7 @@ in one call. Each question has two to six options with a short
 description, may allow several options, and always lets the user type
 their own answer instead. The question goes to the user like a permission
 question does: as a dialog box in the TUI, as numbered lines in
-`clai chat` and in `clai run` on a terminal. The answer goes back to the
+`codeagent chat` and in `codeagent run` on a terminal. The answer goes back to the
 model as the tool's result, and the turn goes on.
 
 It builds on the questions that exist (`spec/sessions.md`, "Questions"):
@@ -50,7 +50,7 @@ In:
 - The question kind `ask_user`, its choices and its answer, checked by the
   server.
 - The TUI dialog box.
-- The text dialog in `clai chat` and in `clai run` on a terminal.
+- The text dialog in `codeagent chat` and in `codeagent run` on a terminal.
 - When the tool is offered to the model, and the `ask_user` key in
   `[permissions]` to turn it off.
 - One bullet in the system prompt.
@@ -114,8 +114,8 @@ The tool is in the request only if someone can answer **(proposal)**:
 | Where | Offered |
 |-------|---------|
 | A session on the server | Yes: clients can attach later, the session waits. |
-| `clai run` with a terminal | Yes. |
-| `clai run` without a terminal, `--yes`, `--no-ask` | No. |
+| `codeagent run` with a terminal | Yes. |
+| `codeagent run` without a terminal, `--yes`, `--no-ask` | No. |
 | `ask_user = "deny"` in `[permissions]` | No. |
 
 `[permissions]` gains the key `ask_user`, `allow` (default) or `deny`.
@@ -230,7 +230,7 @@ question in `●`.
 - When another client answers, the box closes and the conversation shows
   who answered and what, as for other questions.
 
-### `clai chat` and `clai run`
+### `codeagent chat` and `codeagent run`
 
 The text dialog (`text::dialog`) gains a stage for this kind. It asks one
 question after another:
@@ -248,7 +248,7 @@ Answer: a number, or text of your own; "s" skips, "c" cancels the turn:
 - Anything that is not numbers is taken as a typed answer.
 - After the last question the dialog prints the answers and asks
   `Send? [y/n]` when there was more than one question.
-- `clai chat --questions` lists these questions with the others and
+- `codeagent chat --questions` lists these questions with the others and
   answers them the same way.
 
 ### Code
@@ -284,7 +284,7 @@ Answer: a number, or text of your own; "s" skips, "c" cancels the turn:
   choices `reply` and `decline` in "Answers", the clients table.
 - `spec/tui.md`: a section "Questions from the model" after "Limit
   prompt", with the box and its keys.
-- `spec/command.md`: "clai chat" and "clai run" show the text dialog.
+- `spec/command.md`: "codeagent chat" and "codeagent run" show the text dialog.
 - `spec/config.md`, "Permissions": the `ask_user` key.
 - `spec/agent-loop.md`, "System prompt": the new bullet:
   - Ask the user with ask_user only for a decision that is theirs and
@@ -316,9 +316,9 @@ Answer: a number, or text of your own; "s" skips, "c" cancels the turn:
   typed text, `Enter` sends the right answer, `Esc` asks before declining
   when something was chosen, `Ctrl-C` cancels; the box closes when
   another client answers.
-- `src/server/tests.rs`: a session waits with the question; `clai chat`
+- `src/server/tests.rs`: a session waits with the question; `codeagent chat`
   style answer from a second client counts; the first answer wins.
-- `tests/run.rs`: `clai run` without a terminal does not offer the tool
+- `tests/run.rs`: `codeagent run` without a terminal does not offer the tool
   (the request's `tools` has 6 entries); with an `ask_user` call anyway,
   the result is the "not available" error.
 
@@ -340,7 +340,7 @@ Each step leaves a working, tested state.
      `src/config/permissions.rs`, `src/config/tests.rs`,
      `src/command/run.rs`, `src/server/requests.rs`,
      `src/agent/system_prompt.md`, `src/protocol/stats.rs`
-   - Result: the model can ask in a session and in `clai run` on a
+   - Result: the model can ask in a session and in `codeagent run` on a
      terminal; the answer comes back as the result; the tool is left out
      where no one can answer or the user turned it off.
    - Tests: the agent, config and server tests; `tests/run.rs`.
@@ -349,7 +349,7 @@ Each step leaves a working, tested state.
    - Status: done
    - Files: `src/text/question.rs`, `src/text/dialog.rs`,
      `src/command/chat/questions.rs`, `src/command/run.rs`
-   - Result: `clai chat` (also `--questions`) and `clai run` on a
+   - Result: `codeagent chat` (also `--questions`) and `codeagent run` on a
      terminal show and answer the question.
    - Tests: the dialog tests.
 
@@ -381,7 +381,7 @@ Each step leaves a working, tested state.
 - **An "other" option the model must list.** Models forget it or word it
   oddly. The typed answer is always there instead.
 - **Offer the tool always and answer `NoOne` with an error.** The model
-  would plan around a tool that never works in `clai run` scripts.
+  would plan around a tool that never works in `codeagent run` scripts.
   Leaving it out is clearer; the error covers old history.
 - **Make it a permission-checked tool with `ask`.** Asking permission to
   ask is two questions for one. `allow` or `deny` is all it needs.
@@ -412,14 +412,14 @@ Each step leaves a working, tested state.
 - The tool's argument types, checks, `UserAnswer` and the result texts
   live in `src/tools/ask_user.rs`; `agent::question` re-uses `AskQuestion`
   and `UserAnswer` from there.
-- `Setup::can_ask`: `true` for server sessions, and for `clai run` when
+- `Setup::can_ask`: `true` for server sessions, and for `codeagent run` when
   answering on the terminal. A call where the tool is not offered, and a
   `NoOne` reply, give the "not available" error with the call `denied`.
 - Labels of one question must differ ignoring case. A default `header`
   is the question's first line cut to 16 characters, ending in `…`.
 - The text dialog: `Dialog::restart` now returns the text to show again
-  (the first question from the model), so `clai chat` prints it after a
-  rejected answer. The script form of `clai chat` gains `decline`.
+  (the first question from the model), so `codeagent chat` prints it after a
+  rejected answer. The script form of `codeagent chat` gains `decline`.
 - The tool line for a done `ask_user` call shows the answers
   (`SQLite; Search, Export`), not "The user answered:".
 - TUI: the box state is `tui::ask::Ask`, held in `Prompt::ask`. The bar
@@ -435,4 +435,4 @@ Each step leaves a working, tested state.
   so `ask_user = "deny"` applies to sessions started after it.
 - Tests: 26 new (671 in all): the tool checks and texts, agent, config, protocol,
   stats, the text dialog, `LineAsker`, the server (first valid answer),
-  `clai run` without a terminal, and the TUI keys with four snapshots.
+  `codeagent run` without a terminal, and the TUI keys with four snapshots.

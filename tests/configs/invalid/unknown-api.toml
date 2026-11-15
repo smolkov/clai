@@ -1,4 +1,4 @@
-# An api type clai does not know.
+# An api type codeagent does not know.
 default_model = "x/m"
 
 [providers.x]

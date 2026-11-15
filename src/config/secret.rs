@@ -46,7 +46,7 @@ pub enum KeySource {
     Cmd(String),
 }
 
-/// Key state as shown by `clai models`, without running any command.
+/// Key state as shown by `codeagent models`, without running any command.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KeyStatus {
     /// No key configured.

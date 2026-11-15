@@ -2,19 +2,19 @@
 //!
 //! ```sh
 //! ANTHROPIC_API_KEY=... cargo test --test live -- --ignored
-//! CLAI_LIVE_OPENAI_URL=http://localhost:11434/v1 CLAI_LIVE_OPENAI_MODEL=qwen3-coder:30b \
+//! CODEAGENT_LIVE_OPENAI_URL=http://localhost:11434/v1 CODEAGENT_LIVE_OPENAI_MODEL=qwen3-coder:30b \
 //!     cargo test --test live -- --ignored
 //! ```
 //!
-//! `CLAI_LIVE_ANTHROPIC_MODEL` picks the Anthropic model (default
-//! `claude-haiku-5-5`); `CLAI_LIVE_OPENAI_KEY_ENV` names the variable with
+//! `CODEAGENT_LIVE_ANTHROPIC_MODEL` picks the Anthropic model (default
+//! `claude-haiku-5-5`); `CODEAGENT_LIVE_OPENAI_KEY_ENV` names the variable with
 //! the key for the openai-compatible server, if it needs one. A test whose
 //! variables are not set prints why and passes.
 //!
-//! `rust_analyzer` runs `clai run` with a scripted model against
+//! `rust_analyzer` runs `codeagent run` with a scripted model against
 //! rust-analyzer on a small crate (RFC 0019); it needs `rust-analyzer` on
 //! `PATH` (`rustup component add rust-analyzer`), or its path in
-//! `CLAI_LIVE_RUST_ANALYZER`:
+//! `CODEAGENT_LIVE_RUST_ANALYZER`:
 //!
 //! ```sh
 //! cargo test --test live rust_analyzer -- --ignored
@@ -37,8 +37,8 @@ use tokio_util::sync::CancellationToken;
 
 mod support;
 
-use clai::config::{self, Api, KeySource};
-use clai::provider::{
+use codeagent::config::{self, Api, KeySource};
+use codeagent::provider::{
     Block, Event, Message, Provider, Request, Role, StopReason, ToolSpec, from_config,
 };
 
@@ -53,7 +53,7 @@ fn provider(api: Api, base_url: String, key: KeySource) -> Arc<dyn Provider> {
             max_retries: 2,
             models: IndexMap::new(),
         },
-        &clai::startup::Startup::from_process(),
+        &codeagent::startup::Startup::from_process(),
     )
     .unwrap()
 }
@@ -63,7 +63,8 @@ fn anthropic() -> Option<(Arc<dyn Provider>, String)> {
         eprintln!("skipped: ANTHROPIC_API_KEY is not set");
         return None;
     }
-    let model = std::env::var("CLAI_LIVE_ANTHROPIC_MODEL").unwrap_or("claude-haiku-5-5".into());
+    let model =
+        std::env::var("CODEAGENT_LIVE_ANTHROPIC_MODEL").unwrap_or("claude-haiku-5-5".into());
     let key = KeySource::Env("ANTHROPIC_API_KEY".into());
     Some((
         provider(Api::Anthropic, "https://api.anthropic.com".into(), key),
@@ -73,13 +74,14 @@ fn anthropic() -> Option<(Arc<dyn Provider>, String)> {
 
 fn openai() -> Option<(Arc<dyn Provider>, String)> {
     let (Ok(url), Ok(model)) = (
-        std::env::var("CLAI_LIVE_OPENAI_URL"),
-        std::env::var("CLAI_LIVE_OPENAI_MODEL"),
+        std::env::var("CODEAGENT_LIVE_OPENAI_URL"),
+        std::env::var("CODEAGENT_LIVE_OPENAI_MODEL"),
     ) else {
-        eprintln!("skipped: CLAI_LIVE_OPENAI_URL or CLAI_LIVE_OPENAI_MODEL is not set");
+        eprintln!("skipped: CODEAGENT_LIVE_OPENAI_URL or CODEAGENT_LIVE_OPENAI_MODEL is not set");
         return None;
     };
-    let key = std::env::var("CLAI_LIVE_OPENAI_KEY_ENV").map_or(KeySource::None, KeySource::Env);
+    let key =
+        std::env::var("CODEAGENT_LIVE_OPENAI_KEY_ENV").map_or(KeySource::None, KeySource::Env);
     Some((provider(Api::OpenAiCompatible, url, key), model))
 }
 
@@ -207,7 +209,7 @@ async fn anthropic_tools() {
 }
 
 #[tokio::test]
-#[ignore = "needs CLAI_LIVE_OPENAI_URL and CLAI_LIVE_OPENAI_MODEL"]
+#[ignore = "needs CODEAGENT_LIVE_OPENAI_URL and CODEAGENT_LIVE_OPENAI_MODEL"]
 async fn openai_text() {
     if let Some((p, m)) = openai() {
         text_answer(p, m).await;
@@ -215,7 +217,7 @@ async fn openai_text() {
 }
 
 #[tokio::test]
-#[ignore = "needs CLAI_LIVE_OPENAI_URL and CLAI_LIVE_OPENAI_MODEL"]
+#[ignore = "needs CODEAGENT_LIVE_OPENAI_URL and CODEAGENT_LIVE_OPENAI_MODEL"]
 async fn openai_tools() {
     if let Some((p, m)) = openai() {
         tool_round_trip(p, m).await;
@@ -239,14 +241,19 @@ async fn tls_reaches_anthropic() {
         .collect()
         .await;
     match events.as_slice() {
-        [Err(e)] => assert_eq!(e.kind, clai::provider::ErrorKind::Auth, "{}", e.message),
+        [Err(e)] => assert_eq!(
+            e.kind,
+            codeagent::provider::ErrorKind::Auth,
+            "{}",
+            e.message
+        ),
         other => panic!("{other:?}"),
     }
 }
 
 /// The program that runs rust-analyzer, if it runs.
 fn rust_analyzer() -> Option<String> {
-    let program = std::env::var("CLAI_LIVE_RUST_ANALYZER").unwrap_or("rust-analyzer".into());
+    let program = std::env::var("CODEAGENT_LIVE_RUST_ANALYZER").unwrap_or("rust-analyzer".into());
     let works = std::process::Command::new(&program)
         .arg("--version")
         .output()
@@ -272,10 +279,10 @@ fn tool_result(requests: &[serde_json::Value], id: &str) -> String {
 }
 
 /// Definition, references, and the errors after a broken edit, from a real
-/// rust-analyzer, through `clai run`.
+/// rust-analyzer, through `codeagent run`.
 #[test]
 #[ignore = "needs rust-analyzer"]
-fn rust_analyzer_through_clai_run() {
+fn rust_analyzer_through_codeagent_run() {
     use support::{Server, call, say, stderr};
 
     let Some(program) = rust_analyzer() else {

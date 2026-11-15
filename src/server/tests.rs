@@ -143,7 +143,7 @@ impl Fixture {
     /// As [`Fixture::start_with`], polling the user file every `reload`.
     async fn start_polling(scripts: Vec<Arc<Script>>, idle: Duration, reload: Duration) -> Fixture {
         let tmp = tempfile::tempdir().unwrap();
-        let dir = tmp.path().join("run/clai");
+        let dir = tmp.path().join("run/codeagent");
         let config = tmp.path().join("config.toml");
         fs::write(&config, CONFIG).unwrap();
         let ws = tmp.path().join("ws");
@@ -474,7 +474,7 @@ async fn first_answer_counts() {
     let script = Script::new(vec![write_call("c1", "a.txt"), say("written")]);
     let fx = Fixture::start(vec![script]).await;
     let mut tui = fx.client("tui pts/3", true).await;
-    let mut chat = fx.client("clai chat", true).await;
+    let mut chat = fx.client("codeagent chat", true).await;
     let mut watch = fx.client("watcher", false).await;
     new_session(&mut tui, &fx.ws, Some("s")).await;
     for c in [&mut tui, &mut chat, &mut watch] {
@@ -491,7 +491,7 @@ async fn first_answer_counts() {
     answer(&mut chat, "s", &q.id, Answer::Allow).await.unwrap();
     let late = answer(&mut tui, "s", &q.id, Answer::Deny).await;
     assert!(
-        matches!(&late, Err(Error::Failed(m)) if m == "already answered by clai chat"),
+        matches!(&late, Err(Error::Failed(m)) if m == "already answered by codeagent chat"),
         "{late:?}"
     );
     let (closed, _) = until(&mut tui, |e, _| match e {
@@ -503,7 +503,7 @@ async fn first_answer_counts() {
         closed,
         Closed::Answered {
             answer: Answer::Allow,
-            by: "clai chat".into()
+            by: "codeagent chat".into()
         }
     );
     assert_eq!(turn_end(&mut tui).await, EndReason::Done);
@@ -518,7 +518,7 @@ async fn first_answer_counts() {
 async fn wrong_answers_keep_the_question_open() {
     let script = Script::new(vec![write_call("c1", "a.txt"), say("ok")]);
     let fx = Fixture::start(vec![script]).await;
-    let mut c = fx.client("clai chat", true).await;
+    let mut c = fx.client("codeagent chat", true).await;
     new_session(&mut c, &fx.ws, Some("s")).await;
     attach(&mut c, "s").await;
     send(&mut c, "s", "go").await;
@@ -748,7 +748,7 @@ async fn version_mismatch() {
         message.contains(&format!("version {}", protocol::VERSION)),
         "{message}"
     );
-    assert!(message.contains("clai server stop"), "{message}");
+    assert!(message.contains("codeagent server stop"), "{message}");
     fx.stop().await;
 }
 
@@ -1072,7 +1072,7 @@ async fn export_and_import() {
     attach(&mut c, "s").await;
     send(&mut c, "s", "hi").await;
     turn_end(&mut c).await;
-    let file = fx.tmp.path().join("s.clai.json");
+    let file = fx.tmp.path().join("s.codeagent.json");
     c.request(Request::Export {
         session: "s".into(),
         path: file.clone(),
@@ -1230,7 +1230,7 @@ async fn token_totals_are_summed_from_the_log_on_resume() {
         .unwrap()
         .unwrap();
 
-    // As an older `clai` left it: no totals in the meta.
+    // As an older `codeagent` left it: no totals in the meta.
     let dir = saved_dir(&fx);
     let path = dir.join("session.json");
     let mut meta: serde_json::Value =
@@ -1536,9 +1536,9 @@ async fn the_models_default_says_where_it_comes_from() {
         from(answer),
         (Some("fake/one".into()), crate::protocol::DefaultFrom::User)
     );
-    fs::create_dir_all(fx.ws.join(".clai")).unwrap();
+    fs::create_dir_all(fx.ws.join(".codeagent")).unwrap();
     fs::write(
-        fx.ws.join(".clai/config.toml"),
+        fx.ws.join(".codeagent/config.toml"),
         "default_model = \"fake/two\"\n",
     )
     .unwrap();
@@ -1576,7 +1576,7 @@ async fn an_older_client_gets_the_version_error() {
         message.contains(&format!("version {}", protocol::VERSION)),
         "{message}"
     );
-    assert!(message.contains("clai server stop"), "{message}");
+    assert!(message.contains("codeagent server stop"), "{message}");
     fx.stop().await;
 }
 
@@ -1756,7 +1756,7 @@ async fn a_question_from_the_model_waits_for_any_client() {
     let script = Script::new(vec![ask, say("SQLite then")]);
     let fx = Fixture::start(vec![script.clone()]).await;
     let mut tui = fx.client("tui pts/3", true).await;
-    let mut chat = fx.client("clai chat", true).await;
+    let mut chat = fx.client("codeagent chat", true).await;
     new_session(&mut tui, &fx.ws, Some("s")).await;
     attach(&mut tui, "s").await;
     attach(&mut chat, "s").await;

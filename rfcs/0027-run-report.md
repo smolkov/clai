@@ -1,70 +1,70 @@
-# Reports from clai run
+# Reports from codeagent run
 
 - RFC: 0027
 - Status: done
-- Milestone: none; an option of `clai run`
-- Spec: [`spec/command.md`](../spec/command.md), "clai run";
+- Milestone: none; an option of `codeagent run`
+- Spec: [`spec/command.md`](../spec/command.md), "codeagent run";
   [`spec/tools.md`](../spec/tools.md), new "report";
   [`spec/agent-loop.md`](../spec/agent-loop.md), "Requests"
 
 ## Summary
 
-`clai run --report` works on one task, an issue, and prints a report
+`codeagent run --report` works on one task, an issue, and prints a report
 instead of the model's last answer: as Markdown for people, or as JSON
 with `--report=json` for scripts. The model hands in the result with a new
 tool, `report`: a status, a summary, findings with a severity and a place,
-and what is left to do. `clai` adds what it saw itself: every tool call of
+and what is left to do. `codeagent` adds what it saw itself: every tool call of
 the run, the changed files, the commands and their exit codes. Also,
-`clai run` reads the task from a pipe without `-` when no words are given.
+`codeagent run` reads the task from a pipe without `-` when no words are given.
 
 ```sh
-clai run --report "analyse this repository for security problems"
-echo "Analyse this repository for security issues" | clai run --report
-cat issue.md | clai run --report
-clai run --report=json -C ~/ws/api < issue.md > report.json
+codeagent run --report "analyse this repository for security problems"
+echo "Analyse this repository for security issues" | codeagent run --report
+cat issue.md | codeagent run --report
+codeagent run --report=json -C ~/ws/api < issue.md > report.json
 ```
 
 ## Motivation
 
-- `clai run` prints the model's last answer as free text. A script cannot
+- `codeagent run` prints the model's last answer as free text. A script cannot
   tell whether the task was solved, what was found and where, which files
   changed or which commands ran, without reading that text.
 - Audits and reviews ("analyse this repository for security problems")
   need findings with a severity and a place, and a record of what the
   model looked at: which files it read and what it searched for. Without
   that, "no problems found" cannot be checked.
-- Issues are written as files and sent through a pipe; `clai run` needs
+- Issues are written as files and sent through a pipe; `codeagent run` needs
   `-` for that, though without words a pipe can only be the task.
-- `clai run` already has the rest: the agent in its own process, no
+- `codeagent run` already has the rest: the agent in its own process, no
   server, answers without a person (`--yes`, `--no-ask`), tool lines on
   standard error, signals. A separate command would be a second name for
-  the same code, so this is an option of `clai run`.
+  the same code, so this is an option of `codeagent run`.
 
 ## Scope
 
 In:
 
-- `--report` and `--report=json` for `clai run`.
+- `--report` and `--report=json` for `codeagent run`.
 - Reading the task from a pipe without `-`.
 - The `report` tool: offered only with `--report`, how the agent handles
   it, what happens when the model does not call it.
-- The report: what the model gives, what `clai` adds from the events, the
+- The report: what the model gives, what `codeagent` adds from the events, the
   two formats.
 
 Out:
 
-- A session on the server, watching a run live with `clai attach`, or
+- A session on the server, watching a run live with `codeagent attach`, or
   saving it. See "Open questions".
-- Fetching issues from GitHub or other trackers: `gh issue view 12 | clai
+- Fetching issues from GitHub or other trackers: `gh issue view 12 | codeagent
   run --report` covers it. Writing the report back, commits, pull
   requests.
 - Several tasks in one call.
-- A command `clai issue`; it can come later as a short name, see "Open
+- A command `codeagent issue`; it can come later as a short name, see "Open
   questions".
 
 ## Design
 
-### How clai run works today
+### How codeagent run works today
 
 `src/command/run.rs`, in short:
 
@@ -87,12 +87,12 @@ Out:
 With `--report`, steps 2 to 4 stay as they are. The task gets a frame (1),
 the agent gets the `report` tool (2), a collector sees the events next to
 the `Renderer` (4), and the report is printed instead of the answer (5).
-Without `--report`, `clai run` behaves as today, apart from the pipe.
+Without `--report`, `codeagent run` behaves as today, apart from the pipe.
 
 ### Options
 
 ```sh
-clai run [--model PROVIDER/MODEL] [--yes | --no-ask] [-C DIR] [--skill NAME]...
+codeagent run [--model PROVIDER/MODEL] [--yes | --no-ask] [-C DIR] [--skill NAME]...
          [--report[=text|json]] [TASK...]
 ```
 
@@ -101,16 +101,16 @@ clai run [--model PROVIDER/MODEL] [--yes | --no-ask] [-C DIR] [--skill NAME]...
 | `--report` | Print a report instead of the last answer: Markdown. |
 | `--report=json` | The report as one JSON object. `--report=text` is the same as `--report`. |
 
-The value needs the `=`: in `clai run --report json`, `json` is a word of
-the task. **(proposal)** The short form `clai TASK...` has no `--report`,
+The value needs the `=`: in `codeagent run --report json`, `json` is a word of
+the task. **(proposal)** The short form `codeagent TASK...` has no `--report`,
 as it has no `--skill`.
 
 ### The task from a pipe
 
-- Without words, `clai run` reads the task from standard input when it is
+- Without words, `codeagent run` reads the task from standard input when it is
   not a terminal. On a terminal without words: usage error (exit `2`),
-  `clai: no task: give it as words or on standard input`. This is new for
-  every `clai run`, with or without `--report`. **(proposal)**
+  `codeagent: no task: give it as words or on standard input`. This is new for
+  every `codeagent run`, with or without `--report`. **(proposal)**
 - `-` as the only word reads standard input, as today.
 - With words, standard input is not read, so a script with standard input
   open but silent does not hang.
@@ -120,8 +120,8 @@ as it has no `--skill`.
 - The task from standard input means no one can answer on the terminal, as
   for `-` today.
 
-`clai` without a command and without words still opens the TUI; the pipe
-rule is only for `clai run`.
+`codeagent` without a command and without words still opens the TUI; the pipe
+rule is only for `codeagent run`.
 
 ### Questions
 
@@ -132,7 +132,7 @@ and `ask_user` is not offered.
 
 With the default permissions `read_file`, `list_files`, `search_files` and
 `lsp` are allowed, and `edit_file`, `write_file` and `run_command` ask. So
-`clai run --report "analyse this repository for security problems"` from a
+`codeagent run --report "analyse this repository for security problems"` from a
 script reads and searches the whole workspace without a question, and
 changes nothing. To let it fix things, the user gives `--yes`, answers on
 the terminal, or allows the tools in `[permissions]`.
@@ -167,7 +167,7 @@ The tags mark where the task ends, so the frame is not read as part of it.
 ### The report tool
 
 The model hands in the result with a tool call, so the provider checks the
-arguments against a schema and `clai` does not parse JSON out of text.
+arguments against a schema and `codeagent` does not parse JSON out of text.
 
 ```json
 {
@@ -200,7 +200,7 @@ arguments against a schema and `clai` does not parse JSON out of text.
 
 - **Offered** only with `--report`: `Agent::offer_report` turns it on,
   and `Agent::tool_specs` adds the spec then, as it adds `lsp` and
-  `ask_user`. Sessions on the server and `clai run` without
+  `ask_user`. Sessions on the server and `codeagent run` without
   `--report` never see it.
 - **Handled** by the agent, like `ask_user`: not permission-checked, not a
   file or command action. A valid call stores the report in the agent and
@@ -210,7 +210,7 @@ arguments against a schema and `clai` does not parse JSON out of text.
   it again. A later valid call replaces the report. **(proposal)**
 - **Shown** as a tool line: `✓ report partly solved — 1 finding`.
 - **Not called.** When the turn ends with `done` and no report is stored,
-  `clai run` runs one more turn with the message `Call the report tool now
+  `codeagent run` runs one more turn with the message `Call the report tool now
   with the result of your work on the task; use no other tools.` Without a
   report after that, the report gets `status` `unknown`, the last answer of
   the work as `summary`, and no findings; a note on standard error says
@@ -229,7 +229,7 @@ events, not from the model:
 | `state` | `done`, `error`, `denied` or `cancelled`. |
 | `result` | The short result of the tool line: `120 lines`, `exit code 101`, `denied: needs permission, and no one can answer`. |
 
-From the same calls `clai` adds:
+From the same calls `codeagent` adds:
 
 | Field | From |
 |-------|------|
@@ -251,7 +251,7 @@ a `version`; renaming or removing one needs a new `version`.
 ```json
 {
   "version": 1,
-  "workspace": "/home/u/ws/rust/clai",
+  "workspace": "/home/u/ws/rust/codeagent",
   "model": "anthropic/sonnet",
   "outcome": "done",
   "status": "partly_solved",
@@ -291,7 +291,7 @@ one line each, as on standard error. **(proposal)**
 ```markdown
 # Partly solved
 
-~/ws/rust/clai · anthropic/sonnet · 3 min · 45.1k in, 3.2k out
+~/ws/rust/codeagent · anthropic/sonnet · 3 min · 45.1k in, 3.2k out
 
 Found two problems; fixed the path check, the other needs a decision.
 
@@ -318,7 +318,7 @@ Found two problems; fixed the path check, the other needs a decision.
 
 ### Progress
 
-Standard error gets what `clai run` writes there today. Standard output
+Standard error gets what `codeagent run` writes there today. Standard output
 gets only the report.
 
 ### Ends, signals and exit codes
@@ -351,9 +351,9 @@ gets only the report.
 
 ## Spec changes
 
-- `spec/command.md`, "clai run": the syntax with `--report`, the pipe
+- `spec/command.md`, "codeagent run": the syntax with `--report`, the pipe
   rule, the report, its formats, the exit table with `--report`.
-- `spec/tools.md`: a row and a section "report", offered only with `clai
+- `spec/tools.md`: a row and a section "report", offered only with `codeagent
   run --report`.
 - `spec/agent-loop.md`, "Requests": `report` among the tools that are only
   sometimes sent.
@@ -386,9 +386,9 @@ gets only the report.
 1. **The task from a pipe**
    - Status: done
    - Files: `src/command/run.rs`, `src/command/common.rs`
-   - Result: `echo task | clai run` works; a terminal without words is a
+   - Result: `echo task | codeagent run` works; a terminal without words is a
      usage error.
-   - Tests: input tests; existing `clai run` tests.
+   - Tests: input tests; existing `codeagent run` tests.
 
 2. **The report tool**
    - Status: done
@@ -407,7 +407,7 @@ gets only the report.
 4. **The option**
    - Status: done
    - Files: `src/command/run.rs`, `src/report/work.md`
-   - Result: `clai run --report` works as designed.
+   - Result: `codeagent run --report` works as designed.
    - Tests: the integration tests above.
 
 5. **Spec and docs**
@@ -419,16 +419,16 @@ gets only the report.
 
 ## Alternatives
 
-- **A command `clai issue`.** It would be `clai run` with the report under
+- **A command `codeagent issue`.** It would be `codeagent run` with the report under
   another name: the same setup, questions, progress and signals. One
   option keeps one command and one place in the spec. A short name can be
   added later if it is wanted.
 - **A session on the server.** The run would be saved, could be watched
-  with `clai attach` and continued later. It needs the server, answers
+  with `codeagent attach` and continued later. It needs the server, answers
   questions over the protocol, and the `report` tool would have to exist
   for server sessions too. Most such runs come from scripts where no one
-  watches; `clai run` is built for that.
-- **The report as JSON in the final answer, parsed by `clai`.** No new
+  watches; `codeagent run` is built for that.
+- **The report as JSON in the final answer, parsed by `codeagent`.** No new
   tool, but models often wrap or break the JSON, and the provider does not
   check it. With a tool call the schema is checked and a wrong call is
   answered with the problem.
@@ -443,7 +443,7 @@ The proposals were taken as the answers when the RFC was built:
    is not read.
 2. No `--save` yet; it is in `todo.md`.
 3. `not_solved` with outcome `done` exits `0`.
-4. No `clai issue`; `alias issue='clai run --report'` does it.
+4. No `codeagent issue`; `alias issue='codeagent run --report'` does it.
 5. The tool calls carry their summary and short result, not their
    arguments.
 
@@ -460,7 +460,7 @@ The proposals were taken as the answers when the RFC was built:
 - A report after a limit says `The run stopped at its limit.` in the text
   form, after a failed run `The run failed.`.
 - The test `run_needs_task` of `src/cli.rs` became
-  `run_takes_the_task_from_a_pipe`: `clai run` without words parses now;
+  `run_takes_the_task_from_a_pipe`: `codeagent run` without words parses now;
   the command checks for a terminal.
 
 ## Open questions
@@ -469,17 +469,17 @@ None left; see "Answers".
 
 ## Questions that were open
 
-1. Words and standard input together: should `cat issue.md | clai run
+1. Words and standard input together: should `cat issue.md | codeagent run
    --report "focus on the auth code"` send both, the words as an
    instruction and standard input as the task? Proposal: not in the first
    version.
 2. Keep a record of the run: a `--save` option that hands the history to
-   the server as `clai import` does, so `clai attach` can show it later?
+   the server as `codeagent import` does, so `codeagent attach` can show it later?
    Proposal: later.
 3. Exit code for `not_solved`: `0` (proposal), `1`, or an option
    `--fail-unsolved`?
-4. A short name `clai issue` for `clai run --report`? Proposal: not now;
-   an alias in the shell does it (`alias issue='clai run --report'`).
+4. A short name `codeagent issue` for `codeagent run --report`? Proposal: not now;
+   an alias in the shell does it (`alias issue='codeagent run --report'`).
 5. Should the tool calls in the JSON carry the arguments too (the full
    `search_files` pattern, the `read_file` range), not only the summary?
    Proposal: the summary only; the arguments can be large.

@@ -87,7 +87,7 @@ except   = ["cargo publish", "cargo install", "cargo login"]
 
 [commit]
 model   = "local/qwen"
-trailer = "Co-Authored-By: clai <clai@localhost>"
+trailer = "Co-Authored-By: codeagent <codeagent@localhost>"
 
 [tui]
 theme             = "solar"

@@ -22,7 +22,7 @@ expression: "screen(&mut app, 80, 34)"
 ▸ read src/parse.rs                                                     ✓ 1 line
 ▾ run cargo build                                                              ⠋
   $ cargo build                                                                 
-     Compiling clai v0.1.0                                                      
+     Compiling codeagent v0.1.0                                                 
                                                                                 
                                                                                 
                                                                                 

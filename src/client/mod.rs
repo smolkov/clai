@@ -45,11 +45,11 @@ pub struct Connect {
 }
 
 impl Connect {
-    /// `clai chat`.
+    /// `codeagent chat`.
     pub fn chat(ctx: &Context, answers: bool) -> Connect {
         Connect {
             kind: ClientKind::Chat,
-            name: "clai chat".to_owned(),
+            name: "codeagent chat".to_owned(),
             answers,
             ..Connect::cli(ctx, true)
         }
@@ -65,14 +65,14 @@ impl Connect {
         }
     }
 
-    /// A terminal command such as `clai ls`.
+    /// A terminal command such as `codeagent ls`.
     pub fn cli(ctx: &Context, start: bool) -> Connect {
         Connect {
             dir: ctx.paths.runtime.clone(),
             start,
             config_file: ctx.config_file.clone(),
             kind: ClientKind::Cli,
-            name: "clai".to_owned(),
+            name: "codeagent".to_owned(),
             answers: false,
             env: ctx.startup.clone(),
         }
@@ -220,7 +220,7 @@ fn no_server(e: &std::io::Error) -> bool {
     )
 }
 
-/// Starts `clai server` in the background and waits until it accepts. It
+/// Starts `codeagent server` in the background and waits until it accepts. It
 /// inherits the environment, so it finds the same runtime directory.
 async fn start(options: &Connect, socket: &Path) -> Result<UnixStream> {
     // A server cannot start with an invalid user file; say why here, with
@@ -230,7 +230,7 @@ async fn start(options: &Connect, socket: &Path) -> Result<UnixStream> {
         workspace: options.dir.clone(),
         env: options.env.clone(),
     })?;
-    let exe = crate::startup::current_exe().map_err(Error::io("path of clai"))?;
+    let exe = crate::startup::current_exe().map_err(Error::io("path of codeagent"))?;
     let mut command = Command::new(exe);
     if let Some(file) = &options.config_file {
         command.arg("--config").arg(file);
@@ -260,7 +260,7 @@ async fn start(options: &Connect, socket: &Path) -> Result<UnixStream> {
                     |s| format!("exited with {s}"),
                 );
                 return Err(Error::Failed(format!(
-                    "the server {how}; run `clai server` to see why"
+                    "the server {how}; run `codeagent server` to see why"
                 )));
             }
         }

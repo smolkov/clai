@@ -22,7 +22,7 @@ pub enum Role {
     /// A command that talks to the server, or none.
     Client,
     Server,
-    /// `clai run`: a turn in its own process.
+    /// `codeagent run`: a turn in its own process.
     Run,
 }
 
@@ -36,7 +36,7 @@ impl Role {
     }
 
     /// Whether a log that cannot be opened is worth a warning: the server
-    /// and `clai run` do work to look back on; a client does not.
+    /// and `codeagent run` do work to look back on; a client does not.
     pub fn warns(self) -> bool {
         self != Role::Client
     }
@@ -163,8 +163,8 @@ mod tests {
     #[test]
     fn private_modes() {
         let tmp = tempfile::tempdir().unwrap();
-        let dir = tmp.path().join("state/clai");
-        let path = dir.join("clai.log");
+        let dir = tmp.path().join("state/codeagent");
+        let path = dir.join("codeagent.log");
         open(&path).unwrap();
         assert_eq!(mode(&dir), 0o700);
         assert_eq!(mode(&path), 0o600);
@@ -173,8 +173,8 @@ mod tests {
     #[test]
     fn wider_modes_are_narrowed() {
         let tmp = tempfile::tempdir().unwrap();
-        let dir = tmp.path().join("clai");
-        let path = dir.join("clai.log");
+        let dir = tmp.path().join("codeagent");
+        let path = dir.join("codeagent.log");
         fs::create_dir(&dir).unwrap();
         fs::set_permissions(&dir, fs::Permissions::from_mode(0o755)).unwrap();
         fs::write(&path, "old line\n").unwrap();

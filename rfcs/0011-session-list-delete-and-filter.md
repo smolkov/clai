@@ -33,9 +33,9 @@ files are removed at once, as today.
   yet `k kill` deletes its files. The confirmation
   `Kill docs and delete its files?` names neither the running turn that
   stops nor the open question that closes, nor how much work is lost.
-- **One at a time.** Sessions pile up: every `clai new`, every `n` in the
+- **One at a time.** Sessions pile up: every `codeagent new`, every `n` in the
   list. Cleaning up ten old ones is ten rounds of select, `k`, `y`.
-  `clai kill --all` is all or nothing.
+  `codeagent kill --all` is all or nothing.
 - **No way to find a session.** With twenty sessions the list scrolls,
   and the only way to reach one is `Up` / `Down`.
 - **The age is the wrong one for cleaning up.** `AGE` is the time since
@@ -60,8 +60,8 @@ Out:
 - Sorting the list by other columns; the order stays the server's, which
   is also the order of `Ctrl-N` / `Ctrl-P`.
 - New server requests: deleting several sessions sends one `kill` per
-  session, as `clai kill NAME...` does.
-- `clai ls` and `clai ls --json`: they keep their columns and their
+  session, as `codeagent kill NAME...` does.
+- `codeagent ls` and `codeagent ls --json`: they keep their columns and their
   `AGE` from creation (see open question 3).
 
 ## Design
@@ -200,7 +200,7 @@ for `USED` and for time words.
 - `tui/sessions/filter.rs` (new, pure): parsing the words and matching a
   `SessionInfo` at a time `now`. Unit tests only.
 - `text::sessions`: `confirm_delete(&[&SessionInfo]) -> String` for the
-  texts above, next to `age`, so the TUI and a later `clai chat` share it.
+  texts above, next to `age`, so the TUI and a later `codeagent chat` share it.
 - `tui/app.rs`: one `Request::Kill` effect per name; a counter of open
   deletes so the result line is written once all answers are there.
 - `tui/view/sessions.rs`: the mark column, the `USED` column, the step
@@ -295,7 +295,7 @@ Each step leaves a working, tested state.
   does well enough.
 - **Filter only by name.** Simpler, but the cleaning-up case needs state
   and time, and the workspace is the second way people name sessions.
-- **Keep `AGE` from creation.** Matches `clai ls`, but is the wrong time
+- **Keep `AGE` from creation.** Matches `codeagent ls`, but is the wrong time
   for deciding what is old; see open question 3.
 
 ## Open questions
@@ -305,8 +305,8 @@ Answered with the proposals when the RFC was built:
 1. `k` was first kept as an alias of `d`; it was then given to moving up,
    with `j` for down, as in vim. Delete is `d` and `Del`.
 2. The mark symbol is `■`, ASCII `#`.
-3. `clai ls` keeps `AGE` from creation; open for later.
-4. `clai kill` gets no `delete` alias.
+3. `codeagent ls` keeps `AGE` from creation; open for later.
+4. `codeagent kill` gets no `delete` alias.
 
 ## Notes from building
 

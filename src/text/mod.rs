@@ -1,6 +1,6 @@
 //! Plain-text output of a session for terminals and scripts: tool lines,
-//! notices, questions and answers read as lines. Used by `clai run` and
-//! `clai chat`.
+//! notices, questions and answers read as lines. Used by `codeagent run` and
+//! `codeagent chat`.
 
 pub mod ansi;
 mod asker;
@@ -74,7 +74,7 @@ pub fn short_tokens(n: u64) -> String {
     }
 }
 
-/// What `/usage` in `clai chat` prints.
+/// What `/usage` in `codeagent chat` prints.
 pub fn usage_line(usage: TokenTotals, context: u64) -> String {
     format!(
         "tokens: in {}, out {}; context {}",

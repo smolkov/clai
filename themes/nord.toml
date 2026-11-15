@@ -1,4 +1,4 @@
-# Nord, bundled with clai. Copy it to ~/.config/clai/themes/nord.toml
+# Nord, bundled with codeagent. Copy it to ~/.config/codeagent/themes/nord.toml
 # to change it there; that file then replaces this one.
 base        = "dark"
 background  = "#2e3440"

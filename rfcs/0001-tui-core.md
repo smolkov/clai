@@ -4,24 +4,24 @@
 - Status: done
 - Milestone: TUI core (see [`implementation.md`](../implementation.md))
 - Spec: [`spec/tui.md`](../spec/tui.md), [`spec/sessions.md`](../spec/sessions.md),
-  [`spec/command.md`](../spec/command.md) (`clai`, `clai new`, `clai attach`),
+  [`spec/command.md`](../spec/command.md) (`codeagent`, `codeagent new`, `codeagent attach`),
   [`spec/config.md`](../spec/config.md) ("TUI")
 
 ## Summary
 
 Build the full-screen interface as a client of the server: one attached
 session, its conversation streamed live, the input editor, the permission
-and limit prompts, cancellation and detach. With it, `clai`, `clai new`
-(without `-d`) and `clai attach NAME` work. Session list, model picker,
+and limit prompts, cancellation and detach. With it, `codeagent`, `codeagent new`
+(without `-d`) and `codeagent attach NAME` work. Session list, model picker,
 command list, themes and syntax highlighting stay for the next milestone
 (TUI sessions and settings).
 
 ## Motivation
 
 Everything a session needs runs in the server and is tested; the only way
-to use a session interactively today is `clai chat`, which is line based:
+to use a session interactively today is `codeagent chat`, which is line based:
 no scrolling back, no collapsed tool calls, no diff view while a question
-waits. The three commands that are the main entry points of `clai` still
+waits. The three commands that are the main entry points of `codeagent` still
 return "not implemented". This milestone makes them work and puts the
 architecture rule "the TUI is only a client" into code.
 
@@ -53,7 +53,7 @@ In:
 - `NO_COLOR`; one fixed style set on the terminal's 16 colours (what the
   `terminal` theme will be).
 - Connection loss: "server disconnected", retry for 10 s, re-attach.
-- `clai`, `clai new`, `clai attach NAME`; `clai attach` without a name when
+- `codeagent`, `codeagent new`, `codeagent attach NAME`; `codeagent attach` without a name when
   exactly one session exists.
 
 Out (next milestones):
@@ -62,7 +62,7 @@ Out (next milestones):
   `/sessions`, `/new`, `/attach`.
 - Model picker (`Ctrl-O`, `/model` without argument).
 - Command list popup and argument completion.
-- Themes other than the fixed one, `CLAI_THEME`, `syntax_highlight`,
+- Themes other than the fixed one, `CODEAGENT_THEME`, `syntax_highlight`,
   live reload of `[tui]`.
 - `/clear` (needs a server request), `/permissions` (needs a request that
   returns the rules in effect), `/commit`.
@@ -219,20 +219,20 @@ standard input, or `tui` if that fails, and declares `answers: true`.
 
 ### Commands
 
-Startup order, checks, exit codes and the detach line of `clai` and
-`clai new`: [RFC 0002](0002-clai-without-command.md).
+Startup order, checks, exit codes and the detach line of `codeagent` and
+`codeagent new`: [RFC 0002](0002-codeagent-without-command.md).
 
-- `clai [--model M] [--name N]` and `clai new [--name N] [--model M] [DIR]`:
+- `codeagent [--model M] [--name N]` and `codeagent new [--name N] [--model M] [DIR]`:
   send `new` (reusing `command::new::request` and `create`, which also print
   the "other sessions in this workspace" note before the TUI starts), then
   attach.
-- `clai attach NAME`: attach; an unknown name fails with `1` before the
+- `codeagent attach NAME`: attach; an unknown name fails with `1` before the
   terminal is touched.
-- `clai attach` without a name: one session → attach; none → `no sessions`
+- `codeagent attach` without a name: one session → attach; none → `no sessions`
   (exit `1`); several → **(proposal, until the session list exists)** fail
   with `1` and "several sessions: a, b, c; name one".
 - Standard input or output not a terminal: exit `2` with "the TUI needs a
-  terminal; use `clai chat` or `clai run`" (as `spec/command.md`,
+  terminal; use `codeagent chat` or `codeagent run`" (as `spec/command.md`,
   "Conventions", says).
 
 ### Terminal safety
@@ -267,13 +267,13 @@ To approve with this RFC (latest versions at the time of the change):
   rewritten as above; "older history loads in the background" kept as an
   assumption with a note that the first version replays all; small-terminal
   assumption confirmed.
-- `spec/command.md`: remove "Until the TUI exists, only `clai new -d` is
-  built"; note the temporary behaviour of `clai attach` with several
+- `spec/command.md`: remove "Until the TUI exists, only `codeagent new -d` is
+  built"; note the temporary behaviour of `codeagent attach` with several
   sessions.
 - `spec/architecture.md`: `src/tui/` tree instead of "planned";
   `client::Connection`.
 - `implementation.md`: status of TUI core; `todo.md`: tasks done and moved.
-- `readme.md`: `clai`, `clai new`, `clai attach` and the TUI keys.
+- `readme.md`: `codeagent`, `codeagent new`, `codeagent attach` and the TUI keys.
 
 ## Testing
 
@@ -298,7 +298,7 @@ To approve with this RFC (latest versions at the time of the change):
 - **Performance check**: a test that builds 10 000 lines and asserts that a
   frame of the end and a scroll step stay under a time bound (debug build,
   generous bound, to catch accidental full reflows).
-- **Binary tests**: `clai attach` without a terminal exits `2`; unknown name
+- **Binary tests**: `codeagent attach` without a terminal exits `2`; unknown name
   exits `1`. A pseudo-terminal end-to-end test stays in `todo.md`.
 
 ## Implementation plan
@@ -312,7 +312,7 @@ work can stop after any step.
    - Files: `Cargo.toml`, `src/tui/mod.rs`, `src/tui/terminal.rs`,
      `src/command/new.rs`, `src/command/attach.rs`, `src/lib.rs`
    - Result: Dependencies added; `Guard`, `restore()`, panic hook, signals;
-     `clai`, `clai new`, `clai attach NAME` open an empty screen and leave
+     `codeagent`, `codeagent new`, `codeagent attach NAME` open an empty screen and leave
      on `Ctrl-D` (steps of RFC 0002).
    - Tests: No-terminal exit `2`; `restore()` twice is harmless.
 2. **Connection**
@@ -400,7 +400,7 @@ The open questions, as answered when the RFC was accepted:
 Found while building, all within the design above:
 
 - `attach` is answered *before* the replayed log, not after it as "Attach and
-  replay" first said. The TUI sends `list` after it, as `clai chat` does: that
+  replay" first said. The TUI sends `list` after it, as `codeagent chat` does: that
   answer comes after the whole log, so the backlog then holds all of it. The
   open question comes from the `list`, not from the log, which may hold a
   question that a restart closed without a trace.
@@ -415,7 +415,7 @@ Found while building, all within the design above:
   like `Esc`.
 - `Enter` on a selected call steps: collapsed, expanded, whole result (only if
   it was cut), collapsed. The diff of an open question is never cut.
-- After `clai server stop` the session has ended (`server stopped`) and the TUI
+- After `codeagent server stop` the session has ended (`server stopped`) and the TUI
   does not start the server again; it only does that when the connection is lost
   without that event, as in a crash.
 - A finished call whose id comes again starts a new entry: some models reuse ids.

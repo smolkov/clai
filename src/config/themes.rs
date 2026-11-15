@@ -1,6 +1,6 @@
 //! Themes besides the `[themes.NAME]` tables (see `spec/config.md`, "Themes"):
 //! the files of the `themes/` directory next to the user file, and the themes
-//! bundled with `clai`. A theme file has the keys of a table at its top level.
+//! bundled with `codeagent`. A theme file has the keys of a table at its top level.
 
 use std::fs;
 use std::path::{Path, PathBuf};

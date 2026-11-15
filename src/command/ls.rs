@@ -1,4 +1,4 @@
-//! `clai ls` (see `spec/command.md`).
+//! `codeagent ls` (see `spec/command.md`).
 
 use clap::Args;
 use serde_json::{Value, json};

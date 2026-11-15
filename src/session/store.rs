@@ -17,7 +17,7 @@ use crate::agent::{
 };
 use crate::protocol::{SessionInfo, Stats, TokenTotals};
 
-/// The version of the files; a later `clai` reads older ones, never newer.
+/// The version of the files; a later `codeagent` reads older ones, never newer.
 pub const FORMAT: u32 = 1;
 
 const META: &str = "session.json";
@@ -28,11 +28,11 @@ const EVENTS: &str = "events.jsonl";
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Meta {
     pub format: u32,
-    /// The `clai` version that wrote it.
+    /// The `codeagent` version that wrote it.
     pub version: String,
     pub name: String,
     pub workspace: PathBuf,
-    /// The workspace as shown: `~/ws/rust/clai`.
+    /// The workspace as shown: `~/ws/rust/codeagent`.
     pub place: String,
     /// `provider/model`.
     pub model: String,
@@ -44,7 +44,7 @@ pub struct Meta {
     /// Messages waiting for a turn.
     #[serde(default)]
     pub queued: Vec<String>,
-    /// Tokens used so far. A file of an older `clai` has none; the log is
+    /// Tokens used so far. A file of an older `codeagent` has none; the log is
     /// summed when the session resumes.
     #[serde(default)]
     pub usage: TokenTotals,
@@ -93,7 +93,7 @@ impl Meta {
 }
 
 /// A line of `events.jsonl`: the event's fields and `at`, the time it was
-/// logged in milliseconds since 1970. A line of an older `clai` has no
+/// logged in milliseconds since 1970. A line of an older `codeagent` has no
 /// `at`; the format stays the same.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Stamped {
@@ -123,7 +123,7 @@ impl<'de> Deserialize<'de> for Stamped {
     }
 }
 
-/// A saved session as one file, for `clai export` and `clai import`.
+/// A saved session as one file, for `codeagent export` and `codeagent import`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Bundle {
     pub format: u32,
@@ -323,7 +323,7 @@ impl Store {
     }
 }
 
-/// Reads a bundle file written by `clai export`.
+/// Reads a bundle file written by `codeagent export`.
 pub fn read_bundle(path: &Path) -> Result<Bundle, String> {
     let text = fs::read_to_string(path).map_err(|e| io_err(path, &e))?;
     match serde_json::from_str::<Bundle>(&text) {
@@ -370,7 +370,7 @@ pub fn list(root: &Path) -> Vec<(Store, Meta)> {
 }
 
 fn too_new(format: u32) -> String {
-    format!("saved by a newer clai (format {format}, this clai reads up to {FORMAT})")
+    format!("saved by a newer codeagent (format {format}, this codeagent reads up to {FORMAT})")
 }
 
 /// The error for a file of a newer format, if it is one.
@@ -639,7 +639,7 @@ mod tests {
         newer["extra"] = json!({"new": true});
         fs::write(store.dir().join(META), newer.to_string()).unwrap();
         let e = store.load().unwrap_err();
-        assert!(e.contains("saved by a newer clai"), "{e}");
+        assert!(e.contains("saved by a newer codeagent"), "{e}");
     }
 
     #[test]
@@ -722,7 +722,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let store = Store::create(&tmp.path().join("sessions")).unwrap();
         store.write_meta(&meta()).unwrap();
-        // A line of an older `clai`, without `at`, then lines with it.
+        // A line of an older `codeagent`, without `at`, then lines with it.
         fs::write(
             store.dir().join(EVENTS),
             "{\"event\":\"state\",\"state\":\"working\"}\n",

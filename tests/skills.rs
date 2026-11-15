@@ -1,4 +1,4 @@
-//! `clai skills` and `clai run --skill`, run as a process (RFC 0023).
+//! `codeagent skills` and `codeagent run --skill`, run as a process (RFC 0023).
 
 #![allow(
     clippy::unwrap_used,
@@ -77,7 +77,7 @@ fn list_as_table() {
     );
     assert_eq!(
         stderr(&out),
-        "clai: warning: ~/.agents/skills/old/SKILL.md: no description\n"
+        "codeagent: warning: ~/.agents/skills/old/SKILL.md: no description\n"
     );
 }
 
@@ -151,7 +151,7 @@ fn run_with_an_unknown_skill_is_a_usage_error() {
     assert_eq!(out.status.code(), Some(2));
     assert_eq!(
         stderr(&out),
-        "clai: unknown skill `nope`; found: release-check, pdf\n"
+        "codeagent: unknown skill `nope`; found: release-check, pdf\n"
     );
     assert!(server.requests().is_empty());
 }

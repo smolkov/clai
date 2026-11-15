@@ -75,10 +75,10 @@ refuse "notes of an empty section" "no notes for 0.1.0" sh ci/notes.sh 0.1.0 "$t
 refuse "notes of a missing version" "no notes for 9.9.9" sh ci/notes.sh 9.9.9 "$tmp/CHANGELOG.md"
 refuse "a version is not a prefix" "no notes for 0.2" sh ci/notes.sh 0.2 "$tmp/CHANGELOG.md"
 
-printf '[package]\nname = "clai"\nversion = "0.2.0"\n\n[dependencies]\nversion = "1"\n' >"$tmp/Cargo.toml"
-expect "tag matches" "0.2.0" env CLAI_CARGO_TOML="$tmp/Cargo.toml" sh ci/version.sh tag v0.2.0
-refuse "tag without v" "expected v0.2.0" env CLAI_CARGO_TOML="$tmp/Cargo.toml" sh ci/version.sh tag 0.2.0
-refuse "tag of another version" "does not match" env CLAI_CARGO_TOML="$tmp/Cargo.toml" sh ci/version.sh tag v0.2.1
+printf '[package]\nname = "codeagent"\nversion = "0.2.0"\n\n[dependencies]\nversion = "1"\n' >"$tmp/Cargo.toml"
+expect "tag matches" "0.2.0" env CODEAGENT_CARGO_TOML="$tmp/Cargo.toml" sh ci/version.sh tag v0.2.0
+refuse "tag without v" "expected v0.2.0" env CODEAGENT_CARGO_TOML="$tmp/Cargo.toml" sh ci/version.sh tag 0.2.0
+refuse "tag of another version" "does not match" env CODEAGENT_CARGO_TOML="$tmp/Cargo.toml" sh ci/version.sh tag v0.2.1
 
 expect "deb version of a release" "0.2.0" sh ci/version.sh deb 0.2.0
 expect "deb version of a pre-release" "0.2.0~rc.1" sh ci/version.sh deb 0.2.0-rc.1
@@ -93,10 +93,10 @@ if sh ci/version.sh prerelease 0.2.0; then bad "0.2.0 is a release"; else ok "0.
 printf '[toolchain]\nchannel = "1.99.1"\n' >"$tmp/rust-toolchain.toml"
 printf 'variables:\n  RUST_VERSION: "1.99.1"\n' >"$tmp/same.yml"
 printf 'variables:\n  RUST_VERSION: "1.98.0"\n' >"$tmp/other.yml"
-expect "toolchain matches GitLab" "" env CLAI_TOOLCHAIN_TOML="$tmp/rust-toolchain.toml" \
-    CLAI_GITLAB_CI="$tmp/same.yml" sh ci/version.sh toolchain
-refuse "toolchain differs from GitLab" "uses 1.98.0" env CLAI_TOOLCHAIN_TOML="$tmp/rust-toolchain.toml" \
-    CLAI_GITLAB_CI="$tmp/other.yml" sh ci/version.sh toolchain
+expect "toolchain matches GitLab" "" env CODEAGENT_TOOLCHAIN_TOML="$tmp/rust-toolchain.toml" \
+    CODEAGENT_GITLAB_CI="$tmp/same.yml" sh ci/version.sh toolchain
+refuse "toolchain differs from GitLab" "uses 1.98.0" env CODEAGENT_TOOLCHAIN_TOML="$tmp/rust-toolchain.toml" \
+    CODEAGENT_GITLAB_CI="$tmp/other.yml" sh ci/version.sh toolchain
 expect "the repository's toolchain matches GitLab" "" sh ci/version.sh toolchain
 
 mkdir -p "$tmp/src/a/tests"

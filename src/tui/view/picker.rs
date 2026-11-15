@@ -132,12 +132,12 @@ fn default_lines(picker: &Picker, width: usize, look: &Look) -> [Line<'static>; 
     let warning = look.symbols.warning;
     let note = match picker.default_from {
         DefaultFrom::Env => Line::styled(
-            format!("    {warning} CLAI_MODEL={effective} overrides the saved default"),
+            format!("    {warning} CODEAGENT_MODEL={effective} overrides the saved default"),
             look.styles.warning,
         ),
         DefaultFrom::Project => Line::styled(
             format!(
-                "    {warning} .clai/config.toml of this workspace sets default_model = {effective}"
+                "    {warning} .codeagent/config.toml of this workspace sets default_model = {effective}"
             ),
             look.styles.warning,
         ),

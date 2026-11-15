@@ -1,4 +1,4 @@
-# For `clai run` in scripts and CI: common build and test commands run
+# For `codeagent run` in scripts and CI: common build and test commands run
 # without asking, everything dangerous is denied, the rest is denied
 # because no one can answer.
 default_model = "anthropic/sonnet"

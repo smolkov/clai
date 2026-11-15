@@ -72,7 +72,7 @@ fn settings(unicode: bool, colour: bool) -> Settings {
             unicode_locale: unicode,
             theme_env: None,
             offset: 3600,
-            user_file: "/home/u/.config/clai/config.toml".into(),
+            user_file: "/home/u/.config/codeagent/config.toml".into(),
             home: Some("/home/u".into()),
         },
     }
@@ -1519,7 +1519,7 @@ fn exit_lines_and_codes() {
     };
     assert_eq!(
         exit_line(&detached).unwrap(),
-        "clai: detached from docs; \"clai attach docs\" to return"
+        "codeagent: detached from docs; \"codeagent attach docs\" to return"
     );
     assert!(exit_result(&detached).is_ok());
     let ended = Exit::Ended {
@@ -1528,7 +1528,7 @@ fn exit_lines_and_codes() {
     };
     assert_eq!(
         exit_line(&ended).unwrap(),
-        "clai: session docs ended: killed"
+        "codeagent: session docs ended: killed"
     );
     assert!(exit_result(&ended).is_ok());
     assert_eq!(exit_line(&Exit::Lost), None);
@@ -1971,7 +1971,7 @@ fn models_answer_from(models: Vec<ModelInfo>, default_from: DefaultFrom) -> Inpu
         request: models_request(),
         result: Ok(Payload::Models {
             models,
-            config: "/home/u/.config/clai/config.toml".into(),
+            config: "/home/u/.config/codeagent/config.toml".into(),
             default_from,
         }),
     }
@@ -2148,7 +2148,7 @@ fn default_saves(effects: &[Effect]) -> Vec<(String, String, String)> {
         .collect()
 }
 
-const USER_FILE: &str = "/home/u/.config/clai/config.toml";
+const USER_FILE: &str = "/home/u/.config/codeagent/config.toml";
 
 #[test]
 fn space_ticks_the_default_and_leaves_the_filter() {
@@ -2268,7 +2268,7 @@ fn a_saved_default_is_reported_and_the_marks_asked_again() {
     })));
     assert_eq!(
         notices(&app)[1],
-        "⚠ CLAI_MODEL=anthropic/sonnet still sets the default of new sessions"
+        "⚠ CODEAGENT_MODEL=anthropic/sonnet still sets the default of new sessions"
     );
     let mut app = self::app();
     app.update(Input::DefaultSaved(Err("cannot write x".into())));
@@ -2319,7 +2319,7 @@ fn frame_picker_with_the_default_ticked() {
 }
 
 #[test]
-fn frame_picker_when_clai_model_sets_the_default() {
+fn frame_picker_when_codeagent_model_sets_the_default() {
     let mut app = app();
     app.update(ctrl('o'));
     app.update(models_answer_from(default_opus(), DefaultFrom::Env));
@@ -3645,7 +3645,7 @@ fn enter_takes_the_theme_and_saves_it_as_the_default() {
     };
     assert_eq!(
         path,
-        std::path::Path::new("/home/u/.config/clai/config.toml")
+        std::path::Path::new("/home/u/.config/codeagent/config.toml")
     );
     assert!(app.theme_list.is_none());
     assert_eq!(app.settings.tui.theme, "gruvbox-dark");
@@ -3708,7 +3708,7 @@ fn theme_names_in_the_argument_list() {
 }
 
 #[test]
-fn clai_theme_wins_until_a_theme_is_taken() {
+fn codeagent_theme_wins_until_a_theme_is_taken() {
     let mut app = app();
     app.settings.theming.theme_env = Some("light".into());
     let reloaded = || super::app::Reloaded {
@@ -3871,7 +3871,7 @@ fn frame_settings_ascii_editing_a_number() {
 }
 
 #[test]
-fn frame_settings_with_clai_theme() {
+fn frame_settings_with_codeagent_theme() {
     let mut app = settings_open();
     app.settings.theming.theme_env = Some("nord".into());
     insta::assert_snapshot!(screen(&mut app, 80, 24));
@@ -4192,7 +4192,7 @@ fn status_of(state: State) -> crate::protocol::SessionStatus {
                 answers: true,
             },
         ],
-        dir: Some("~/.local/state/clai/sessions/1".into()),
+        dir: Some("~/.local/state/codeagent/sessions/1".into()),
         size: Some(1_234_567),
         extra_dirs: vec![DirInfo {
             path: "~/ws/shared-lib".into(),
@@ -4585,11 +4585,11 @@ fn the_question_box_closes_when_another_client_answers() {
         id: "q3".into(),
         closed: Closed::Answered {
             answer: Answer::Decline,
-            by: "clai chat".into(),
+            by: "codeagent chat".into(),
         },
     }));
     assert!(app.prompt.is_none());
-    assert_eq!(notices(&app), ["answered by clai chat: decline"]);
+    assert_eq!(notices(&app), ["answered by codeagent chat: decline"]);
     assert!(!screen(&mut app, 80, 24).contains("Question ─"));
 }
 
@@ -5235,7 +5235,7 @@ fn frame_tool_previews() {
     live.summary = Some("cargo build".into());
     live.arguments = json!({"command": "cargo build"});
     events.push(SessionEvent::ToolCall(live.clone()));
-    live.output = Some("   Compiling clai v0.1.0\n".into());
+    live.output = Some("   Compiling codeagent v0.1.0\n".into());
     events.push(SessionEvent::ToolCall(live));
     let mut app = previewing(events);
     insta::assert_snapshot!(screen(&mut app, 80, 34));

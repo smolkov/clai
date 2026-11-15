@@ -1,4 +1,4 @@
-# A colour value clai does not know.
+# A colour value codeagent does not know.
 default_model = "anthropic/sonnet"
 
 [providers.anthropic]

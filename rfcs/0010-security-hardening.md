@@ -45,7 +45,7 @@ On a default setup, with no user rules:
   it to …") mostly stops at the wall: `run_command` asks, and the user
   sees the question. The first half, `read_file .env`, runs without one.
   Its content then sits at the provider and in
-  `~/.local/state/clai/sessions/`.
+  `~/.local/state/codeagent/sessions/`.
 - Even with the spec's own example rules (`deny read(.env*)` together with
   `allow run_command(cat, grep, …)`), `cat .env` runs without a question.
   Path rules apply to file tools and to redirections, never to command
@@ -62,8 +62,8 @@ Each finding names its place, so it can be checked.
 | 1 | high | No built-in deny for secret files: `.env` and key files in the workspace are read without a question. | `src/config/permissions.rs`, `Tool::default_action` |
 | 2 | medium | Read `deny` rules do not reach command arguments: with `allow run_command(cat)`, `cat .env` runs. | `src/permissions/check.rs`, `check_part` (only redirections are checked as paths) |
 | 3 | medium | The system prompt has no guidance about untrusted content. | `src/agent/system_prompt.md` |
-| 4 | low | The log file and the state directory `~/.local/state/clai` use the process's default mode (usually `0644` and `0755`). The log holds client names, paths and errors, not tool output; the sessions below the directory are `0700` themselves. | `src/log.rs`, `open` |
-| 5 | low, accepted | A secret that was read stays in the saved session until `clai kill`. The journal files are `0600`. See "Scope". | `spec/sessions.md`, "Persistence" |
+| 4 | low | The log file and the state directory `~/.local/state/codeagent` use the process's default mode (usually `0644` and `0755`). The log holds client names, paths and errors, not tool output; the sessions below the directory are `0700` themselves. | `src/log.rs`, `open` |
+| 5 | low, accepted | A secret that was read stays in the saved session until `codeagent kill`. The journal files are `0600`. See "Scope". | `spec/sessions.md`, "Persistence" |
 | 6 | sound | Permission engine: paths resolved (links followed, `..` removed), `deny` before `ask` before `allow`, the project file can only tighten, dynamic words and unparsable lines ask, `sh -c` strings checked part by part, redirection targets checked as reads or writes, `DEVICES` list, wrappers (`sudo`, `env`, `xargs`, …) looked through. | `src/permissions/` |
 | 7 | sound | Server: socket directory `0700`, narrowed if wider; no network listener; versioned handshake; answers checked by the server. | `src/server/paths.rs`, `spec/architecture.md` |
 | 8 | sound | Sessions: directories `0700`, journals `0600`, export files `0600`; sessions stored by numeric id, so names never become paths. | `src/session/store.rs` |
@@ -97,7 +97,7 @@ Out:
 
 ### Built-in deny rules
 
-`clai` ships three `deny` rules for the `read` group. A pattern without
+`codeagent` ships three `deny` rules for the `read` group. A pattern without
 `/` matches the name in any directory (`spec/config.md`, "Path patterns"),
 so each covers the whole workspace and the extra directories:
 
@@ -197,7 +197,7 @@ Two bullets join the permission bullet of `src/agent/system_prompt.md`:
 - `spec/agent-loop.md`: "System prompt" gains the two bullets.
 - `spec/architecture.md`: "Trust boundaries", the row "Model output" names
   the built-in rules among its guards.
-- `readme.md`: "Permissions" says that `clai` keeps well-known secret files
+- `readme.md`: "Permissions" says that `codeagent` keeps well-known secret files
   from the model out of the box, and how to make exceptions.
 
 ## Testing
@@ -221,7 +221,7 @@ Two bullets join the permission bullet of `src/agent/system_prompt.md`:
   state directory; an existing `0644` file and `0755` directory are
   narrowed.
 - `src/agent/prompt.rs`: the prompt contains both bullets.
-- `tests/run.rs`: `clai run` against the test model server, with a reply
+- `tests/run.rs`: `codeagent run` against the test model server, with a reply
   that calls `read_file .env`, gets the refusal back as the tool result.
 - Every existing test passes unchanged, apart from fixtures that read a
   file the built-in rules now deny (to be listed when building).
@@ -266,7 +266,7 @@ Each step leaves a working, tested state.
      `spec/architecture.md`, `readme.md`, `tests/run.rs`
    - Result: the spec says what the code does; the readme tells the user
      about the built-in rules and `builtin_except`.
-   - Tests: the `clai run` test; `cargo fmt`, `clippy` and `test` clean.
+   - Tests: the `codeagent run` test; `cargo fmt`, `clippy` and `test` clean.
 
 ## Alternatives
 
@@ -323,6 +323,6 @@ All answered as proposed when the RFC was built:
   change; the readme and `spec/config.md` show `builtin_except`.
 - `/permissions` is not built yet; the spec says it lists the built-in
   rules too.
-- Tests: 9 new (645 in all), including `clai run --yes` on `.env`: the
+- Tests: 9 new (645 in all), including `codeagent run --yes` on `.env`: the
   model gets the refusal, and neither the request nor the log contains
   the file's content.

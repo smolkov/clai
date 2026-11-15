@@ -28,7 +28,7 @@ pub const MAX_BODY: usize = 64 << 20;
 /// Longest header line accepted, with its line end.
 pub const MAX_HEADER_LINE: usize = 1024;
 
-/// "Method not found", for server requests `clai` does not handle.
+/// "Method not found", for server requests `codeagent` does not handle.
 pub const METHOD_NOT_FOUND: i64 = -32601;
 
 /// A message from the server that is not a response.

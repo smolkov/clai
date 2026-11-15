@@ -46,7 +46,7 @@ mod tests {
     #[test]
     fn directory_mode() {
         let tmp = tempfile::tempdir().unwrap();
-        let dir = tmp.path().join("a/clai");
+        let dir = tmp.path().join("a/codeagent");
         prepare(&dir).unwrap();
         let mode = fs::metadata(&dir).unwrap().mode() & 0o777;
         assert_eq!(mode, 0o700);

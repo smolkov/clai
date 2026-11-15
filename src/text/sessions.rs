@@ -1,11 +1,11 @@
-//! Sessions as text: the table of `clai ls`, also `/sessions` in `clai chat`,
+//! Sessions as text: the table of `codeagent ls`, also `/sessions` in `codeagent chat`,
 //! state names, ages and the delete question, also in the TUI's session list.
 
 use crate::agent::State;
 use crate::output::{Align, columns};
 use crate::protocol::SessionInfo;
 
-/// As `clai ls` and the protocol name it.
+/// As `codeagent ls` and the protocol name it.
 pub fn state_name(state: State) -> &'static str {
     match state {
         State::Idle => "idle",
@@ -118,8 +118,8 @@ mod tests {
         SessionInfo {
             id: 1,
             name: name.into(),
-            workspace: "~/ws/clai".into(),
-            path: PathBuf::from("/home/u/ws/clai"),
+            workspace: "~/ws/codeagent".into(),
+            path: PathBuf::from("/home/u/ws/codeagent"),
             model: "anthropic/sonnet".into(),
             state,
             created,
@@ -185,13 +185,13 @@ mod tests {
     #[test]
     fn lines() {
         let sessions = [
-            info("clai", State::Working, 1000),
+            info("codeagent", State::Working, 1000),
             info("docs-2", State::Idle, 400),
         ];
         assert_eq!(
             table(&sessions, 1030),
-            "clai    ~/ws/clai  anthropic/sonnet  working  30s\n\
-             docs-2  ~/ws/clai  anthropic/sonnet  idle     10m\n"
+            "codeagent  ~/ws/codeagent  anthropic/sonnet  working  30s\n\
+             docs-2     ~/ws/codeagent  anthropic/sonnet  idle     10m\n"
         );
     }
 }

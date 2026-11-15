@@ -64,7 +64,7 @@ jobs:
       - run: sh ci/package.sh x86_64-unknown-linux-musl
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: clai-x86_64-unknown-linux-musl
+          name: codeagent-x86_64-unknown-linux-musl
           path: dist/*.tar.gz
           retention-days: 7
 
@@ -103,7 +103,7 @@ jobs:
     environment: live
     env:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-      CLAI_LIVE_ANTHROPIC_MODEL: ${{ vars.CLAI_LIVE_ANTHROPIC_MODEL }}
+      CODEAGENT_LIVE_ANTHROPIC_MODEL: ${{ vars.CODEAGENT_LIVE_ANTHROPIC_MODEL }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: cargo test --locked --test live -- --ignored

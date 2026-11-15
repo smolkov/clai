@@ -1,5 +1,5 @@
 //! Answering questions with lines of text (see `spec/command.md`,
-//! "clai chat").
+//! "codeagent chat").
 
 use std::io::{BufRead, Write};
 use std::sync::{Arc, Mutex};

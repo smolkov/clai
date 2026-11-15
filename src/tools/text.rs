@@ -40,7 +40,7 @@ pub fn write_atomic(path: &Path, data: &[u8], keep: Option<fs::Permissions>) -> 
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
     let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-    let tmp: PathBuf = dir.join(format!(".{name}.clai-{}-{n}.tmp", std::process::id()));
+    let tmp: PathBuf = dir.join(format!(".{name}.codeagent-{}-{n}.tmp", std::process::id()));
     let result = (|| {
         let mut file = OpenOptions::new().write(true).create_new(true).open(&tmp)?;
         file.write_all(data)?;

@@ -1,11 +1,11 @@
-//! Command output: results on standard output, `clai: ` lines on standard
+//! Command output: results on standard output, `codeagent: ` lines on standard
 //! error, and tables.
 
 use std::io::{self, Write};
 
 use crate::error::{Error, Result};
 
-/// Writes `text` to standard output. A closed pipe (`clai models | head -1`)
+/// Writes `text` to standard output. A closed pipe (`codeagent models | head -1`)
 /// is not an error: the reader got what it wanted.
 pub fn write_stdout(text: &str) -> Result<()> {
     let mut stdout = io::stdout().lock();
@@ -22,11 +22,11 @@ pub fn write_stdout(text: &str) -> Result<()> {
     }
 }
 
-/// Writes `clai: {text}` on standard error. A failure is ignored: there is
+/// Writes `codeagent: {text}` on standard error. A failure is ignored: there is
 /// nowhere left to report it.
 pub fn note(text: &str) {
     let mut stderr = io::stderr().lock();
-    let _ = writeln!(stderr, "clai: {text}");
+    let _ = writeln!(stderr, "codeagent: {text}");
 }
 
 /// How a column of [`columns`] is padded.

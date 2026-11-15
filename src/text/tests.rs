@@ -114,7 +114,7 @@ fn tool_lines_and_final_answer() {
          ✓ read_file src/main.rs (lines 1–3) — 3 lines\n\
          ✗ run_command cargo test — exit code 101\n\
          ⊘ run_command rm -rf / — denied by permission rule: deny run_command(rm)\n\
-         clai: rules added: allow run_command(cargo test)\n"
+         codeagent: rules added: allow run_command(cargo test)\n"
     );
     assert_eq!(answer.as_deref(), Some("The test fails.\nFix it?"));
 
@@ -139,7 +139,7 @@ fn text_of_a_turn_that_did_not_finish_goes_to_stderr() {
         end(EndReason::Failed),
     ];
     let (text, answer) = render(&events, true);
-    assert_eq!(text, "clai: error: connection reset\nHalf\n");
+    assert_eq!(text, "codeagent: error: connection reset\nHalf\n");
     assert_eq!(answer, None);
 }
 
@@ -236,7 +236,7 @@ fn write_question_text() {
     let text = render_question(&permission(new_file(2), vec![]), "~/ws", true);
     assert_eq!(
         text,
-        "── clai · ~/ws · q1 ──\n\
+        "── codeagent · ~/ws · q1 ──\n\
          write_file: a.txt (2 lines)\n  \
          new file a.txt (2 lines)\n  \
          asks     default for write_file\n    \
@@ -248,7 +248,7 @@ fn write_question_text() {
     let long = render_question(&permission(new_file(45), vec![]), "~/ws", false);
     assert!(long.contains("    line 40\n... 5 more lines\n"), "{long}");
     assert!(!long.contains("line 41"));
-    assert!(long.starts_with("-- clai - ~/ws - q1 --\n"));
+    assert!(long.starts_with("-- codeagent - ~/ws - q1 --\n"));
 }
 
 #[test]
@@ -410,7 +410,7 @@ async fn limit_answers_and_rejections() {
     assert_eq!(reply, answered(Answer::Continue));
     assert_eq!(
         out,
-        "── clai · ~/ws · q2 ──\n\
+        "── codeagent · ~/ws · q2 ──\n\
          turn limit reached (50 requests, 3 tool calls)\n\
          [y] continue  [n] stop  [c] cancel turn\n> "
     );
@@ -513,7 +513,7 @@ fn conversation_streams() {
     }
     assert_eq!(
         out,
-        "Let me look.\n✓ read_file a.rs — 2 lines\nDone\nclai: turn cancelled\n"
+        "Let me look.\n✓ read_file a.rs — 2 lines\nDone\ncodeagent: turn cancelled\n"
     );
     // Messages from the log and from other clients are shown.
     assert_eq!(
@@ -605,7 +605,7 @@ async fn ask_user_on_the_terminal() {
     );
     assert_eq!(
         out,
-        "── clai · ~/ws · q1 ──\n\
+        "── codeagent · ~/ws · q1 ──\n\
          \x20 model    \"I need to know.\"\n\
          \x20 Both work.\n\
          ? Question from the model (1/2): Which database?\n\

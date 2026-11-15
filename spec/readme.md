@@ -1,9 +1,9 @@
-# clai specification
+# codeagent specification
 
-`clai` is an AI coding agent for the terminal, written in Rust. The user
-describes a task in plain language. `clai` sends it to a large language model
+`codeagent` is an AI coding agent for the terminal, written in Rust. The user
+describes a task in plain language. `codeagent` sends it to a large language model
 (LLM), which answers with text and tool calls (read a file, edit a file, run a
-command). `clai` runs the tool calls and returns the results to the model
+command). `codeagent` runs the tool calls and returns the results to the model
 until the task is done.
 
 This file is the start of the specification and its index. Each topic has its
@@ -35,7 +35,7 @@ is wrong until the user decides otherwise.
   session protocol is meant to allow one later: questions carry all their
   details (see [`sessions.md`](sessions.md), "Questions").
 - No IDE plugin in the first version.
-- No hosting or training of models; `clai` only calls provider APIs in the first version.
+- No hosting or training of models; `codeagent` only calls provider APIs in the first version.
 - No multi-user mode and no network server. The local background server that
   holds sessions ([`sessions.md`](sessions.md)) is reachable only by its user.
 
@@ -44,14 +44,14 @@ is wrong until the user decides otherwise.
 | Term          | Meaning |
 |---------------|---------|
 | Session       | One conversation in one workspace, with its history and settings. Sessions live in the server and keep running when no TUI is attached; several can run at once. |
-| Server        | Background `clai` process of the user that holds and runs all sessions. |
+| Server        | Background `codeagent` process of the user that holds and runs all sessions. |
 | Attach / detach | Connect a TUI to a session, or disconnect it without stopping the session. |
-| Turn          | One user message and everything `clai` does until it waits for the user again. |
+| Turn          | One user message and everything `codeagent` does until it waits for the user again. |
 | Provider      | A service that hosts LLMs and exposes an API, e.g. Anthropic or a local Ollama. Defined in the configuration. |
 | Adapter       | The code for one provider API type (`api` in the configuration). It turns the shared request and event types into the API's own format and back. See [`providers.md`](providers.md). |
 | Model         | An LLM of a provider, defined in the configuration and referred to as `<provider>/<model>`. Each session uses one model, which can be changed in the TUI. |
 | TUI           | The full-screen terminal interface of an interactive session. |
-| Tool          | An action the model may ask `clai` to run, e.g. `read_file`, `edit_file`, `run_command`. |
+| Tool          | An action the model may ask `codeagent` to run, e.g. `read_file`, `edit_file`, `run_command`. |
 | Tool call     | One request from the model to run a tool with given arguments. |
 | Permission    | The rule that decides whether a tool call runs, is asked about, or is denied. |
 | Workspace     | The directory a session was created in; its file tools are limited to it. |
@@ -60,12 +60,12 @@ is wrong until the user decides otherwise.
 ## Usage overview
 
 ```sh
-clai                          # new session in the current directory, attach the TUI
-clai "fix the failing test"   # one-shot: run one task, print the result, exit
-clai attach [NAME]            # attach to a running session
-clai ls                       # list sessions
-clai models                   # list configured providers and models
-clai commit                   # print a commit message for the staged changes
+codeagent                          # new session in the current directory, attach the TUI
+codeagent "fix the failing test"   # one-shot: run one task, print the result, exit
+codeagent attach [NAME]            # attach to a running session
+codeagent ls                       # list sessions
+codeagent models                   # list configured providers and models
+codeagent commit                   # print a commit message for the staged changes
 ```
 
 All commands, options and exit codes: [`command.md`](command.md).
@@ -99,10 +99,10 @@ mode, and output that is not a terminal, use plain text instead.
   running commands ask the user, showing the diff or the command. Access
   outside the workspace is denied. Details: [`config.md`](config.md),
   "Permissions".
-- **Configuration:** read from `~/.config/clai/config.toml`, then
-  `<workspace>/.clai/config.toml`, then environment variables, then
+- **Configuration:** read from `~/.config/codeagent/config.toml`, then
+  `<workspace>/.codeagent/config.toml`, then environment variables, then
   command-line options; later sources win. All providers and models are
-  defined in the user config; `clai` has no built-in list. API keys come
+  defined in the user config; `codeagent` has no built-in list. API keys come
   from an environment variable or a command and are never written to a file
   or log. Details: [`config.md`](config.md).
 - **Providers and models:** each session uses one configured provider and
@@ -137,7 +137,7 @@ When a spec file is added, renamed or removed, update this table and
 | [`command.md`](command.md) | draft | All command-line commands: syntax, options, output, exit codes. |
 | [`tui.md`](tui.md) | draft | Full-screen interface: layout, session list, model picker, keys, permission prompts, input editor. |
 | [`sessions.md`](sessions.md) | draft | Server, several sessions, attach/detach, session commands. |
-| [`commit.md`](commit.md) | draft | Commit messages: `clai commit` (staged changes, the agent file's rules, prints to stdout) and the TUI `/commit`. |
+| [`commit.md`](commit.md) | draft | Commit messages: `codeagent commit` (staged changes, the agent file's rules, prints to stdout) and the TUI `/commit`. |
 | [`config.md`](config.md) | draft | Config files, precedence, providers and models, tool permissions, TUI settings and themes, validation, reloading. |
 | [`agent-loop.md`](agent-loop.md) | draft | One turn: requests, system prompt, streaming, tool calls in order, limits, cancellation, errors, events. |
 | [`tools.md`](tools.md) | draft | Each tool: arguments, results, errors, limits; paths, text files, result size, denied calls. |
@@ -157,7 +157,7 @@ coding agent working on this repository).
 3. **Permissions:** should "always allow" answers from the TUI be saveable
    to the user configuration?
 4. **Platforms:** decided in RFC 0020: Linux (static musl builds for x86_64
-   and aarch64) and macOS (x86_64, aarch64). Not Windows: `clai` uses Unix
+   and aarch64) and macOS (x86_64, aarch64). Not Windows: `codeagent` uses Unix
    sockets, process groups and signals.
 5. **Sandbox:** should commands run in a sandbox, or only behind the
    permission prompt?

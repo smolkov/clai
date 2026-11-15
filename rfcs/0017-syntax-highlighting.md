@@ -46,7 +46,7 @@ In:
 
 Out:
 
-- `clai chat` and `clai run`: they print plain text and ANSI colours for diffs
+- `codeagent chat` and `codeagent run`: they print plain text and ANSI colours for diffs
   only. They can use the same highlighter later **(proposal)**.
 - Inline code (`` `parse` ``): it keeps the `code` style; a single word has no
   context to highlight.
@@ -97,7 +97,7 @@ Out:
 
   | Theme | Syntax theme |
   |-------|--------------|
-  | `terminal` | `ansi`: built in to `clai`, on the terminal's 16 colours, so it follows the terminal's palette like the rest of the theme. |
+  | `terminal` | `ansi`: built in to `codeagent`, on the terminal's 16 colours, so it follows the terminal's palette like the rest of the theme. |
   | `dark` | `base16-ocean.dark` |
   | `light` | `InspiredGitHub` |
   | bundled `nord`, `gruvbox-dark`, `atom-one-dark`, `solarized-light` | A `code` key in each file, one of the names below. |
@@ -111,7 +111,7 @@ Out:
   colour, the nearest of the 256 colours otherwise, none with `NO_COLOR`.
   Only foregrounds, bold and italic are used; a syntax theme's background is
   not, so the theme's `background` stays.
-- **The `ansi` theme:** a short table of clai's own, e.g. keywords `magenta`,
+- **The `ansi` theme:** a short table of codeagent's own, e.g. keywords `magenta`,
   strings `green`, comments the `dim` style, numbers and constants `yellow`,
   functions `blue`, types `cyan`. It keeps a `terminal` TUI in the terminal's
   own colours.
@@ -239,7 +239,7 @@ Out:
   for the build, and query files to keep up to date. More work for each
   language than `syntect`'s bundled set.
 - **`syntect` with `onig`:** the reference regex engine, slightly faster, but
-  a C library in the build; `fancy-regex` keeps `clai` pure Rust.
+  a C library in the build; `fancy-regex` keeps `codeagent` pure Rust.
 - **Only diff colours, no syntax:** what the TUI has today; the motivation
   above is that it is not enough.
 - **Highlight in the server:** one place for all clients, but every event
@@ -263,14 +263,14 @@ be built as it stands. Where the build differs from the design above:
   `fn` magenta; string quotes take the string colour.
 - **Bundled themes** use the syntax colours of their own scheme, as the user
   asked: `atom-one-dark`, `nord` and `gruvbox-dark` are syntax themes of
-  `clai`'s own, built in code from each scheme's palette (no `.tmTheme` files,
+  `codeagent`'s own, built in code from each scheme's palette (no `.tmTheme` files,
   no `plist` loading), and `solarized-light` uses `syntect`'s
   `Solarized (light)`. `code` takes their names too (open question 5,
   changed).
 - **Tests:** the test look has highlighting off, because the grammars load
   once per test process; tests of highlighting turn it on. A 5000-line diff
   lays out in about 3.5 s in a debug build.
-- **Edits without details** (logs of an older `clai`) are highlighted too:
+- **Edits without details** (logs of an older `codeagent`) are highlighted too:
   their old and new text are drawn as one hunk.
 
 ## Open questions
@@ -280,12 +280,12 @@ Answered with the proposals when it was built (see "Decisions").
 1. **Crate:** `syntect` with `fancy-regex` (proposal), or `tree-sitter`?
 2. **More grammars:** `syntect`'s set (proposal), or `two-face` for TOML,
    TypeScript and others, at a bigger binary?
-3. **The `terminal` theme:** `clai`'s own `ansi` table on the 16 colours
+3. **The `terminal` theme:** `codeagent`'s own `ansi` table on the 16 colours
    (proposal), or a `syntect` theme mapped to 256 colours?
 4. **Diff backgrounds:** a tint of the diff colour behind changed lines with
    true colour (proposal), or markers only everywhere?
 5. **Bundled themes:** give `nord` and the others a `code` of the bundled
    syntax themes (proposal), or ship `.tmTheme` files that match them (Nord,
    Gruvbox, One Dark), and allow `code` to name such a file?
-6. **`clai chat` and `clai run`:** highlight their diffs and code blocks with
+6. **`codeagent chat` and `codeagent run`:** highlight their diffs and code blocks with
    ANSI colours too, in this RFC or later (proposal: later)?

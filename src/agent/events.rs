@@ -131,7 +131,7 @@ pub enum SessionEvent {
         /// Input plus output tokens of the last request.
         context_tokens: u64,
         /// The `provider/model` of the request; empty in a log of an older
-        /// `clai`.
+        /// `codeagent`.
         #[serde(default, skip_serializing_if = "String::is_empty")]
         model: String,
     },
@@ -147,7 +147,7 @@ pub enum SessionEvent {
     TurnEnd(TurnEnd),
     /// The session's model changed; applies from the next request.
     ModelChanged {
-        /// The old `provider/model`; empty in a log of an older `clai`.
+        /// The old `provider/model`; empty in a log of an older `codeagent`.
         #[serde(default, skip_serializing_if = "String::is_empty")]
         from: String,
         /// `provider/model`.
@@ -184,7 +184,7 @@ pub struct EventSink(Target);
 enum Target {
     Channel(mpsc::UnboundedSender<SessionEvent>),
     /// Called at once, in the loop's task: for output that must stay in
-    /// order with what an asker writes (`clai run`).
+    /// order with what an asker writes (`codeagent run`).
     Call(Arc<dyn Fn(SessionEvent) + Send + Sync>),
 }
 

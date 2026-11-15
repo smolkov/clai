@@ -452,7 +452,7 @@ async fn cancel_during_retry_wait() {
 #[tokio::test]
 async fn missing_key_is_auth_error() {
     let server = serve(vec![]).await;
-    let key = KeySource::Env("CLAI_TEST_SURELY_UNSET_VARIABLE".into());
+    let key = KeySource::Env("CODEAGENT_TEST_SURELY_UNSET_VARIABLE".into());
     let provider = from_config(
         &provider_config(Api::Anthropic, &server.url, key),
         &crate::startup::Startup::default(),
@@ -461,7 +461,7 @@ async fn missing_key_is_auth_error() {
     let events = collect(&provider).await;
     let err = last_error(&events);
     assert_eq!(err.kind, ErrorKind::Auth);
-    assert!(err.message.contains("CLAI_TEST_SURELY_UNSET_VARIABLE"));
+    assert!(err.message.contains("CODEAGENT_TEST_SURELY_UNSET_VARIABLE"));
     assert_eq!(server.requests(), 0);
 }
 

@@ -195,7 +195,7 @@ pub fn search(text: &str) -> Vec<&'static Command> {
         .collect()
 }
 
-/// The argument of `/model` (TUI and `clai chat`): the model, if any, and
+/// The argument of `/model` (TUI and `codeagent chat`): the model, if any, and
 /// whether `--default` is given, before or after it (RFC 0021).
 pub fn model_argument(argument: &str) -> (Option<String>, bool) {
     let mut model = None;

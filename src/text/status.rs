@@ -1,5 +1,5 @@
 //! The status of a session as sections of rows (see `spec/tui.md`, "Status
-//! box"): the TUI draws them in a box, `clai chat` prints them as text.
+//! box"): the TUI draws them in a box, `codeagent chat` prints them as text.
 
 use crate::agent::{State, date_of};
 use crate::protocol::{SessionStatus, Stats, ToolCounts, TurnCounts};
@@ -574,7 +574,7 @@ pub fn line(label: &str, value: &str, title: bool) -> String {
     text.trim_end().to_owned()
 }
 
-/// The sections as text, with a blank line between them, for `clai chat`.
+/// The sections as text, with a blank line between them, for `codeagent chat`.
 pub fn text(sections: &[Section]) -> String {
     let mut out = String::new();
     for (i, section) in sections.iter().enumerate() {
@@ -649,7 +649,7 @@ pub(crate) mod tests {
         let options = Options {
             unicode: false,
             offset: 0,
-            me: "clai chat",
+            me: "codeagent chat",
         };
         let text = text(&sections(&saved(), &options));
         assert_eq!(

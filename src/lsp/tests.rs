@@ -603,7 +603,7 @@ async fn files_are_opened_and_synced_before_requests() {
     assert_eq!(change["textDocument"]["version"], 2);
     assert_eq!(change["contentChanges"][0]["text"], "fn a() { b() }\n");
 
-    // An edit of clai: didChange and didSave at once.
+    // An edit of codeagent: didChange and didSave at once.
     fs::write(&path, "fn a() { c() }\n").unwrap();
     assert_eq!(server.saved(&path).await, Ok(Some(3)));
     fake.wait_for("textDocument/didSave").await;
@@ -663,11 +663,11 @@ fn process_setup(root: &Path, command: &[&str]) -> Setup {
 #[tokio::test]
 async fn a_missing_program_fails_to_start() {
     let tmp = tempfile::tempdir().unwrap();
-    let setup = process_setup(tmp.path(), &["clai-no-such-language-server"]);
+    let setup = process_setup(tmp.path(), &["codeagent-no-such-language-server"]);
     match Server::start(&setup).await {
         Err(Error::Start(reason)) => {
             assert!(
-                reason.starts_with("clai-no-such-language-server: "),
+                reason.starts_with("codeagent-no-such-language-server: "),
                 "{reason}"
             )
         }

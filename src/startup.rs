@@ -1,4 +1,4 @@
-//! What `clai` reads from its process, read once at startup (RFC 0026).
+//! What `codeagent` reads from its process, read once at startup (RFC 0026).
 //!
 //! [`Startup::from_process`] is the only code that reads the environment
 //! variables, the current directory and the temporary directory; everything
@@ -11,13 +11,13 @@ use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
 /// Overrides `default_model`.
-pub const MODEL_ENV: &str = "CLAI_MODEL";
+pub const MODEL_ENV: &str = "CODEAGENT_MODEL";
 /// Overrides `tui.theme`.
-pub const THEME_ENV: &str = "CLAI_THEME";
+pub const THEME_ENV: &str = "CODEAGENT_THEME";
 /// The log filter.
-pub const LOG_ENV: &str = "CLAI_LOG";
+pub const LOG_ENV: &str = "CODEAGENT_LOG";
 
-/// The environment of the process, as `clai` uses it.
+/// The environment of the process, as `codeagent` uses it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Startup {
     /// Every variable, as it was at startup.
@@ -27,9 +27,9 @@ pub struct Startup {
     pub xdg_config_home: Option<PathBuf>,
     pub xdg_state_home: Option<PathBuf>,
     pub xdg_runtime_dir: Option<PathBuf>,
-    /// `CLAI_MODEL`, not empty.
+    /// `CODEAGENT_MODEL`, not empty.
     pub model: Option<String>,
-    /// `CLAI_THEME`, not empty.
+    /// `CODEAGENT_THEME`, not empty.
     pub theme: Option<String>,
     pub current_dir: Option<PathBuf>,
     /// `TMPDIR`, else `/tmp`.
@@ -122,7 +122,7 @@ impl Startup {
         move |name| copy.var(name)
     }
 
-    /// Without `CLAI_MODEL` and `CLAI_THEME`: the server's, which takes them
+    /// Without `CODEAGENT_MODEL` and `CODEAGENT_THEME`: the server's, which takes them
     /// from each client instead.
     pub fn for_server(&self) -> Startup {
         Startup {
@@ -142,7 +142,7 @@ impl Startup {
     }
 }
 
-/// The path of the running `clai`, to start a server with.
+/// The path of the running `codeagent`, to start a server with.
 pub fn current_exe() -> std::io::Result<PathBuf> {
     std::env::current_exe()
 }
@@ -158,8 +158,8 @@ mod tests {
             ("XDG_CONFIG_HOME", "relative/config"),
             ("XDG_STATE_HOME", "/state"),
             ("XDG_RUNTIME_DIR", ""),
-            ("CLAI_MODEL", "  "),
-            ("CLAI_THEME", "nord"),
+            ("CODEAGENT_MODEL", "  "),
+            ("CODEAGENT_THEME", "nord"),
             ("LANG", "C.UTF-8"),
         ]);
         assert_eq!(s.home.as_deref(), Some(Path::new("/home/u")));
@@ -173,7 +173,7 @@ mod tests {
         assert_eq!((s.getenv())("LANG").as_deref(), Some("C.UTF-8"));
         let server = s.for_server();
         assert_eq!(server.theme, None);
-        assert_eq!(server.var("CLAI_THEME").as_deref(), Some("nord"));
+        assert_eq!(server.var("CODEAGENT_THEME").as_deref(), Some("nord"));
     }
 
     #[test]

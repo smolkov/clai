@@ -1,13 +1,13 @@
 [package]
-name = "clai"
+name = "codeagent"
 version = "0.4.0"
 edition = "2024"
 rust-version = "1.88"
 description = "AI coding agent for the terminal, with tools behind permission rules"
 authors = ["Aleksandr Smolkov <sascha.smolkov@gmail.com>"]
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/smolkov/clai"
-homepage = "https://github.com/smolkov/clai"
+repository = "https://github.com/smolkov/codeagent"
+homepage = "https://github.com/smolkov/codeagent"
 readme = "readme.md"
 keywords = ["ai", "agent", "llm", "cli", "tui"]
 categories = ["command-line-utilities", "development-tools"]
@@ -78,8 +78,8 @@ tokio = { version = "1.54.1", features = ["io-util"] }
 maintainer = "Aleksandr Smolkov <sascha.smolkov@gmail.com>"
 copyright = "2026, Aleksandr Smolkov"
 extended-description = """\
-clai is an AI coding agent for the terminal. You describe a task in plain \
-language; clai sends it to a large language model, runs the tool calls the \
+codeagent is an AI coding agent for the terminal. You describe a task in plain \
+language; codeagent sends it to a large language model, runs the tool calls the \
 model asks for (read and edit files, run commands) behind permission rules, \
 and shows every change and command."""
 section = "devel"
@@ -88,13 +88,13 @@ recommends = "git"
 suggests = "wl-clipboard | xclip | xsel"
 revision = "1"
 assets = [
-  ["target/release/clai", "usr/bin/", "755"],
-  ["target/deb-assets/clai.bash", "usr/share/bash-completion/completions/clai", "644"],
-  ["target/deb-assets/_clai", "usr/share/zsh/vendor-completions/_clai", "644"],
-  ["target/deb-assets/clai.fish", "usr/share/fish/vendor_completions.d/clai.fish", "644"],
-  ["readme.md", "usr/share/doc/clai/README.md", "644"],
-  ["target/deb-assets/changelog.Debian.gz", "usr/share/doc/clai/changelog.Debian.gz", "644"],
-  ["target/deb-assets/changelog.gz", "usr/share/doc/clai/changelog.gz", "644"],
-  ["debian/clai.lintian-overrides", "usr/share/lintian/overrides/clai", "644"],
+  ["target/release/codeagent", "usr/bin/", "755"],
+  ["target/deb-assets/codeagent.bash", "usr/share/bash-completion/completions/codeagent", "644"],
+  ["target/deb-assets/_codeagent", "usr/share/zsh/vendor-completions/_codeagent", "644"],
+  ["target/deb-assets/codeagent.fish", "usr/share/fish/vendor_completions.d/codeagent.fish", "644"],
+  ["readme.md", "usr/share/doc/codeagent/README.md", "644"],
+  ["target/deb-assets/changelog.Debian.gz", "usr/share/doc/codeagent/changelog.Debian.gz", "644"],
+  ["target/deb-assets/changelog.gz", "usr/share/doc/codeagent/changelog.gz", "644"],
+  ["debian/codeagent.lintian-overrides", "usr/share/lintian/overrides/codeagent", "644"],
 ]
 

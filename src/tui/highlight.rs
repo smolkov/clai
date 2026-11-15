@@ -34,7 +34,7 @@ const GROWING: usize = 8;
 pub enum CodeTheme {
     /// `tui.syntax_highlight = false`, `NO_COLOR`.
     Off,
-    /// `clai`'s own theme on the terminal's 16 colours.
+    /// `codeagent`'s own theme on the terminal's 16 colours.
     Ansi,
     /// A theme of `syntect`, by name.
     Named(&'static str),

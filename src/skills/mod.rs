@@ -256,7 +256,7 @@ pub fn search_dirs(
 }
 
 /// Finds the skills for `workspace` with the configuration and environment
-/// `clai` loaded.
+/// `codeagent` loaded.
 pub fn find_for(config: &Config, workspace: &Path, env: &Environment) -> Found {
     find(
         &config.skills,

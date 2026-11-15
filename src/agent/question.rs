@@ -72,7 +72,7 @@ pub struct TurnInfo {
 pub struct Question {
     /// `q1`, `q2`, …; unique in the server (see [`crate::agent::Agent::share_question_ids`]).
     pub id: String,
-    /// The session that asks; filled in by the session, empty in `clai run`.
+    /// The session that asks; filled in by the session, empty in `codeagent run`.
     #[serde(default)]
     pub session: SessionRef,
     /// Seconds since 1970 when it opened.
@@ -97,7 +97,7 @@ pub enum QuestionKind {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SessionRef {
     pub name: String,
-    /// As shown: `~/ws/rust/clai`.
+    /// As shown: `~/ws/rust/codeagent`.
     pub workspace: String,
 }
 
@@ -201,7 +201,7 @@ impl Answer {
 /// What an [`Asker`] gives back.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Reply {
-    /// An answer, and who gave it (`tui pts/3`, `clai chat`, `--yes`).
+    /// An answer, and who gave it (`tui pts/3`, `codeagent chat`, `--yes`).
     Answer { answer: Answer, by: String },
     /// No one can answer: a permission question counts as denied, a limit
     /// question as "stop".
@@ -217,7 +217,7 @@ pub enum Closed {
     Cancelled,
 }
 
-/// Gets decisions for the loop: the session asks its clients, `clai run`
+/// Gets decisions for the loop: the session asks its clients, `codeagent run`
 /// asks on the terminal or answers by a policy.
 pub trait Asker: Send + Sync {
     /// Waits for an answer. The loop stops waiting when the turn is
@@ -229,7 +229,7 @@ pub trait Asker: Send + Sync {
     fn reject(&self, question: &Question, by: &str, message: &str);
 }
 
-/// Answers without asking anyone (`clai run` without a terminal, `--yes`,
+/// Answers without asking anyone (`codeagent run` without a terminal, `--yes`,
 /// `--no-ask`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PolicyAsker {

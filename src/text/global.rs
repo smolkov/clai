@@ -1,6 +1,6 @@
 //! Statistics over all sessions as rows (see `spec/tui.md`, "Global tab"):
 //! the Totals section and the Models table for the status box, and the
-//! whole answer as text for `clai chat`.
+//! whole answer as text for `codeagent chat`.
 
 use crate::protocol::{DayTokens, GlobalStats, ModelTotals};
 
@@ -11,7 +11,7 @@ use super::tokens;
 
 /// The cells of the share bar.
 pub const SHARE_CELLS: usize = 12;
-/// The cells of the longest bar of a day in `clai chat`.
+/// The cells of the longest bar of a day in `codeagent chat`.
 const DAY_BAR: usize = 30;
 /// The narrowest and widest model column.
 const NAME_MIN: usize = 13;
@@ -223,7 +223,7 @@ pub fn percent(share: u64) -> String {
     format!("{share:>3}%")
 }
 
-/// The whole answer as text, for `/stats` in `clai chat`.
+/// The whole answer as text, for `/stats` in `codeagent chat`.
 pub fn text(stats: &GlobalStats, options: &Options<'_>) -> String {
     let mut out = super::status::text(&[totals(stats, options)]);
     out.push('\n');
@@ -361,7 +361,7 @@ pub(crate) mod tests {
         Options {
             unicode,
             offset: 0,
-            me: "clai chat",
+            me: "codeagent chat",
         }
     }
 

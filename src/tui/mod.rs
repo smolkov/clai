@@ -79,7 +79,7 @@ pub enum Target {
 }
 
 /// Runs the TUI until the user leaves. Every failure before the terminal
-/// changes is an ordinary error (see `spec/command.md`, "clai").
+/// changes is an ordinary error (see `spec/command.md`, "codeagent").
 pub fn run(ctx: &Context, target: Target) -> Result<()> {
     let workspace = match &target {
         Target::New(Request::New { workspace, .. })
@@ -123,7 +123,7 @@ fn check_terminal(stdin: bool, stdout: bool) -> Result<()> {
         Ok(())
     } else {
         Err(Error::Usage(
-            "the TUI needs a terminal; use \"clai run TASK\" or \"clai chat\"".to_owned(),
+            "the TUI needs a terminal; use \"codeagent run TASK\" or \"codeagent chat\"".to_owned(),
         ))
     }
 }
@@ -140,9 +140,9 @@ fn finish(exit: &Exit) -> Result<()> {
 fn exit_line(exit: &Exit) -> Option<String> {
     match exit {
         Exit::Detached { name } => Some(format!(
-            "clai: detached from {name}; \"clai attach {name}\" to return"
+            "codeagent: detached from {name}; \"codeagent attach {name}\" to return"
         )),
-        Exit::Ended { name, reason } => Some(format!("clai: session {name} ended: {reason}")),
+        Exit::Ended { name, reason } => Some(format!("codeagent: session {name} ended: {reason}")),
         Exit::Lost | Exit::Signal => None,
     }
 }
@@ -271,7 +271,7 @@ fn reload(options: &LoadOptions) -> std::result::Result<Reloaded, String> {
     })
 }
 
-/// What the user file itself says about `[tui]`: without `CLAI_THEME`, which
+/// What the user file itself says about `[tui]`: without `CODEAGENT_THEME`, which
 /// loading applied, with the keys it sets and its stamp.
 fn file_tui(config: &Config, options: &LoadOptions) -> FileTui {
     let tui = if options.env.theme.is_some() {

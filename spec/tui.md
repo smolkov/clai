@@ -1,10 +1,10 @@
 # TUI
 
 Interactive sessions are shown in a full-screen terminal user interface (TUI).
-The TUI is a client of the `clai` server: it attaches to one session at a
+The TUI is a client of the `codeagent` server: it attaches to one session at a
 time, and can detach, switch to another session or start a new one. Sessions
 keep running without a TUI (see `spec/sessions.md`).
-One-shot mode (`clai "task"`) and runs where standard output is not a
+One-shot mode (`codeagent "task"`) and runs where standard output is not a
 terminal do not use the TUI; they print plain text (see
 [`command.md`](command.md)).
 
@@ -67,7 +67,7 @@ last row of the conversation area, with an empty row above it:
 ```
 
 The conversation area takes all remaining height. If the terminal is smaller
-than 40 × 10 cells, `clai` shows only a "terminal too small" message until it
+than 40 × 10 cells, `codeagent` shows only a "terminal too small" message until it
 is resized.
 
 ### Boxes
@@ -127,7 +127,7 @@ running on the server; the session row counts the ones waiting for an answer to 
 question (see [`sessions.md`](sessions.md), "Background work"), so the user
 knows to switch to them.
 
-The session list opens with `Ctrl-S`, `/sessions`, or `clai attach` without a
+The session list opens with `Ctrl-S`, `/sessions`, or `codeagent attach` without a
 name:
 
 ```
@@ -170,7 +170,7 @@ name:
 | `/`         | Filter: edit the filter text in the line above the keys. |
 | `n`         | New session: asks for the workspace (default: the attached session's; `~` is the home directory, a relative path starts there) and the name (empty: the default name), then opens the model picker on `default_model`; `Enter` there creates the session and attaches. `Esc` goes back one step; in the picker it creates nothing. |
 | `r`         | Rename the selected session, in place; `Enter` renames, `Esc` goes back. A refused name is shown in the list. |
-| `Esc`       | Clear the marks if any; else clear the filter if set; else close the list, stay on the current session. Where the list stands for a choice not yet made (after the attached session ended, or for `clai attach` without a name), `Esc` exits the TUI. |
+| `Esc`       | Clear the marks if any; else clear the filter if set; else close the list, stay on the current session. Where the list stands for a choice not yet made (after the attached session ended, or for `codeagent attach` without a name), `Esc` exits the TUI. |
 
 Marks belong to sessions, not to rows: they stay through the refresh and a
 change of the filter. A session the server no longer lists loses its mark.
@@ -222,7 +222,7 @@ the list stays open.
 `/new [NAME]` creates a session in the attached session's workspace the same
 way: the model picker opens on `default_model`, so `Enter` alone starts the new
 session with it. If other sessions work in that workspace, the new session's
-conversation starts with the note `clai new` prints.
+conversation starts with the note `codeagent new` prints.
 
 ## Token counters
 
@@ -293,17 +293,17 @@ session; then its title is "Model for a new session", it starts on
   - On the row that already is the user file's default the line reads
     `already the default for new sessions` and `Space` does nothing.
   - With the tick, the line under it names the file:
-    `saved as default_model in ~/.config/clai/config.toml`.
+    `saved as default_model in ~/.config/codeagent/config.toml`.
   - When the default does not come from the user file, that line warns,
-    ticked or not: `⚠ CLAI_MODEL=local/qwen overrides the saved default`, or
-    `⚠ .clai/config.toml of this workspace sets default_model = local/qwen`.
+    ticked or not: `⚠ CODEAGENT_MODEL=local/qwen overrides the saved default`, or
+    `⚠ .codeagent/config.toml of this workspace sets default_model = local/qwen`.
     The save still happens: other workspaces and later starts use it.
   - After the save the conversation shows
     `default model: anthropic/opus (saved in …)`, and the warning again if
     something else wins; a failed save shows
     `default model not saved: …` and keeps the selection.
-  - The next start uses the saved model: `clai`, `clai new`, `/new` and the
-    session list's `n`, `clai run` and `clai commit` without a model, also
+  - The next start uses the saved model: `codeagent`, `codeagent new`, `/new` and the
+    session list's `n`, `codeagent run` and `codeagent commit` without a model, also
     after a server restart. A running server reads the changed file before
     it creates a session or answers `models`, so a start right after the save
     gets it, not only after the next 2 s poll.
@@ -324,7 +324,7 @@ Changing the model of a running session:
   shortened (see `spec/context.md`); the TUI asks for confirmation first.
 - A notice in the conversation records each change, e.g.
   "model: anthropic/sonnet → local/qwen". Choosing the model the session already
-  has adds no notice. A log of an older `clai` has no old model; its notice is
+  has adds no notice. A log of an older `codeagent` has no old model; its notice is
   "model: local/qwen".
 - The change applies to this session only. Other sessions and
   `default_model` are not affected, unless the default tick is set (above) or
@@ -346,7 +346,7 @@ Changing the model of a running session:
 - If the attached session is killed (by this or another client), the TUI
   shows a notice and opens the session list. If no session is left, the list
   says `no sessions` and offers `n` new or `Esc` exit. `Esc` exits with `0`.
-  Until the list is there, any key exits. For `clai server stop` the TUI
+  Until the list is there, any key exits. For `codeagent server stop` the TUI
   opens no list: the notice, the input is disabled, and any key exits with
   `0`; it does not start the server again.
 - If the connection to the server is lost, the TUI shows "server
@@ -491,7 +491,7 @@ When a tool call needs permission, the session sends a permission question
 with the call's details, the reason and the proposed rules (see
 [`sessions.md`](sessions.md), "Questions", and [`tools.md`](tools.md),
 "Questions"). The same question may be answered in another TUI or with
-`clai chat`; the TUI then closes its prompt and shows who answered.
+`codeagent chat`; the TUI then closes its prompt and shows who answered.
 
 The TUI:
 
@@ -623,7 +623,7 @@ Up Down choose ─ Enter next ─ Tab question ─ Esc skip ─ Ctrl-C cancel tu
   stays on the session; switching to another session drops it.
 - A rejected answer shows `not accepted: …` at the top of the question.
 - When another client answers, the question closes and the conversation shows
-  `answered by clai chat: reply`.
+  `answered by codeagent chat: reply`.
 
 ## Input editor
 
@@ -638,7 +638,7 @@ Up Down choose ─ Enter next ─ Tab question ─ Esc skip ─ Ctrl-C cancel tu
 - The user may type and send while a turn runs. The message goes to the server
   at once, which queues it until the turn ends (other clients see the queue
   too); the TUI shows it as "queued" until the turn that takes it starts.
-- Lines starting with `/` are commands for `clai`, not messages to the model:
+- Lines starting with `/` are commands for `codeagent`, not messages to the model:
 
 | Command    | Action |
 |------------|--------|
@@ -653,7 +653,7 @@ Up Down choose ─ Enter next ─ Tab question ─ Esc skip ─ Ctrl-C cancel tu
 | `/status [NAME]` | Open the status box: the full status of the attached session, or of session `NAME`, running or saved, and its statistics. See [Status box](#status-box). |
 | `/stats [RANGE]` | Open the status box on its Global tab: statistics over all sessions of the server, for `7d` (the default), `30d` or `all`. See [Global tab](#global-tab). |
 | `/skills [NAME]` | Choose the session's skills in the skills box; with a name, turn that skill on or off. See [Skills](#skills). |
-| `/lsp` | Open the language server box: the servers of the clai server, their state and the sessions using them; restart or stop one. See [Language servers](#language-servers). |
+| `/lsp` | Open the language server box: the servers of the codeagent server, their state and the sessions using them; restart or stop one. See [Language servers](#language-servers). |
 | `/settings` | Open the settings box: the `[tui]` settings, changed with a preview and saved into the user file. See [Settings](#settings). |
 | `/theme [NAME]` | Open the theme list; with a name, switch to that theme. Either way the theme is saved as the default. See [Theme list](#theme-list). |
 | `/kill`, `/delete` | Delete the attached session, after the confirmation of [Delete](#delete), and open the session list. |
@@ -734,7 +734,7 @@ browsing the message history.
 `/commit [HINT]` commits all changes in the session's workspace with a
 message written by the model. Nothing is committed without the user's
 confirmation. Which changes are included and how the message is generated is
-described in [`commit.md`](commit.md); `clai commit` on the command line uses
+described in [`commit.md`](commit.md); `codeagent commit` on the command line uses
 the same rules but only prints the message.
 
 Steps:
@@ -771,7 +771,7 @@ Steps:
 3. Commit: stage the changes of the workspace (`git add -A -- <workspace>`)
    and commit only them (`git commit -F - -- <workspace>`). Changes already
    staged outside the workspace stay staged but are not committed. Git hooks
-   run as usual; `clai` never passes `--no-verify`.
+   run as usual; `codeagent` never passes `--no-verify`.
 4. Result: the conversation gets a notice with the short hash and subject. If
    git fails (hook rejects, no `user.name`), its output is shown and the
    dialog opens again with the message, so the user can retry or cancel.
@@ -854,7 +854,7 @@ when a call is selected, and `y copy`, `? help` and, with the mouse on,
 
   | Tool | Text |
   |------|------|
-  | `edit_file`, `write_file` | The diff as a unified diff with `a/PATH` and `b/PATH` headers, so it applies with `git apply`; a new file is its content. Without details (a log of an older `clai`), the old and new text as `-` and `+` lines. |
+  | `edit_file`, `write_file` | The diff as a unified diff with `a/PATH` and `b/PATH` headers, so it applies with `git apply`; a new file is its content. Without details (a log of an older `codeagent`), the old and new text as `-` and `+` lines. |
   | `run_command` | `$ command`, then the output with its exit code. |
   | others, and failed calls | The result. |
 
@@ -942,7 +942,7 @@ answer; a first answer that fails closes it with the error.
 │   last active  2h 08m ago                                                    │
 │   clients      2: chat pts/5 (watching), tui pts/3 (this)                    │
 │   queued       1 message                                                     │
-│   saved in     ~/.local/state/clai/sessions/1  (1.2 MB)                      │
+│   saved in     ~/.local/state/codeagent/sessions/1  (1.2 MB)                      │
 │                                                                              │
 │ Model                                                                        │
 │   model        anthropic/sonnet  (claude-sonnet-5-5)                         │
@@ -985,7 +985,7 @@ answer; a first answer that fails closes it with the error.
   workspace; a model that is no longer configured is marked. The key row says
   where the key comes from; `api_key_cmd` is not run. The context row turns to
   the warning colour from 80 % of the context window on.
-- Times come from the event log. A log of an older `clai` has none: its
+- Times come from the event log. A log of an older `codeagent` has none: its
   stretches count as unknown, and "working" then shows `≥`; a session with no
   known time shows `?`. "working" counts the time in `working`, not the time
   waiting for an answer.
@@ -1090,7 +1090,7 @@ two footer rows (RFC 0024); the conversation and the input are not drawn
 while it is open, and the input's text is kept:
 
 ```
-── Settings ─ ~/.config/clai/config.toml ──────────────────────────────────────
+── Settings ─ ~/.config/codeagent/config.toml ──────────────────────────────────────
   theme              terminal  Colour theme
   symbols            auto      Unicode or ASCII symbols
 ▶ mouse             *on        Capture the mouse: wheel, drag copies
@@ -1117,7 +1117,7 @@ Enter change ─ Left/Right value ─ d default ─ s save ─ Esc close
 - One row per key, with the value and a description; the line under the list
   explains the selected key. A key the file does not set shows its default,
   dim. `*` marks a value changed and not saved.
-- The `theme` row says when something else decides it: `⚠ CLAI_THEME=nord for
+- The `theme` row says when something else decides it: `⚠ CODEAGENT_THEME=nord for
   this run`, or `⚠ colours are off (NO_COLOR)`. `symbols = unicode` in a locale
   that is not UTF-8 is marked too, and still applied.
 - **Preview:** a change applies to this TUI at once; other TUIs see it only once
@@ -1189,18 +1189,18 @@ picker.
 - `/theme NAME` does the same without the list; an unknown name is a notice
   that names `/theme`, and the input stays. After `/theme ` the argument list
   offers the theme names.
-- With `CLAI_THEME` set, the title says so. A theme taken in the list wins over
+- With `CODEAGENT_THEME` set, the title says so. A theme taken in the list wins over
   it for the rest of the run, and is saved for later runs.
 - With `NO_COLOR` the title says that colours are off.
 
 ## Language servers
 
-`/lsp` opens a box with the language servers of the clai server (see
+`/lsp` opens a box with the language servers of the codeagent server (see
 [`config.md`](config.md), "LSP"), one row each:
 
 ```
 ┌ Language servers ─────────────────────────────────────────────────────────┐
-│ ▶ rust-analyzer  .         ready  ─ clai, fix                             │
+│ ▶ rust-analyzer  .         ready  ─ codeagent, fix                             │
 │   pyright        ../docs   failed: exited with status 1                   │
 │                                                                           │
 │ Last lines of rust-analyzer:                                              │
@@ -1328,13 +1328,13 @@ language:
   ([`config.md`](config.md), "Themes"). Without one: `ansi` for `terminal`,
   `base16-ocean.dark` for `dark`, `InspiredGitHub` for `light`. The bundled
   themes use the syntax colours of the same scheme: `atom-one-dark`, `nord`
-  and `gruvbox-dark` are `clai`'s own, made from each scheme's palette
+  and `gruvbox-dark` are `codeagent`'s own, made from each scheme's palette
   (keywords, strings, numbers, functions, types, variables, operators, tags,
   comments in italic), and `solarized-light` uses `Solarized (light)`. In
   them, as in the published schemes, every word the grammar calls storage
   (`let`, `fn`, `struct`, also `i32`) has the keyword colour, and type
   names (`P` in `struct P`, `String`) the type colour. `ansi`
-  is `clai`'s own too, on the terminal's 16 colours: keywords magenta, strings
+  is `codeagent`'s own too, on the terminal's 16 colours: keywords magenta, strings
   green, numbers and constants yellow, functions blue, types cyan, comments
   bright black and italic. There the words that start a definition (`fn`,
   `struct`, `enum`, `impl`, `class`) are keywords; other storage words

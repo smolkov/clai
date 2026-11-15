@@ -3,7 +3,7 @@
 A skill is a directory with a `SKILL.md` file: a name, a description, and
 instructions for the model, maybe with scripts and reference files next to
 it. The format is the one OpenCode, Claude Code and other agents use, so
-skills a user has for them work in `clai` too. The user turns skills on for
+skills a user has for them work in `codeagent` too. The user turns skills on for
 a session; an active skill's instructions go into the system prompt, and its
 directory becomes readable for the file tools. Decided in RFC 0023.
 
@@ -66,7 +66,7 @@ helps, when:
 - its name breaks the rule above.
 
 A skipped file is not an error: the other skills still load. Warnings show
-in `clai skills`, `/skills` of `clai chat`, and the `/skills` box.
+in `codeagent skills`, `/skills` of `codeagent chat`, and the `/skills` box.
 
 ## Where skills are found
 
@@ -97,7 +97,7 @@ Directories, highest priority first:
   warning; a configured one that does not exist gets a warning, because the
   user named it. A directory that cannot be read gets a warning.
 - The server finds the skills for a session, with its configuration and
-  home directory; `clai skills` finds them itself, the same way.
+  home directory; `codeagent skills` finds them itself, the same way.
 
 ## Active skills
 
@@ -162,8 +162,8 @@ A change is the event `skills_changed` in the session log
 ([`sessions.md`](sessions.md), "Persistence"), with the skills turned on and
 their text, and the names turned off. A resumed session replays these
 events and continues with the prompt it had, from the saved text; the
-directory of a skill that is gone is no longer readable. `clai export` and
-`clai import` carry the events; a log of an older `clai` has none, so no
+directory of a skill that is gone is no longer readable. `codeagent export` and
+`codeagent import` carry the events; a log of an older `codeagent` has none, so no
 active skills.
 
 ## Clients
@@ -172,8 +172,8 @@ active skills.
   or off, and after `/skills ` the value list offers the found skills
   ([`tui.md`](tui.md), "Skills"). A change shows the notice
   `skills: + release-check, − pdf`.
-- `clai chat`: `/skills` prints the skills, `/skills NAME` turns one on or
-  off ([`command.md`](command.md), "clai chat").
-- `clai run --skill NAME` and `clai new --skill NAME` start with those
-  skills; `clai skills [--json]` lists what the current workspace finds
+- `codeagent chat`: `/skills` prints the skills, `/skills NAME` turns one on or
+  off ([`command.md`](command.md), "codeagent chat").
+- `codeagent run --skill NAME` and `codeagent new --skill NAME` start with those
+  skills; `codeagent skills [--json]` lists what the current workspace finds
   ([`command.md`](command.md)).

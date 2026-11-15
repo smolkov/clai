@@ -8,8 +8,8 @@
 - Spec: [`spec/agent-loop.md`](../spec/agent-loop.md), "System prompt";
   [`spec/config.md`](../spec/config.md), "Files", "Project files",
   "Reloading"; [`spec/tui.md`](../spec/tui.md), "Input editor",
-  "Command list"; [`spec/command.md`](../spec/command.md), "clai run",
-  "clai chat"; [`spec/sessions.md`](../spec/sessions.md), "Persistence";
+  "Command list"; [`spec/command.md`](../spec/command.md), "codeagent run",
+  "codeagent chat"; [`spec/sessions.md`](../spec/sessions.md), "Persistence";
   [`spec/architecture.md`](../spec/architecture.md), "Protocol";
   new [`spec/skills.md`](../spec/skills.md)
 
@@ -18,7 +18,7 @@
 A skill is a directory with a `SKILL.md` file: a name, a description and
 instructions for the model, maybe with scripts and reference files next to
 it. This is the format OpenCode, Claude Code and other agents already
-use, so skills a user has for them work in `clai` too. `clai` finds skills
+use, so skills a user has for them work in `codeagent` too. `codeagent` finds skills
 in the usual directories of those tools, in the user's home and in the
 workspace, and in extra directories named in a new `[skills]` table of the
 user file. A configured directory wins when two skills have the same name.
@@ -30,7 +30,7 @@ system prompt, and its directory becomes readable for the file tools.
 
 - Users keep instructions for recurring work (a release check, a review
   list, how to use a tool of the team) as skills for other agents. Today
-  `clai` cannot use them; the user pastes the text into each session.
+  `codeagent` cannot use them; the user pastes the text into each session.
 - Skills are already on disk in known places
   (`~/.claude/skills`, `.agents/skills`, …). Reading them from there
   means one copy for all tools.
@@ -44,7 +44,7 @@ system prompt, and its directory becomes readable for the file tools.
 
 In:
 
-- The skill format `clai` reads, and its checks.
+- The skill format `codeagent` reads, and its checks.
 - Where skills are found, in which order, and which one wins on the same
   name.
 - `[skills]` in the user file: extra directories, and turning off the
@@ -52,7 +52,7 @@ In:
 - `/skills` in the TUI: the selection box; `/skills NAME` to toggle one.
 - Active skills of a session: in the system prompt, readable directory,
   saved with the session.
-- `/skills` in `clai chat`, `clai run --skill NAME`, `clai skills` to
+- `/skills` in `codeagent chat`, `codeagent run --skill NAME`, `codeagent skills` to
   list what was found.
 - The protocol: `skills` and `set_skills`.
 
@@ -62,7 +62,7 @@ Out:
   prompt, a tool to load one). See "Open questions".
 - Fields of other tools' formats beyond `name` and `description`
   (`allowed-tools`, `model`, `license`, …): read and ignored.
-- Creating, editing or installing skills from `clai`.
+- Creating, editing or installing skills from `codeagent`.
 - Skills that change permissions. A script in a skill directory runs
   through `run_command` with the normal rules.
 - Commands, agents or other plugin parts of other tools.
@@ -99,7 +99,7 @@ description: Steps before tagging a release of a Rust crate. Use when the user a
 - `name`: 1 to 64 characters, lowercase letters, digits and `-`, not
   starting or ending with `-` (the rule of the common format). Without
   `name`, the directory name is used. A `name` that differs from the
-  directory name is used, with a warning in `clai skills`. **(proposal)**
+  directory name is used, with a warning in `codeagent skills`. **(proposal)**
 - `description`: required, at most 1 024 characters, one line in the list
   (newlines become spaces).
 - The body (everything after the frontmatter) is the instruction text. At
@@ -112,8 +112,8 @@ description: Steps before tagging a release of a Rust crate. Use when the user a
 - Links are followed for the skill directory and `SKILL.md`, since users
   link skills from a shared checkout into `~/.claude/skills`.
 
-A skill that is skipped is not an error for `clai`: the other skills still
-load, and the warnings show in `clai skills` and in the `/skills` box.
+A skill that is skipped is not an error for `codeagent`: the other skills still
+load, and the warnings show in `codeagent skills` and in the `/skills` box.
 
 ### Where skills are found
 
@@ -134,13 +134,13 @@ Directories, in order of priority, highest first:
   winner's path, but it cannot be activated.
 - Configured directories come first, as asked. Between the default ones,
   the workspace comes before the home directory **(proposal)**, so a
-  project can give a skill its own version, as for `.clai/config.toml`
+  project can give a skill its own version, as for `.codeagent/config.toml`
   over the user file. Within each group, the order of the table.
 - `~/.config` is `$XDG_CONFIG_HOME` when it is set (`spec/config.md`);
   that applies to `opencode`, not to `~/.claude` and `~/.agents`, which
   those tools always keep in the home directory.
 - The workspace directories are those of the workspace itself; parent
-  directories are not searched, like `.clai/config.toml`. **(proposal)**
+  directories are not searched, like `.codeagent/config.toml`. **(proposal)**
 - A directory that does not exist is skipped without a warning; one that
   cannot be read gets a warning.
 
@@ -283,17 +283,17 @@ found skills, active ones marked. The command table gets the row:
   prompt it had. A skill whose directory is gone keeps working from the
   saved text, but its directory is no longer readable, and the box says
   `not found any more`.
-- `clai export` includes the events; `clai import` reads them. A log of
-  an older `clai` has none: no active skills.
+- `codeagent export` includes the events; `codeagent import` reads them. A log of
+  an older `codeagent` has none: no active skills.
 
 ### Other clients
 
-- `clai chat`: `/skills` prints the found skills with their source and
+- `codeagent chat`: `/skills` prints the found skills with their source and
   marks (`*` active, `shadowed by …`), and `/skills NAME` toggles one.
-- `clai run --skill NAME` (repeatable) and `clai new --skill NAME`
+- `codeagent run --skill NAME` (repeatable) and `codeagent new --skill NAME`
   start the session with those skills; an unknown name is a usage error
   (exit `2`) that lists the found names.
-- `clai skills [--json]` lists what the current workspace would find:
+- `codeagent skills [--json]` lists what the current workspace would find:
   name, description, path, source, shadowed by, and the warnings. It
   needs no server; it reads the config and the directories itself.
   **(proposal)**
@@ -348,8 +348,8 @@ the place to revisit.
   "Other directories" line includes skill directories.
 - `spec/tui.md`: `/skills` in the command table; a "Skills" section with
   the box; the value list after `/skills `; the status box line.
-- `spec/command.md`: `clai skills`; `--skill` for `clai run` and
-  `clai new`; `/skills` in `clai chat`.
+- `spec/command.md`: `codeagent skills`; `--skill` for `codeagent run` and
+  `codeagent new`; `/skills` in `codeagent chat`.
 - `spec/sessions.md`, "Persistence": `skill_on`, `skill_off`.
 - `spec/architecture.md`: `src/skills/` in the project tree; the
   requests and the event.
@@ -376,8 +376,8 @@ the place to revisit.
   notice, `Esc` sends nothing, shadowed rows are skipped, filter, `not
   found any more`, `/skills NAME` and unknown name. Snapshots: the box,
   no skills found, ASCII.
-- `tests/skills.rs`: `clai skills --json` in a temporary home and
-  workspace; `clai run --skill NAME` with the mock provider puts the text
+- `tests/skills.rs`: `codeagent skills --json` in a temporary home and
+  workspace; `codeagent run --skill NAME` with the mock provider puts the text
   into the request's system prompt; unknown `--skill` exits `2`.
 
 ## Implementation plan
@@ -390,7 +390,7 @@ the place to revisit.
      priority, shadowing and warnings; the config has `[skills]`.
    - Tests: the skills and config unit tests.
 
-2. **`clai skills`**
+2. **`codeagent skills`**
    - Status: done
    - Files: `src/cli.rs`, `src/command/skills.rs`, `tests/skills.rs`
    - Result: the user can see what is found and why something is
@@ -415,11 +415,11 @@ the place to revisit.
      active skills.
    - Tests: TUI tests and snapshots.
 
-5. **`clai chat`, `clai run`, `clai new`**
+5. **`codeagent chat`, `codeagent run`, `codeagent new`**
    - Status: done
    - Files: `src/command/chat/`, `src/command/run.rs`,
      `src/command/new.rs`, `tests/skills.rs`
-   - Result: `/skills` in `clai chat`; `--skill NAME`.
+   - Result: `/skills` in `codeagent chat`; `--skill NAME`.
    - Tests: `tests/skills.rs` with the mock provider.
 
 6. **Spec and readme**
@@ -445,7 +445,7 @@ the place to revisit.
   breaks caching.
 - **Configured directories last, defaults first.** Matches "more specific
   wins" less well; the user asked for configured directories to win.
-- **A `clai`-only directory** (`~/.config/clai/skills`). One more place
+- **A `codeagent`-only directory** (`~/.config/codeagent/skills`). One more place
   for the same files; `skills.dirs` covers it for those who want it.
 - **Active skills per workspace, remembered across sessions.** Handy for
   a skill used every day in one project, but it adds state outside the
@@ -455,21 +455,21 @@ the place to revisit.
 
 1. ~~Priority between the default directories~~: answered, workspace
    before home.
-2. ~~`~/.config/clai/skills` and `<workspace>/.clai/skills`~~: answered,
+2. ~~`~/.config/codeagent/skills` and `<workspace>/.codeagent/skills`~~: answered,
    not default directories.
 3. ~~Skills of a new session~~: answered, none.
 4. ~~The model loading skills itself~~: answered, not now.
 5. ~~Read access to a skill's directory~~: answered, read only.
-6. ~~`clai skills` as its own command~~: answered, yes.
+6. ~~`codeagent skills` as its own command~~: answered, yes.
 
 ## Answers
 
 1. to 6. The user asked to build it, so the proposals hold, as for
    RFC 0021: the workspace's directories come before the home directory's;
-   `clai` has no skills directory of its own (`skills.dirs` covers it); a
+   `codeagent` has no skills directory of its own (`skills.dirs` covers it); a
    new session starts with no skills; the model does not load skills by
    itself (out of scope, see "Alternatives"); an active skill's directory
-   is readable, not writable; `clai skills` is its own command.
+   is readable, not writable; `codeagent skills` is its own command.
 
 ## Notes from building
 
@@ -490,7 +490,7 @@ the place to revisit.
   server compares the saved text with the file. `skills` takes an optional
   `session`, so the box gets the found and the active skills in one answer.
 - **The answer carries the server's home directory,** so the TUI and
-  `clai chat` show paths as `~/…` as the server, whose home sessions use,
+  `codeagent chat` show paths as `~/…` as the server, whose home sessions use,
   sees them.
 - **How a change reaches the agent:** `agent::SkillsHandle`, like
   `ModelHandle`, shared by the session and its agent. Before each model
@@ -503,10 +503,10 @@ the place to revisit.
 - **`set_skills` resumes a saved session**, as `set_model` does; `skills`
   and `session_status` read a saved session's log without resuming it.
 - **`new` takes `skills`;** names are checked before the session is made,
-  so an unknown one creates nothing. `clai run --skill` finds the skills
-  itself, in the process, as `clai run` does everything.
-- **`clai TASK...`** (the short form of `clai run`) has no `--skill`, as
-  the RFC names only `clai run` and `clai new`.
+  so an unknown one creates nothing. `codeagent run --skill` finds the skills
+  itself, in the process, as `codeagent run` does everything.
+- **`codeagent TASK...`** (the short form of `codeagent run`) has no `--skill`, as
+  the RFC names only `codeagent run` and `codeagent new`.
 - **Token estimate:** bytes divided by four, rounded up; the status box
   shows it per skill with `short_tokens`.
 - **The full description line** above the status line shows when the

@@ -19,18 +19,18 @@ of behaviour:
   `run`. It also builds the configuration's load options, which four places
   build by hand today.
 - **Shared code:** what other modules borrow from single commands goes to shared
-  modules. Today the TUI and `clai chat` reach into `ls` and `new`.
+  modules. Today the TUI and `codeagent chat` reach into `ls` and `new`.
 - **Helpers:** the helpers several commands copy each exist once: text or
-  standard input, the workspace check, the `clai: ` line on standard error, and
+  standard input, the workspace check, the `codeagent: ` line on standard error, and
   table columns.
-- **`clai run`:** it is split into named parts.
+- **`codeagent run`:** it is split into named parts.
 
 Every command, option, message, exit code and completion works exactly as
 before. Tests pin the behaviour that no test covers yet, before anything moves.
 
 ## Motivation
 
-More commands are coming (`clai commit`; maybe `clai status`, which RFC 0007
+More commands are coming (`codeagent commit`; maybe `codeagent status`, which RFC 0007
 left out), and the command layer has grown uneven.
 
 **A new command touches five places, and nothing checks that they agree.**
@@ -63,9 +63,9 @@ lives in one command's file:
 |---------|--------------|-----|
 | `tui/app.rs` | `command::ls::state_name` | session states in the argument list |
 | `tui/view/sessions.rs` | `command::ls::age` | the age column of the session list |
-| `tui/mod.rs` | `command::new::create` | creating a session for `clai new` |
+| `tui/mod.rs` | `command::new::create` | creating a session for `codeagent new` |
 | `command/chat/talk.rs` | `command::ls::table` | `/sessions` |
-| `command/chat/mod.rs` | `command::new::request` | `clai chat --new` |
+| `command/chat/mod.rs` | `command::new::request` | `codeagent chat --new` |
 
 `ls` and `new` cannot change without looking at the TUI and `chat`.
 
@@ -78,7 +78,7 @@ lives in one command's file:
   `workspace`. The error text is the same, but only `new` makes the path
   absolute. For `run` that changes nothing, because `Workspace::new` resolves
   the path anyway.
-- **`clai: ` lines on standard error:** the command layer writes them with its
+- **`codeagent: ` lines on standard error:** the command layer writes them with its
   own `writeln!` in twelve places:
   - three in `main` (`report` twice, `warn`);
   - one each in `kill` and `new::create`;
@@ -110,8 +110,8 @@ In:
 - **Shared modules:** `text::sessions` for the session table, states and ages;
   `command::common` for what several commands and the TUI use (new-session
   request, `create`, workspace, text or standard input).
-- **Helpers:** `output::note` for `clai: ` lines; `output::columns` for tables.
-- **`clai run`** in named parts: task, answering, setup, asker, one shot.
+- **Helpers:** `output::note` for `codeagent: ` lines; `output::columns` for tables.
+- **`codeagent run`** in named parts: task, answering, setup, asker, one shot.
 - **Tests:** new tests that pin what is not tested yet. The moved code keeps its
   tests.
 
@@ -120,17 +120,17 @@ Out:
 - **Behaviour:** nothing changes. Syntax, output text, exit codes, prefixes,
   notes and completions stay as `spec/command.md` says, and where a detail is not
   specified, today's wording stays.
-- **Rendered `clai: ` lines:** those that the text renderers (`text::events`,
+- **Rendered `codeagent: ` lines:** those that the text renderers (`text::events`,
   `text::conversation`) and the TUI's exit line return as strings stay where
   they are. Only the places that write to standard error themselves use
   `output::note`.
-- **`clai chat`:** it stays three files (`mod`, `talk`, `questions`); only its
+- **`codeagent chat`:** it stays three files (`mod`, `talk`, `questions`); only its
   imports and its standard-error lines change. `deny MESSAGE...` does not learn
   to read `-`: that would be new behaviour.
 - **Client, protocol and server:** `src/client/`, the protocol and the server
   are untouched, and `with_client` stays as it is.
 - **`src/complete.rs`:** unchanged.
-- **New commands and options**, `spec/command.md` edits, and `clai commit`
+- **New commands and options**, `spec/command.md` edits, and `codeagent commit`
   (which has its own milestone).
 
 ## Design
@@ -154,7 +154,7 @@ impl Execute for Kill {
 ```
 
 - **The trait's name:** it is `Execute`, not `Run`. `Run` is the argument struct
-  of `clai run`, and a trait of the same name would make every `use` ambiguous.
+  of `codeagent run`, and a trait of the same name would make every `use` ambiguous.
 - **`name` is a method, not a constant:** `Server` answers by its action, as it
   does now.
 - **One `match` beside the enum:** `cli.rs` gets the only `match` on the
@@ -213,7 +213,7 @@ impl Context {
 | What | From | To | Used by |
 |------|------|----|---------|
 | `table(sessions, now)`, `state_name`, `age` | `command::ls` | `text::sessions` | `ls`, `chat` (`/sessions`), TUI session list and argument list |
-| `request(name, model, dir)`, `create(client, request)` | `command::new` | `command::common` | `new`, `chat --new`, `chat /new`, TUI `clai new` |
+| `request(name, model, dir)`, `create(client, request)` | `command::new` | `command::common` | `new`, `chat --new`, `chat /new`, TUI `codeagent new` |
 | `workspace(dir)` | `command::new`, inline in `run` | `command::common` | `new`, `run` |
 | `input_text(words, what)` | `run`, `send` | `command::common` | `run`, `send` |
 
@@ -229,9 +229,9 @@ impl Context {
 
 ### Output helpers
 
-- **`output::note(text)`:** writes `clai: {text}` and a newline to standard
+- **`output::note(text)`:** writes `codeagent: {text}` and a newline to standard
   error, and ignores a failure as the `writeln!` calls do today.
-  - It replaces the twelve `writeln!(stderr, "clai: …")` calls of the command
+  - It replaces the twelve `writeln!(stderr, "codeagent: …")` calls of the command
     layer.
   - `main::warn` becomes `note(&format!("warning: {message}"))`.
   - `main::report` writes each configuration error and the final error through
@@ -243,7 +243,7 @@ impl Context {
   - `ls` adds the question summary after the columns, as now.
   - Both tables keep their columns, wording and tests.
 
-### `clai run`
+### `codeagent run`
 
 `Run::run` becomes a short sequence of named parts:
 
@@ -293,12 +293,12 @@ left alone:
   pass unchanged after every step. `tests/live.rs` is not run by default and is
   not touched.
 - **New pins, added before anything moves:**
-  - `clai send NAME ""` and `clai send NAME -` with empty input both say "the
+  - `codeagent send NAME ""` and `codeagent send NAME -` with empty input both say "the
     message is empty" and exit `2`.
-  - `clai run -C` with a missing directory says "… not a directory" and exits
-    `2`. Today only `clai new` has this test.
-  - The `clai: warning: …` line when logging cannot start.
-  - The `clai: ` lines of `chat --list` for an unknown session.
+  - `codeagent run -C` with a missing directory says "… not a directory" and exits
+    `2`. Today only `codeagent new` has this test.
+  - The `codeagent: warning: …` line when logging cannot start.
+  - The `codeagent: ` lines of `chat --list` for an unknown session.
 - **Moved code keeps its tests:**
   - `ls::age` and `ls::table` tests move to `text::sessions`.
   - `models::render_table` keeps its expected strings.
@@ -350,7 +350,7 @@ Each step leaves a working, tested state.
      `src/command/chat/questions.rs`, `src/command/chat/talk.rs`,
      `src/text/sessions.rs`,
      `src/command/models.rs`
-   - Result: every `clai: ` line of the command layer goes through `note`; both
+   - Result: every `codeagent: ` line of the command layer goes through `note`; both
      tables use `columns`.
    - Tests: `note` and `columns`; the table tests keep their expected strings.
 
@@ -399,7 +399,7 @@ None left. The user asked to build it; the proposals were taken:
   `with_client` and `Connect` are unchanged.
 - **Unused context:** `commit` and `completion` take it as `_: &Context`; no
   named parameter is left unused.
-- **`clai run`'s workspace:** the shared check makes the path absolute
+- **`codeagent run`'s workspace:** the shared check makes the path absolute
   before `Workspace::new` resolves it. Messages and behaviour are the same:
   `tests/run.rs` checks "missing: not a directory".
 - **`input_text` for testing:** it reads standard input through a function

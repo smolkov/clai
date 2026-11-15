@@ -1,7 +1,7 @@
 # Configuration
 
-All providers and models `clai` can use are defined in the configuration.
-`clai` has no built-in list of providers or models: a model that is not in
+All providers and models `codeagent` can use are defined in the configuration.
+`codeagent` has no built-in list of providers or models: a model that is not in
 the configuration cannot be chosen, neither in the TUI nor on the command
 line.
 
@@ -11,10 +11,20 @@ Statements marked **(assumption)** need a decision from the user.
 
 | File                          | Scope   | May define |
 |-------------------------------|---------|------------|
-| `~/.config/clai/config.toml`  | User    | Everything: providers, models, defaults, `[limits]`, `[permissions]`, `[commit]`, `[tui]`, `[themes]`, `[lsp]`, `[skills]`. |
-| `<workspace>/.clai/config.toml` | Project | Defaults and limits only: `default_model`, `[limits]` (only lower, see [Limits](#limits)), `[permissions]` (restricted, see [Permissions](#permissions)), `[commit]`, `[lsp]` (restricted, see [LSP](#lsp)). Not providers, models, `[tui]`, `[themes]` or `[skills]`. |
+| `~/.config/codeagent/config.toml`  | User    | Everything: providers, models, defaults, `[limits]`, `[permissions]`, `[commit]`, `[tui]`, `[themes]`, `[lsp]`, `[skills]`. |
+| `<workspace>/.codeagent/config.toml` | Project | Defaults and limits only: `default_model`, `[limits]` (only lower, see [Limits](#limits)), `[permissions]` (restricted, see [Permissions](#permissions)), `[commit]`, `[lsp]` (restricted, see [LSP](#lsp)). Not providers, models, `[tui]`, `[themes]` or `[skills]`. |
 
 `$XDG_CONFIG_HOME` replaces `~/.config` when it is set.
+
+`codeagent` was called `clai` before 0.5.0. On start, it moves
+`~/.config/clai` to `~/.config/codeagent` and `~/.local/state/clai` to
+`~/.local/state/codeagent` (with `$XDG_CONFIG_HOME` and `$XDG_STATE_HOME`
+when set), once: only when the old one is a directory and the new one does
+not exist. It says so on standard error: `codeagent: moved ~/.config/clai
+to ~/.config/codeagent`. The state stays while a server of `clai` still
+answers on its socket, with a warning that names `clai server stop`; the
+next start after that moves it. Project files
+in `.clai/` are not moved; they belong to the repository.
 
 Providers and models are only allowed in the user file. A project file comes
 with a repository the user may not trust; if it could define a provider, it
@@ -33,25 +43,25 @@ command-line options.
 `--config FILE` replaces the user file. If `FILE` does not exist, that is a
 load error (exit `2`), not the "no user config file" message.
 
-The project file is `.clai/config.toml` in the workspace directory itself;
+The project file is `.codeagent/config.toml` in the workspace directory itself;
 parent directories are not searched.
 
 ### Environment variables
 
 | Variable | Overrides | Meaning |
 |----------|-----------|---------|
-| `CLAI_MODEL` | `default_model` | Model for new sessions, as a model reference. **(assumption)** |
-| `CLAI_THEME` | `tui.theme` | Theme for this run. |
+| `CODEAGENT_MODEL` | `default_model` | Model for new sessions, as a model reference. **(assumption)** |
+| `CODEAGENT_THEME` | `tui.theme` | Theme for this run. |
 | `NO_COLOR` | — | Any value turns all colours off. |
-| `CLAI_LOG` | — | Log level, see [Logging](#logging). |
+| `CODEAGENT_LOG` | — | Log level, see [Logging](#logging). |
 | `XDG_CONFIG_HOME`, `HOME` | — | Where the user file is. A relative `XDG_CONFIG_HOME` is ignored. |
 | `XDG_STATE_HOME`, `XDG_RUNTIME_DIR` | — | Where the log and saved sessions are, and the server's socket. A relative value is ignored. |
 
-`clai` reads its environment once, when it starts (RFC 0026), and every
+`codeagent` reads its environment once, when it starts (RFC 0026), and every
 part of it works with that copy; `src/startup.rs` is the only code that
 reads the process, and `ci/check.sh` keeps it so. An empty value counts as
 not set. An invalid value is a load error that
-names the variable, e.g. `CLAI_MODEL: unknown model `gpt``.
+names the variable, e.g. `CODEAGENT_MODEL: unknown model `gpt``.
 
 Format: TOML. Unknown keys are an error, not ignored, so typos are found.
 **(assumption)**
@@ -337,7 +347,7 @@ sandbox (open question 5 in [`readme.md`](readme.md)).
 
 ### Built-in rules
 
-`clai` ships three `deny` rules for the `read` group, for files whose
+`codeagent` ships three `deny` rules for the `read` group, for files whose
 content is almost always a secret:
 
 | Rule | Patterns | Except |
@@ -425,11 +435,11 @@ lift a rule of the user file.
 
 A call that asks opens a question in the session, with everything needed to
 decide; any attached client that can answer may answer it: the TUI,
-`clai chat` in a terminal, or later a web UI (see
+`codeagent chat` in a terminal, or later a web UI (see
 [`sessions.md`](sessions.md), "Questions"). A session without such a client
 waits.
 
-In `clai run` (one-shot) the question is asked on the terminal when standard
+In `codeagent run` (one-shot) the question is asked on the terminal when standard
 input is one. Without a terminal, or with `--no-ask`, `ask` is treated as
 `deny`. `--yes` turns `ask` into `allow` for that run; `deny` rules and the
 workspace boundary still apply. See [`command.md`](command.md).
@@ -509,28 +519,28 @@ question of its own, because a language server runs code of the project
 (build scripts, macros, plugins), as `cargo build` does:
 
 - `start = "ask"` (the default) asks once per server and session (see
-  [`tools.md`](tools.md), "lsp"). Where no one can answer (`clai run`
+  [`tools.md`](tools.md), "lsp"). Where no one can answer (`codeagent run`
   without a terminal, `--no-ask`), the tool is not offered.
-- `"allow"` starts servers without asking; `--yes` in `clai run` does too.
+- `"allow"` starts servers without asking; `--yes` in `codeagent run` does too.
 - `"deny"` never starts servers; the tool is not offered.
 
 **Project files.** A server is a command that runs, so a project file may
 set only `enabled = false` and `start = "deny"` in `[lsp]`, and nothing
 else; any other key or value is a load error naming it.
 
-**Processes.** The clai server (or the `clai run` process) owns one process
+**Processes.** The codeagent server (or the `codeagent run` process) owns one process
 per server and project root, shared by its sessions:
 
 - It starts on the first call that needs it, after the start question,
   in the root, in a process group of its own, with the environment of the
-  clai server plus `env`; `initialize` gets the root, the client
-  capabilities `clai` handles and `settings`.
+  codeagent server plus `env`; `initialize` gets the root, the client
+  capabilities `codeagent` handles and `settings`.
 - A request waits for the `initialize` answer, up to `start_timeout_s`.
   While the server reports work in progress (indexing), a request without
   an answer within `request_timeout_s` gives the "still indexing" error.
 - A server without requests for 10 minutes is stopped (`shutdown`, `exit`,
-  then its process group is killed after 2 s). All stop when the clai
-  server stops, after a `clai run` turn, and when `[lsp]` changes on
+  then its process group is killed after 2 s). All stop when the codeagent
+  server stops, after a `codeagent run` turn, and when `[lsp]` changes on
   reload.
 - A crashed or failed server starts again on the next call; after the
   second crash in 5 minutes it stays failed until `/lsp restart` or a
@@ -553,14 +563,14 @@ per server and project root, shared by its sessions:
 
 ## Commit
 
-Settings for commit messages, used by `clai commit` and the TUI command
+Settings for commit messages, used by `codeagent commit` and the TUI command
 `/commit` (see [`commit.md`](commit.md)).
 Allowed in the user and the project file.
 
 ```toml
 [commit]
-model   = "local/qwen"   # model for commit messages; default: default_model (clai commit), the session model (/commit)
-trailer = "Co-Authored-By: clai <clai@localhost>"   # added after the body; default: none
+model   = "local/qwen"   # model for commit messages; default: default_model (codeagent commit), the session model (/commit)
+trailer = "Co-Authored-By: codeagent <codeagent@localhost>"   # added after the body; default: none
 ```
 
 ## Skills
@@ -629,7 +639,7 @@ A theme gives a colour to each part of the interface.
 | `terminal` | Uses only the terminal's 16-colour palette, so it follows the terminal's own theme. Default. |
 | `dark` | Built-in theme for dark backgrounds, using 256 colours. |
 | `light` | Built-in theme for light backgrounds, using 256 colours. |
-| `atom-one-dark`, `nord`, `gruvbox-dark`, `solarized-light` | Bundled with `clai`, see [Theme files](#theme-files). |
+| `atom-one-dark`, `nord`, `gruvbox-dark`, `solarized-light` | Bundled with `codeagent`, see [Theme files](#theme-files). |
 | `NAME` | A theme defined as `[themes.NAME]` in the user file, or as a theme file `themes/NAME.toml`. |
 
 `dark` and `light` use the 256 colours:
@@ -690,7 +700,7 @@ A theme may not set `base` to itself or to another custom theme; without
 built-in theme. An unknown colour key or value is a load error.
 
 The environment variable `NO_COLOR` (any value) turns all colours off,
-whatever the theme. `CLAI_THEME` overrides `tui.theme` for one run.
+whatever the theme. `CODEAGENT_THEME` overrides `tui.theme` for one run.
 
 ### Theme files
 
@@ -698,13 +708,13 @@ A theme can also be a file of its own, so it can be shared and copied without
 editing the configuration.
 
 - **Directory:** `themes/` next to the user file, so
-  `$XDG_CONFIG_HOME/clai/themes/` by default, or next to the `--config` file.
+  `$XDG_CONFIG_HOME/codeagent/themes/` by default, or next to the `--config` file.
   Each `NAME.toml` there is the theme `NAME`; a name has letters, digits, `-`
   and `_`. Other files are ignored, and so is a missing directory.
 - **Content:** the keys of a `[themes.NAME]` table, at the top level:
 
   ```toml
-  # ~/.config/clai/themes/nord.toml
+  # ~/.config/codeagent/themes/nord.toml
   base        = "dark"
   background  = "#2e3440"
   text        = "#d8dee9"
@@ -712,7 +722,7 @@ editing the configuration.
   ```
 
 - **Bundled:** `atom-one-dark`, `nord`, `gruvbox-dark` and `solarized-light` come
-  with `clai`, in this format (`themes/` in the source), so one can be copied
+  with `codeagent`, in this format (`themes/` in the source), so one can be copied
   into the directory and changed.
 - **Precedence:** a `[themes.NAME]` table, then a file, then a bundled theme. A
   file `nord.toml` replaces the bundled `nord`, and so does a table. A table and
@@ -720,10 +730,10 @@ editing the configuration.
   replaced.
 - `base` is one of `terminal`, `dark`, `light`, as for tables.
 - **Errors** name the theme file and line. A broken theme file is a load error
-  only if it is the theme in use (`tui.theme` or `CLAI_THEME`); otherwise it is
+  only if it is the theme in use (`tui.theme` or `CODEAGENT_THEME`); otherwise it is
   left out, and the TUI's theme list shows it with its error. A broken file
   does not fall back to a bundled theme of its name.
-- `clai` never writes into the directory.
+- `codeagent` never writes into the directory.
 
 ### Writing the user file
 
@@ -732,10 +742,10 @@ on `config_reloaded`, and when `/settings` or `/theme` opens. A change applies
 at once to the running TUI. An invalid change keeps the previous settings and
 shows the error in the status line.
 
-`clai` writes the user file only from `/settings` and `/theme` (see
+`codeagent` writes the user file only from `/settings` and `/theme` (see
 [`tui.md`](tui.md), "Settings"), which set or remove keys of `[tui]`, and from
-the model picker's default tick, `/model … --default` (TUI and `clai chat`) and
-`clai models --set-default`, which set `default_model` (RFC 0021). It keeps the
+the model picker's default tick, `/model … --default` (TUI and `codeagent chat`) and
+`codeagent models --set-default`, which set `default_model` (RFC 0021). It keeps the
 rest of the file, comments and order included; it checks the new text as
 loading would and writes nothing if that fails; for `[tui]` it also writes
 nothing if the file changed since it was read; it replaces the file atomically
@@ -745,7 +755,7 @@ with its mode kept, through a link to its target.
   short form was given. An existing key keeps its place and the comment on
   its line; a new one goes before the first table.
 - The project file is never written: it comes with the repository.
-- `CLAI_MODEL` and a project file's `default_model` still win over the saved
+- `CODEAGENT_MODEL` and a project file's `default_model` still win over the saved
   value; the clients say so after the save.
 
 ## Providers and models
@@ -809,7 +819,7 @@ or shown in the TUI.
 
 A model is referred to as `<provider>/<model>`, using the names of the config
 tables, e.g. `anthropic/opus` or `local/qwen`. This is the form used by
-`default_model`, `--model`, `/model`, `clai ls` and the TUI. If only one
+`default_model`, `--model`, `/model`, `codeagent ls` and the TUI. If only one
 provider defines a model with that name, the provider part may be left out
 (`--model opus`). **(assumption)**
 
@@ -831,7 +841,7 @@ It is an error when:
   `context_window` and `max_output_tokens` at least 1, `timeout_s` 1–86400,
   `max_retries` 0–100, `temperature` 0–2, `tui.max_fps` 1–120,
   `limits.max_requests` and `limits.max_tool_calls` 1–10000;
-- `commit.model`, `tui.theme`, `CLAI_MODEL` or `CLAI_THEME` names something
+- `commit.model`, `tui.theme`, `CODEAGENT_MODEL` or `CODEAGENT_THEME` names something
   that is not defined;
 - a key in `[permissions.allow]`, `[permissions.ask]` or
   `[permissions.deny]` is not a tool or group, its value is not a list of
@@ -858,19 +868,19 @@ A missing API key (variable not set, command fails) is not a load error; it
 is reported when the provider is first used, in the session that uses it, so
 other providers still work.
 
-If there is no user config file at all, `clai` explains where to create it
+If there is no user config file at all, `codeagent` explains where to create it
 and prints an example, then exits with code `2`.
 
 ## Logging
 
-`clai` writes a log to `$XDG_STATE_HOME/clai/clai.log` (default
-`~/.local/state/clai/clai.log`), appending to it. It never logs to the
+`codeagent` writes a log to `$XDG_STATE_HOME/codeagent/codeagent.log` (default
+`~/.local/state/codeagent/codeagent.log`), appending to it. It never logs to the
 terminal. **(assumption)**
 
-- The environment variable `CLAI_LOG` sets the level filter, e.g. `debug`
-  or `clai=trace` (syntax of `tracing`'s `EnvFilter`). Default `info`; an
+- The environment variable `CODEAGENT_LOG` sets the level filter, e.g. `debug`
+  or `codeagent=trace` (syntax of `tracing`'s `EnvFilter`). Default `info`; an
   invalid value falls back to `info`.
-- If the log file cannot be opened, the server and `clai run` print one
+- If the log file cannot be opened, the server and `codeagent run` print one
   warning on standard error and run without a log; other commands run
   without one quietly (RFC 0026).
 - All processes write the same file; each line starts with the process and
@@ -879,7 +889,7 @@ terminal. **(assumption)**
   are file contents or command output.
 - The log file is created with mode `0600` and its directory with mode
   `0700`; a wider mode of an existing file or directory is narrowed when
-  `clai` starts.
+  `codeagent` starts.
 
 ## Reloading
 
@@ -892,8 +902,8 @@ an editor that replaces the file is noticed the same way.
 - An invalid new configuration is rejected; the server keeps the previous one
   and sends the errors to every client (`config_rejected`), which shows
   them. A server never starts with an invalid configuration.
-- `CLAI_MODEL` and `CLAI_THEME` are read by each client, not by the server:
-  `clai new` sends its `--model` or `CLAI_MODEL` to the server, which
+- `CODEAGENT_MODEL` and `CODEAGENT_THEME` are read by each client, not by the server:
+  `codeagent new` sends its `--model` or `CODEAGENT_MODEL` to the server, which
   checks it.
 - A running session keeps its provider and model even if they were removed or
   changed in the configuration; its next model change must pick a model that

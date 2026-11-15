@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use crate::config::{ConfigErrors, EXAMPLE};
 
-/// Errors of `clai`. Errors in the command-line syntax are reported by the
+/// Errors of `codeagent`. Errors in the command-line syntax are reported by the
 /// argument parser and never reach this type.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

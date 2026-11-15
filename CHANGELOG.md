@@ -1,11 +1,19 @@
 # Changelog
 
-All notable changes to `clai`. One section per version, newest first.
+All notable changes to `codeagent`. One section per version, newest first.
 Changes go into "Unreleased" as they are made; a release moves them into a
 section `X.Y.Z - YYYY-MM-DD` (see `readme.md`, "Release"). The release
 notes are taken from that section by `ci/notes.sh`.
 
 ## Unreleased
+
+- `clai` is now `codeagent`: the command, the crate, the Debian package and
+  the release files. The variables are `CODEAGENT_MODEL`, `CODEAGENT_THEME`
+  and `CODEAGENT_LOG`; the directories `~/.config/codeagent` and
+  `~/.local/state/codeagent`, the log `codeagent.log`. On its first start
+  `codeagent` moves `~/.config/clai` and `~/.local/state/clai` to the new
+  names, with a note; stop a running `clai` server first (`clai server
+  stop`). Project files move from `.clai/` to `.codeagent/` by hand.
 
 ## 0.4.0 - 2026-11-15
 

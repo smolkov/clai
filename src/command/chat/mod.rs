@@ -1,5 +1,5 @@
-//! `clai chat`: a conversation with a session in the terminal, and
-//! answering questions without the TUI (see `spec/command.md`, "clai chat").
+//! `codeagent chat`: a conversation with a session in the terminal, and
+//! answering questions without the TUI (see `spec/command.md`, "codeagent chat").
 
 mod questions;
 mod talk;
@@ -24,7 +24,7 @@ use crate::protocol::{Request, SessionInfo};
 use crate::runtime::current_thread;
 use crate::text::sessions::age;
 
-/// Words that make `clai chat NAME CHOICE` the script form.
+/// Words that make `codeagent chat NAME CHOICE` the script form.
 const CHOICES: [&str; 7] = [
     "allow", "always", "deny", "cancel", "continue", "stop", "decline",
 ];
@@ -80,7 +80,7 @@ pub struct Chat {
     pub words: Vec<String>,
 }
 
-/// What `clai chat` was asked to do.
+/// What `codeagent chat` was asked to do.
 #[derive(Debug, PartialEq)]
 enum Mode<'a> {
     /// A conversation with an existing session.
@@ -166,16 +166,16 @@ impl Chat {
                 })
             }
             _ if self.id.is_some() => Err(Error::Usage(
-                "--id needs a session and a choice: clai chat NAME CHOICE --id ID".to_owned(),
+                "--id needs a session and a choice: codeagent chat NAME CHOICE --id ID".to_owned(),
             )),
             [] => Ok(Mode::New(None)),
             [dir] if self.new => Ok(Mode::New(Some(PathBuf::from(dir)))),
             [name] => Ok(Mode::Attach(name)),
             _ if self.new => Err(Error::Usage(
-                "clai chat --new takes at most one DIR".to_owned(),
+                "codeagent chat --new takes at most one DIR".to_owned(),
             )),
             _ => Err(Error::Usage(
-                "clai chat talks to one session; use --questions to answer several".to_owned(),
+                "codeagent chat talks to one session; use --questions to answer several".to_owned(),
             )),
         }
     }
@@ -214,7 +214,7 @@ impl Chat {
     }
 }
 
-/// `clai chat NAME CHOICE ...` as an answer.
+/// `codeagent chat NAME CHOICE ...` as an answer.
 fn parse_choice(choice: &str, rest: &[String]) -> Result<Answer> {
     let text = rest.join(" ");
     let text = text.trim();
@@ -236,7 +236,7 @@ fn parse_choice(choice: &str, rest: &[String]) -> Result<Answer> {
             text: text.to_owned(),
         }),
         "always" if text.is_empty() => Err(Error::Usage(
-            "`always` needs a rule, e.g. clai chat NAME always 'run_command(cargo test)'"
+            "`always` needs a rule, e.g. codeagent chat NAME always 'run_command(cargo test)'"
                 .to_owned(),
         )),
         "always" => Ok(Answer::AllowAlways {
@@ -305,7 +305,7 @@ fn script(ctx: &Context, name: &str, answer: Answer, id: Option<&str>) -> Result
 
 /// Reads lines from standard input on a thread, one per request, so that
 /// nothing reads the terminal while the pager runs. A line is always asked
-/// for otherwise, so that the end of input ends `clai chat` at any time.
+/// for otherwise, so that the end of input ends `codeagent chat` at any time.
 pub(crate) struct Lines {
     want: std::sync::mpsc::Sender<()>,
     lines: mpsc::UnboundedReceiver<Option<String>>,

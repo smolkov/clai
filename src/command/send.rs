@@ -1,4 +1,4 @@
-//! `clai send` (see `spec/command.md`).
+//! `codeagent send` (see `spec/command.md`).
 
 use clap::Args;
 use clap_complete::ArgValueCompleter;

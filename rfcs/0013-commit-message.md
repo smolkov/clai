@@ -3,19 +3,19 @@
 - RFC: 0013
 - Status: done
 - Milestone: Commit in `implementation.md`
-- Spec: `command.md` "clai commit", `config.md` "Commit", `commit.md` (new),
+- Spec: `command.md` "codeagent commit", `config.md` "Commit", `commit.md` (new),
   `architecture.md` "Commit"
 
 ## Summary
 
-`clai commit` writes a commit message for the changes staged in git and
+`codeagent commit` writes a commit message for the changes staged in git and
 prints it on standard output. It sends the staged diff, the commit rules
 from the repository's agent file (`AGENTS.md` or `AGENT.md`) and a few
 recent commit subjects to the default model in one request, and prints only
 the message. It commits nothing, so its output can go straight to git:
 
 ```sh
-git add -A && clai commit | git commit -F -
+git add -A && codeagent commit | git commit -F -
 ```
 
 ## Motivation
@@ -31,7 +31,7 @@ the message should follow them without the user repeating them each time.
 
 In:
 
-- `clai commit [--model PROVIDER/MODEL] [--hint TEXT] [DIR]`: a message for
+- `codeagent commit [--model PROVIDER/MODEL] [--hint TEXT] [DIR]`: a message for
   the staged changes of the repository that holds `DIR`.
 - Collecting the staged changes with `git`, within a size budget.
 - Reading the commit rules from the agent file at the repository root.
@@ -53,7 +53,7 @@ Out:
 ### Command line
 
 ```sh
-clai commit [--model PROVIDER/MODEL] [--hint TEXT] [DIR]
+codeagent commit [--model PROVIDER/MODEL] [--hint TEXT] [DIR]
 ```
 
 | Option | Meaning |
@@ -68,7 +68,7 @@ else would describe the wrong commit. For the same reason, `DIR` only picks
 the repository: the message covers every staged file, not only those below
 `DIR` **(proposal)**.
 
-The command needs no server, like `clai run`.
+The command needs no server, like `codeagent run`.
 
 ### Steps
 
@@ -99,7 +99,7 @@ git -C ROOT -c core.quotepath=false diff --cached --no-color --no-ext-diff \
 
 - `--no-ext-diff` and `--no-textconv` keep git from running programs set in
   the repository's config; a cloned repository must not run code through
-  `clai commit`.
+  `codeagent commit`.
 - `--irreversible-delete` leaves out the old content of a deleted file; the
   model only needs to know it was deleted.
 - `git diff --cached --stat` (with the same options) is always sent in
@@ -121,7 +121,7 @@ tokens:
 
 ### Secret files
 
-A file that `clai` treats as secret, or that `[permissions]` denies to
+A file that `codeagent` treats as secret, or that `[permissions]` denies to
 `read_file` (see `config.md`, "Permissions"), is sent with its name and
 stat only, never its diff **(proposal)**. The same rules that keep a key
 file away from the agent keep it out of a commit message request. Its line
@@ -175,7 +175,7 @@ The answer's text is cleaned before it is printed:
 
 Standard output gets only the message, ending with one newline. An empty
 message after cleaning is an error (exit `1`), so `git commit -F -` never
-gets an empty file from `clai`.
+gets an empty file from `codeagent`.
 
 While the request runs, standard error shows one line, but only when it is
 a terminal: `Describing 3 staged files with anthropic/sonnet…`.
@@ -190,8 +190,8 @@ standard output.
 | Merge, rebase, cherry-pick or revert in progress | `1` | `a merge is in progress; git writes its commit message` |
 | Nothing staged | `1` | `nothing staged; stage changes with git add first` |
 | `git` missing or failing | `1` | `git: ...` with git's message |
-| Model request failed | `1` | the provider's error, as in `clai run` |
-| Unknown model | `2` | as in `clai run` |
+| Model request failed | `1` | the provider's error, as in `codeagent run` |
+| Unknown model | `2` | as in `codeagent run` |
 | `Ctrl-C` | `130` | none |
 
 ### Modules
@@ -209,10 +209,10 @@ standard output.
 - `spec/commit.md` (new): everything under [Design](#design) that is
   behaviour: what is collected, the budget, protected files, the agent
   file, the prompt rules, the output.
-- `spec/command.md`, "clai commit": drop `--staged`; `DIR` picks the
-  repository; the errors table; the example `git add -A && clai commit |
+- `spec/command.md`, "codeagent commit": drop `--staged`; `DIR` picks the
+  repository; the errors table; the example `git add -A && codeagent commit |
   git commit -F -`.
-- `spec/config.md`, "Commit": the default of `commit.model` for `clai
+- `spec/config.md`, "Commit": the default of `commit.model` for `codeagent
   commit` is `default_model`.
 - `spec/architecture.md`: `src/commit/` built, `commit.md` no longer
   planned.
@@ -266,7 +266,7 @@ standard output.
    - Status: done
    - Files: `src/command/commit.rs`, `tests/commit.rs`, the spec files,
      `readme.md`, `implementation.md`, `todo.md`
-   - Result: `clai commit` works as described.
+   - Result: `codeagent commit` works as described.
    - Tests: the command cases above.
 
 ## Alternatives
@@ -302,7 +302,7 @@ All were answered with the proposals when the RFC was built:
 
 ## Notes from building
 
-- The "stat" is clai's own file list, from `--name-status -z` and
+- The "stat" is codeagent's own file list, from `--name-status -z` and
   `--numstat -z`: one line per file with the status letter and the line
   counts (`M src/a.rs (+3 -1)`), instead of `git diff --stat`, whose paths
   git shortens.
@@ -312,8 +312,8 @@ All were answered with the proposals when the RFC was built:
 - The agent file may be a link, but only to a file inside the repository,
   and a protected file is not read.
 - Output tokens are 1,024, or the model's `max_output_tokens` if lower.
-- The progress line is written as is, without the `clai: ` prefix of notes.
-- `clai commit` was the example of an unbuilt command in three tests of
+- The progress line is written as is, without the `codeagent: ` prefix of notes.
+- `codeagent commit` was the example of an unbuilt command in three tests of
   `tests/cli.rs`; they now run it outside a repository. The fake model
   server of `tests/run.rs` moved to `tests/support/`, shared with
   `tests/commit.rs`.

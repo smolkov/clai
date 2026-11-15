@@ -1,20 +1,21 @@
-//! `clai`: AI coding agent for the terminal. Behaviour: `spec/`.
+//! `codeagent`: AI coding agent for the terminal. Behaviour: `spec/`.
 
 use std::process::ExitCode;
 
 use clap::CommandFactory;
 use clap_complete::CompleteEnv;
 
-use clai::cli::Cli;
-use clai::command::Context;
-use clai::command::completion::COMPLETE_ENV;
-use clai::error::Error;
-use clai::log;
-use clai::output::note;
-use clai::startup::Startup;
+use codeagent::cli::Cli;
+use codeagent::command::Context;
+use codeagent::command::completion::COMPLETE_ENV;
+use codeagent::error::Error;
+use codeagent::log;
+use codeagent::output::note;
+use codeagent::paths::{self, Moved};
+use codeagent::startup::Startup;
 
 fn main() -> ExitCode {
-    // Answers `COMPLETE=<shell> clai -- <words>` and exits; must run before
+    // Answers `COMPLETE=<shell> codeagent -- <words>` and exits; must run before
     // anything is written to standard output.
     CompleteEnv::with_factory(Cli::command)
         .var(COMPLETE_ENV)
@@ -31,7 +32,19 @@ fn main() -> ExitCode {
 
     // The order of RFC 0026: the environment once, the paths from it, the
     // log, then the command.
-    let ctx = Context::new(Startup::from_process(), cli.config.clone());
+    let startup = Startup::from_process();
+    // `codeagent` was `clai` before 0.5.0: its directories move once.
+    for moved in paths::move_old_dirs(&startup) {
+        match moved {
+            Moved::Done(old, new) => note(&format!(
+                "moved {} to {}",
+                startup.tilde(&old),
+                startup.tilde(&new)
+            )),
+            Moved::Kept(old, why) => warn(&format!("{} not moved: {why}", startup.tilde(&old))),
+        }
+    }
+    let ctx = Context::new(startup, cli.config.clone());
     let role = cli.role();
     if let Err(err) = log::init(&ctx.paths, &ctx.startup, role)
         && role.warns()

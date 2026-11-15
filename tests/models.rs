@@ -1,4 +1,4 @@
-//! `clai models` and configuration loading, run as a process.
+//! `codeagent models` and configuration loading, run as a process.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -11,7 +11,7 @@ default_model = "anthropic/sonnet"
 
 [providers.anthropic]
 api = "anthropic"
-api_key_env = "CLAI_TEST_NO_SUCH_KEY"
+api_key_env = "CODEAGENT_TEST_NO_SUCH_KEY"
 
 [providers.anthropic.models.sonnet]
 id = "claude-sonnet-5-5"
@@ -38,10 +38,10 @@ impl Env {
             .join("models")
             .join(name);
         let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(root.join("config/clai")).unwrap();
+        fs::create_dir_all(root.join("config/codeagent")).unwrap();
         fs::create_dir_all(root.join("work")).unwrap();
         if let Some(config) = config {
-            fs::write(root.join("config/clai/config.toml"), config).unwrap();
+            fs::write(root.join("config/codeagent/config.toml"), config).unwrap();
         }
         Env { root }
     }
@@ -51,15 +51,15 @@ impl Env {
     }
 
     fn run(&self, args: &[&str], vars: &[(&str, &str)]) -> Output {
-        let mut cmd = Command::new(env!("CARGO_BIN_EXE_clai"));
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_codeagent"));
         cmd.args(args)
             .current_dir(self.workspace())
             .env("HOME", &self.root)
             .env("XDG_CONFIG_HOME", self.root.join("config"))
             .env("XDG_STATE_HOME", self.root.join("state"))
-            .env_remove("CLAI_MODEL")
-            .env_remove("CLAI_THEME")
-            .env_remove("CLAI_TEST_NO_SUCH_KEY");
+            .env_remove("CODEAGENT_MODEL")
+            .env_remove("CODEAGENT_THEME")
+            .env_remove("CODEAGENT_TEST_NO_SUCH_KEY");
         for (k, v) in vars {
             cmd.env(k, v);
         }
@@ -90,7 +90,7 @@ fn table() {
 #[test]
 fn key_present() {
     let env = Env::new("key", Some(CONFIG));
-    let out = env.run(&["models"], &[("CLAI_TEST_NO_SUCH_KEY", "sk-test")]);
+    let out = env.run(&["models"], &[("CODEAGENT_TEST_NO_SUCH_KEY", "sk-test")]);
     let text = stdout(&out);
     assert!(!text.contains("no key"), "{text}");
     assert!(!text.contains("sk-test"), "{text}");
@@ -124,9 +124,9 @@ fn json() {
 #[test]
 fn env_model_overrides_default() {
     let env = Env::new("env-model", Some(CONFIG));
-    let out = env.run(&["models"], &[("CLAI_MODEL", "qwen")]);
+    let out = env.run(&["models"], &[("CODEAGENT_MODEL", "qwen")]);
     assert!(
-        stdout(&out).contains("32k  default (CLAI_MODEL)"),
+        stdout(&out).contains("32k  default (CODEAGENT_MODEL)"),
         "{}",
         stdout(&out)
     );
@@ -135,9 +135,9 @@ fn env_model_overrides_default() {
 #[test]
 fn project_file_is_merged() {
     let env = Env::new("project", Some(CONFIG));
-    fs::create_dir_all(env.workspace().join(".clai")).unwrap();
+    fs::create_dir_all(env.workspace().join(".codeagent")).unwrap();
     fs::write(
-        env.workspace().join(".clai/config.toml"),
+        env.workspace().join(".codeagent/config.toml"),
         "default_model = \"local/qwen\"\n",
     )
     .unwrap();
@@ -154,7 +154,7 @@ fn set_default_saves_the_model_for_the_next_start() {
     let env = Env::new("set-default", Some(&format!("# my models\n{CONFIG}")));
     let out = env.run(&["models", "--set-default", "qwen"], &[]);
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
-    let file = env.root.join("config/clai/config.toml");
+    let file = env.root.join("config/codeagent/config.toml");
     assert_eq!(
         stdout(&out),
         format!("default model: local/qwen (saved in {})\n", file.display())
@@ -177,21 +177,21 @@ fn set_default_refuses_an_unknown_model() {
         err.contains("unknown model `gpt`") && err.contains("local/qwen"),
         "{err}"
     );
-    let text = fs::read_to_string(env.root.join("config/clai/config.toml")).unwrap();
+    let text = fs::read_to_string(env.root.join("config/codeagent/config.toml")).unwrap();
     assert_eq!(text, CONFIG);
 }
 
 #[test]
-fn set_default_warns_when_clai_model_wins() {
+fn set_default_warns_when_codeagent_model_wins() {
     let env = Env::new("set-default-env", Some(CONFIG));
     let out = env.run(
         &["models", "--set-default", "qwen"],
-        &[("CLAI_MODEL", "sonnet")],
+        &[("CODEAGENT_MODEL", "sonnet")],
     );
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
     assert_eq!(
         stderr(&out),
-        "clai: CLAI_MODEL=anthropic/sonnet still sets the default of new sessions\n"
+        "codeagent: CODEAGENT_MODEL=anthropic/sonnet still sets the default of new sessions\n"
     );
 }
 
@@ -202,10 +202,10 @@ fn no_user_file_prints_example() {
     assert_eq!(out.status.code(), Some(2));
     assert!(out.stdout.is_empty());
     let err = stderr(&out);
-    let path = env.root.join("config/clai/config.toml");
+    let path = env.root.join("config/codeagent/config.toml");
     assert!(
         err.starts_with(&format!(
-            "clai: no configuration file at {}",
+            "codeagent: no configuration file at {}",
             path.display()
         )),
         "{err}"
@@ -221,11 +221,11 @@ fn invalid_file_reports_line() {
     );
     let out = env.run(&["models"], &[]);
     assert_eq!(out.status.code(), Some(2));
-    let path = env.root.join("config/clai/config.toml");
+    let path = env.root.join("config/codeagent/config.toml");
     assert_eq!(
         stderr(&out),
         format!(
-            "clai: {}:17: providers.local.models.qwen: missing context_window\n",
+            "codeagent: {}:17: providers.local.models.qwen: missing context_window\n",
             path.display()
         )
     );

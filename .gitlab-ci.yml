@@ -4,7 +4,7 @@
 #
 # Project settings it expects:
 # - Tags v* protected, so only maintainers can release.
-# - Optional: CLAI_ARM_RUNNER, the tag of an arm64 runner, to run the aarch64
+# - Optional: CODEAGENT_ARM_RUNNER, the tag of an arm64 runner, to run the aarch64
 #   binary; ANTHROPIC_API_KEY (masked, protected) for the manual live job.
 
 variables:
@@ -18,7 +18,7 @@ variables:
   CARGO_DENY_VERSION: "0.20.2"
   CARGO_HOME: "$CI_PROJECT_DIR/.cargo-home"
   CARGO_TERM_COLOR: always
-  PACKAGES: "$CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/clai"
+  PACKAGES: "$CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/codeagent"
 
 workflow:
   rules:
@@ -113,7 +113,7 @@ build:x86_64:
   artifacts:
     paths:
       - dist/
-      - target/x86_64-unknown-linux-musl/release/clai
+      - target/x86_64-unknown-linux-musl/release/codeagent
     expire_in: 7 days
 
 build:aarch64:
@@ -132,21 +132,21 @@ build:aarch64:
   artifacts:
     paths:
       - dist/
-      - target/aarch64-unknown-linux-musl/release/clai
+      - target/aarch64-unknown-linux-musl/release/codeagent
     expire_in: 7 days
 
 smoke:aarch64:
   stage: package
   rules:
-    - if: $CI_COMMIT_TAG =~ /^v/ && $CLAI_ARM_RUNNER
-  tags: [$CLAI_ARM_RUNNER]
+    - if: $CI_COMMIT_TAG =~ /^v/ && $CODEAGENT_ARM_RUNNER
+  tags: [$CODEAGENT_ARM_RUNNER]
   image: debian:stable-slim
   needs: [build:aarch64]
   cache: []
   before_script: []
   script:
-    - target/aarch64-unknown-linux-musl/release/clai --version
-    - target/aarch64-unknown-linux-musl/release/clai completion bash >/dev/null
+    - target/aarch64-unknown-linux-musl/release/codeagent --version
+    - target/aarch64-unknown-linux-musl/release/codeagent completion bash >/dev/null
 
 deb:
   stage: package
@@ -158,8 +158,8 @@ deb:
     - apt-get update -qq
     - apt-get install -y -qq --no-install-recommends lintian file
     - cargo install --locked "cargo-deb@$CARGO_DEB_VERSION"
-    - export CLAI_REQUIRE_LINTIAN=1
-    - export CLAI_HOST_BIN=target/x86_64-unknown-linux-musl/release/clai
+    - export CODEAGENT_REQUIRE_LINTIAN=1
+    - export CODEAGENT_HOST_BIN=target/x86_64-unknown-linux-musl/release/codeagent
     - sh ci/deb.sh x86_64-unknown-linux-musl "$VERSION"
     - sh ci/deb.sh aarch64-unknown-linux-musl "$VERSION"
   artifacts:
@@ -173,7 +173,7 @@ deb:
   cache: []
   before_script: []
   script:
-    - sh ci/deb-test.sh dist/clai_*_amd64.deb
+    - sh ci/deb-test.sh dist/codeagent_*_amd64.deb
 
 deb-test:debian:
   <<: *deb_test
@@ -205,24 +205,24 @@ release:
   cache: []
   before_script: []
   script:
-    - echo "release clai $VERSION"
+    - echo "release codeagent $VERSION"
   release:
     tag_name: $CI_COMMIT_TAG
-    name: clai $VERSION
+    name: codeagent $VERSION
     description: ./notes.md
     assets:
       links:
-        - name: clai-$VERSION-x86_64-unknown-linux-musl.tar.gz
-          url: $PACKAGES/$VERSION/clai-$VERSION-x86_64-unknown-linux-musl.tar.gz
+        - name: codeagent-$VERSION-x86_64-unknown-linux-musl.tar.gz
+          url: $PACKAGES/$VERSION/codeagent-$VERSION-x86_64-unknown-linux-musl.tar.gz
           link_type: package
-        - name: clai-$VERSION-aarch64-unknown-linux-musl.tar.gz
-          url: $PACKAGES/$VERSION/clai-$VERSION-aarch64-unknown-linux-musl.tar.gz
+        - name: codeagent-$VERSION-aarch64-unknown-linux-musl.tar.gz
+          url: $PACKAGES/$VERSION/codeagent-$VERSION-aarch64-unknown-linux-musl.tar.gz
           link_type: package
-        - name: clai_${DEB_VERSION}_amd64.deb
-          url: $PACKAGES/$VERSION/clai_${DEB_VERSION}_amd64.deb
+        - name: codeagent_${DEB_VERSION}_amd64.deb
+          url: $PACKAGES/$VERSION/codeagent_${DEB_VERSION}_amd64.deb
           link_type: package
-        - name: clai_${DEB_VERSION}_arm64.deb
-          url: $PACKAGES/$VERSION/clai_${DEB_VERSION}_arm64.deb
+        - name: codeagent_${DEB_VERSION}_arm64.deb
+          url: $PACKAGES/$VERSION/codeagent_${DEB_VERSION}_arm64.deb
           link_type: package
         - name: SHA256SUMS
           url: $PACKAGES/$VERSION/SHA256SUMS

@@ -8,20 +8,20 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [x] Error type with exit codes.
 - [x] Command-line parsing of all commands in `spec/command.md`; unbuilt
       commands exit `1` with "not implemented yet".
-- [x] Logging to `$XDG_STATE_HOME/clai/clai.log`, level from `CLAI_LOG`.
+- [x] Logging to `$XDG_STATE_HOME/codeagent/codeagent.log`, level from `CODEAGENT_LOG`.
 - [x] Unit tests for parsing, integration tests for exit codes and output.
 - [x] `readme.md`, `todo.md`.
 - [x] Static musl build check (RFC 0020, `ci/build.sh`).
 
 ## Configuration
 
-- [x] Load user file, project file, `CLAI_MODEL` / `CLAI_THEME`; precedence.
+- [x] Load user file, project file, `CODEAGENT_MODEL` / `CODEAGENT_THEME`; precedence.
 - [x] Validation with file:line errors; project-file restrictions.
 - [x] Permissions loading and merging.
 - [x] `[tui]` and `[themes]` validation (colours used by the TUI later).
 - [x] Model references with short form.
 - [x] API keys from env or `api_key_cmd`, never shown.
-- [x] `clai models`, `--json`.
+- [x] `codeagent models`, `--json`.
 - [x] Reload on file change (done in Server and sessions).
 - [x] Glob syntax check of rule patterns (done in Tools and permissions).
 - [x] `[permissions.allow|ask|deny]` tables, `[[permissions.rules]]`,
@@ -30,7 +30,7 @@ Milestones and their order: [`implementation.md`](implementation.md).
 
 ## Shell completion
 
-- [x] `clai completion [SHELL]` with dynamic completion (`COMPLETE=<shell>`).
+- [x] `codeagent completion [SHELL]` with dynamic completion (`COMPLETE=<shell>`).
 - [x] `--model` completes configured models; paths for `--config`, `-C`, `DIR`.
 - [x] Session names for `attach`, `kill`, `send`, `chat` (Server and sessions).
 
@@ -66,7 +66,7 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [x] `Agent::run_turn`: requests, streaming, tool calls in order, results
       in one message, every call with one result.
 - [x] Permission and limit questions through `Asker`; answers checked,
-      wrong ones rejected; `PolicyAsker` for `clai run`.
+      wrong ones rejected; `PolicyAsker` for `codeagent run`.
 - [x] Stop reasons, empty answers, cut tool calls.
 - [x] Cancellation while streaming, waiting, running; provider errors,
       `ContextTooLong`.
@@ -77,14 +77,14 @@ Milestones and their order: [`implementation.md`](implementation.md).
 
 ## One-shot mode
 
-- [x] `clai run`, `clai TASK...`: task words or `-` from stdin, `-C`,
+- [x] `codeagent run`, `codeagent TASK...`: task words or `-` from stdin, `-C`,
       `--model`, `--yes`, `--no-ask`.
 - [x] Final answer on stdout; tool lines, model text, notices and errors
       on stderr; `tui.symbols`.
 - [x] Questions on the terminal (`LineAsker`); policies without one.
 - [x] Exit codes; `Ctrl-C` (130), `SIGTERM` and `SIGHUP` cancel the turn.
 - [x] End-to-end tests against a local `openai-compatible` server.
-- [x] Colour and the `v` pager in question text (done in `clai chat`).
+- [x] Colour and the `v` pager in question text (done in `codeagent chat`).
 - [ ] An end-to-end test of terminal questions through a pseudo-terminal.
 
 ## Server and sessions
@@ -97,17 +97,17 @@ Milestones and their order: [`implementation.md`](implementation.md).
       questions to answering clients, first answer counts, `kill`,
       `rename`, `set_model`; a failed session ends alone.
 - [x] Configuration reload (polled every 2 s), notices to clients.
-- [x] `clai new -d`, `ls`, `kill`, `send`, `chat` (interactive, `--list`,
+- [x] `codeagent new -d`, `ls`, `kill`, `send`, `chat` (interactive, `--list`,
       script form), `server`, `server stop`, `server status`.
 - [x] Tests: in-process server with scripted providers; the commands as
       processes against a local model server.
-- [x] `clai chat [NAME]`: conversation in the terminal (new session or
+- [x] `codeagent chat [NAME]`: conversation in the terminal (new session or
       attach, history on attach, streamed text, inline questions,
       `/` commands, `Ctrl-C` cancel, `Ctrl-D` detach); the old mode is
-      `clai chat --questions`.
-- [ ] Line editing with history in `clai chat` (e.g. `rustyline`).
-- [x] `clai`, `clai new` and `clai attach` with the TUI (done in TUI core).
-- [ ] An end-to-end test of `clai chat` through a pseudo-terminal (colour,
+      `codeagent chat --questions`.
+- [ ] Line editing with history in `codeagent chat` (e.g. `rustyline`).
+- [x] `codeagent`, `codeagent new` and `codeagent attach` with the TUI (done in TUI core).
+- [ ] An end-to-end test of `codeagent chat` through a pseudo-terminal (colour,
       pager).
 
 ## Session persistence
@@ -117,7 +117,7 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [x] History journal and restore in the agent; allow rules kept.
 - [x] Saved state in the server: lazy resume, `kill` deletes, `stop` and
       idle exit keep sessions; a failed session becomes saved.
-- [x] `clai export`, `clai import`, `clai chat NAME --model`; protocol 2.
+- [x] `codeagent export`, `codeagent import`, `codeagent chat NAME --model`; protocol 2.
 - [x] Tests: store, in-process restarts, binary resume.
 - [ ] Bound the event log (in memory and on disk) for very long sessions.
 
@@ -133,24 +133,24 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [x] Permission and limit prompts; rejected answers; answered elsewhere.
 - [x] Cancel, double `Ctrl-C`, `Ctrl-D`, session ended, reconnect for 10 s.
 - [x] `/help`, `/detach`, `/quit`, `/model ARG`, `/rename`, `/kill`.
-- [x] `clai`, `clai new`, `clai attach`; exit codes and the detach line.
+- [x] `codeagent`, `codeagent new`, `codeagent attach`; exit codes and the detach line.
 - [ ] Manual run in kitty or foot (`Shift-Enter`, mouse); RFC 0001 and 0002
       are marked `done` already.
 - [ ] A pseudo-terminal end-to-end test in the test suite (start, `Ctrl-D`,
-      detach line, session still in `clai ls`).
+      detach line, session still in `codeagent ls`).
 - [ ] Measure the full replay on a long session; paged loading if too slow.
 - [ ] `Ctrl-Z` suspends (restore, `SIGTSTP`, set up again on `SIGCONT`).
 
 ## Session improvements
 
 - [x] Token totals: counted, saved, summed from the log on resume; the TUI
-      session row, `/usage` in `clai chat`, `clai ls --json`.
+      session row, `/usage` in `codeagent chat`, `codeagent ls --json`.
 - [x] Model change: `from` in `model_changed`, right notice on replay, saved
       sessions logged, no notice for the same model.
 - [x] `models` request, protocol 3; the TUI takes context windows from it.
 - [x] Model picker: `Ctrl-O`, `/model`, filter, marks.
 - [x] Make a model the default from the picker (`Space` tick), `/model NAME
-      --default`, `clai models --set-default` (RFC 0021).
+      --default`, `codeagent models --set-default` (RFC 0021).
 - [ ] The TUI asks for the server's models only on opening the picker and after a
       reload, as RFC 0003 says, so a TUI with another `--config` has its own
       windows until then. Decide whether to ask at start and after a reconnect.
@@ -172,8 +172,8 @@ Milestones and their order: [`implementation.md`](implementation.md).
       when the attached session ended.
 - [x] New session: `/new [NAME]` and `n` with the model picker on
       `default_model`.
-- [x] `clai attach` without a name and several sessions opens the list.
-- [x] `clai chat`: `/sessions`, `/attach NAME`, `/new [NAME] [MODEL]`, `/models`.
+- [x] `codeagent attach` without a name and several sessions opens the list.
+- [x] `codeagent chat`: `/sessions`, `/attach NAME`, `/new [NAME] [MODEL]`, `/models`.
 - [ ] A pseudo-terminal test of switching in the real TUI (part of the TUI
       core pseudo-terminal test above).
 
@@ -197,7 +197,7 @@ Milestones and their order: [`implementation.md`](implementation.md).
       a saved session (RFC 0007).
 - [x] `retry` event and notice.
 - [x] `session_status` request, protocol 4.
-- [x] `/status [NAME]` in the TUI (live, scrollable) and in `clai chat`.
+- [x] `/status [NAME]` in the TUI (live, scrollable) and in `codeagent chat`.
 
 ## Syntax highlighting (RFC 0017)
 
@@ -208,7 +208,7 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [x] Code blocks, diffs (old and new side apart), new files, commands.
 - [ ] TOML, TypeScript and other grammars (`two-face`; RFC 0017, open
       question 2).
-- [ ] `clai chat` and `clai run`: highlighted diffs and code blocks.
+- [ ] `codeagent chat` and `codeagent run`: highlighted diffs and code blocks.
 - [ ] Look at the colours in a real terminal, each bundled theme.
 
 ## Language server tools (RFC 0019)
@@ -248,7 +248,7 @@ Milestones and their order: [`implementation.md`](implementation.md).
       protocol 7.
 - [x] Status box tabs; `/stats [7d|30d|all]` with Totals, Models and the
       chart of tokens per day.
-- [x] `/stats` in `clai chat`.
+- [x] `/stats` in `codeagent chat`.
 - [ ] Keep the tokens of deleted sessions (RFC 0014, open question 1).
 
 ## Security hardening (RFC 0010)
@@ -259,12 +259,12 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [x] System prompt: tool output is data; denied files are not reached
       another way.
 
-## Reports from clai run (RFC 0027)
+## Reports from codeagent run (RFC 0027)
 
 - [x] `report` tool, offered only with `--report`; checked arguments.
-- [x] `clai run --report[=text|json]`: facts and tool calls from the
+- [x] `codeagent run --report[=text|json]`: facts and tool calls from the
       events, a second request when no report came, exit codes.
-- [x] `clai run` reads the task from a pipe without `-`.
+- [x] `codeagent run` reads the task from a pipe without `-`.
 - [ ] Try `--report` with real models (Anthropic, OpenAI, a local one):
       do they call `report` without the second request?
 - [ ] `--save` to keep the run as a saved session (RFC 0027, open question).
@@ -284,17 +284,17 @@ Milestones and their order: [`implementation.md`](implementation.md).
 
 ## Continue the last session (RFC 0025)
 
-- [x] `clai -c`, `clai chat -c`: the last session of the directory, or a
-      new one with a note; `clai send -c`: fails without one.
+- [x] `codeagent -c`, `codeagent chat -c`: the last session of the directory, or a
+      new one with a note; `codeagent send -c`: fails without one.
 
 ## Skills (RFC 0023)
 
 - [x] `SKILL.md` format and checks; seven default directories and
-      `[skills] dirs`, priority and shadowing; `clai skills [--json]`.
+      `[skills] dirs`, priority and shadowing; `codeagent skills [--json]`.
 - [x] Active skills per session: prompt section, read-only directories,
       `skills_changed` in the log, kept text on resume; protocol 9.
 - [x] TUI `/skills` box and `/skills NAME`, value list, status box line.
-- [x] `/skills` in `clai chat`; `clai run --skill`, `clai new --skill`.
+- [x] `/skills` in `codeagent chat`; `codeagent run --skill`, `codeagent new --skill`.
 - [ ] Tab completion of skill names for `--skill`.
 - [ ] Try the box with real skill directories of OpenCode and Claude Code.
 
@@ -313,8 +313,8 @@ Milestones and their order: [`implementation.md`](implementation.md).
       answer; `[permissions] ask_user`; protocol 6.
 - [x] Question kind `ask_user` with `reply`, `decline`, `cancel`, checked by
       the server; counted in `/status`.
-- [x] Text dialog in `clai chat` (also `--questions`, `decline` in the
-      script form) and `clai run` on a terminal.
+- [x] Text dialog in `codeagent chat` (also `--questions`, `decline` in the
+      script form) and `codeagent run` on a terminal.
 - [x] TUI question box: options, ticks, typed text, review page, skip.
 - [ ] Keep what was chosen in the box when switching sessions and back.
 - [ ] The question hides context and typed text on small or long
@@ -329,7 +329,7 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [x] Marks: `Space`, `a`; one question for all marked; a result line once
       all `kill`s are answered.
 - [x] Filter: `/` with text and time words (`>7d`, `<1h`).
-- [ ] `clai ls`: `USED` instead of `AGE` too (RFC 0011, open question 3).
+- [ ] `codeagent ls`: `USED` instead of `AGE` too (RFC 0011, open question 3).
 
 ## Activity line (RFC 0015)
 
@@ -339,12 +339,12 @@ Milestones and their order: [`implementation.md`](implementation.md).
       open; stalled colour after 30 s.
 - [x] Start time of a running turn from `session_status` after an attach.
 - [x] `tui.activity` (`playful`, `plain`, `off`), in `/settings`.
-- [ ] `clai chat`: a spinner before the first text (RFC 0015, out of scope).
+- [ ] `codeagent chat`: a spinner before the first text (RFC 0015, out of scope).
 - [ ] Custom verb lists, `tui.activity_words` (RFC 0015, open question 3).
 
 ## Commit messages (RFC 0013)
 
-- [x] `clai commit`: staged changes only, from the repository of `DIR`;
+- [x] `codeagent commit`: staged changes only, from the repository of `DIR`;
       `--staged` removed.
 - [x] Git without programs from the repository's config; size budget;
       protected files named only.
@@ -364,7 +364,7 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [ ] B, the rest: agent split, shared chat answering, `paths`, `signals`.
 - [x] The command layer (RFC 0009): `Execute` and one dispatch, `Context`,
       `command::common`, `text::sessions`, `output::note` and `columns`,
-      `clai run` in named parts.
+      `codeagent run` in named parts.
 - [ ] C: shared test tools (model server, `Env`, fake provider), split
       server tests.
 - [ ] D (to decide): split `SessionEvent`, typed store errors, one text
@@ -375,7 +375,7 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [ ] TUI sessions and settings: the rest (syntax highlighting; a server notice
       for session state changes, a new protocol version, in place of polling
       `list`)
-- [ ] Commit: the TUI `/commit` dialog (`clai commit` is built, RFC 0013)
+- [ ] Commit: the TUI `/commit` dialog (`codeagent commit` is built, RFC 0013)
 - [ ] Context management (history trimming of old tool results: RFC 0008,
       draft; the rest needs `spec/context.md`)
 - [x] Language server tools: `lsp` tool, `[lsp]`, diagnostics after edits

@@ -14,7 +14,7 @@ Requests no longer send the whole history: when a request is built, the
 result of a tool call from an older answer is replaced with a one-line
 placeholder, so what the model reads each time grows with the turn being
 worked on, not with the whole session. The history, the saved session, the
-events, the TUI and `clai chat` keep every result in full; only the copy
+events, the TUI and `codeagent chat` keep every result in full; only the copy
 that goes to the provider is shortened.
 
 ## Motivation
@@ -103,9 +103,9 @@ anywhere:
 
 - The in-memory history keeps every result as it has kept it.
 - The saved session (`history.jsonl`, `Record::Full`), the events of a
-  turn, replay on attach, `clai export` / `clai import` and resume are
+  turn, replay on attach, `codeagent export` / `codeagent import` and resume are
   unchanged; protocol and event log format stay as they are.
-- The TUI, `clai chat` and the permission questions show the full result
+- The TUI, `codeagent chat` and the permission questions show the full result
   as before.
 - The token totals count what the provider reports, so they fall on
   their own.

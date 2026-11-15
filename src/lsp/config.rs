@@ -10,7 +10,7 @@ use serde_json::Value;
 use super::server::Setup;
 use crate::config::{Lsp, LspServer};
 
-/// A server `clai` knows without configuration.
+/// A server `codeagent` knows without configuration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Builtin {
     pub name: &'static str,

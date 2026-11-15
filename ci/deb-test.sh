@@ -22,43 +22,43 @@ fail() {
 export DEBIAN_FRONTEND=noninteractive
 apt-get install -y --no-install-recommends "$deb"
 
-files="/usr/bin/clai
-/usr/share/bash-completion/completions/clai
-/usr/share/zsh/vendor-completions/_clai
-/usr/share/fish/vendor_completions.d/clai.fish"
+files="/usr/bin/codeagent
+/usr/share/bash-completion/completions/codeagent
+/usr/share/zsh/vendor-completions/_codeagent
+/usr/share/fish/vendor_completions.d/codeagent.fish"
 for f in $files; do
     [ -e "$f" ] || fail "$f is not installed"
 done
 # Slim images leave out /usr/share/doc when installing, so the documents are
 # checked in the package itself.
-docs="./usr/share/doc/clai/README.md
-./usr/share/doc/clai/changelog.gz
-./usr/share/doc/clai/changelog.Debian.gz
-./usr/share/doc/clai/copyright"
+docs="./usr/share/doc/codeagent/README.md
+./usr/share/doc/codeagent/changelog.gz
+./usr/share/doc/codeagent/changelog.Debian.gz
+./usr/share/doc/codeagent/copyright"
 listing=$(dpkg-deb -c "$deb" | awk '{print $6}')
 for f in $docs; do
     printf '%s\n' "$listing" | grep -qxF "$f" || fail "${f#.} is not in the package"
 done
 
 version=$(dpkg-deb -f "$deb" Version)
-shown=$(clai --version)
+shown=$(codeagent --version)
 upstream=$(echo "${version%-*}" | sed 's/~/-/')
 case "$shown" in
-    "clai $upstream"*) echo "ci: $shown" >&2 ;;
-    *) fail "clai --version says '$shown', the package is $version" ;;
+    "codeagent $upstream"*) echo "ci: $shown" >&2 ;;
+    *) fail "codeagent --version says '$shown', the package is $version" ;;
 esac
 
-grep -q 'COMPLETE="bash"' /usr/share/bash-completion/completions/clai \
-    || fail "the bash completion does not call clai"
-if grep -q '/target/' /usr/share/bash-completion/completions/clai; then
+grep -q 'COMPLETE="bash"' /usr/share/bash-completion/completions/codeagent \
+    || fail "the bash completion does not call codeagent"
+if grep -q '/target/' /usr/share/bash-completion/completions/codeagent; then
     fail "the bash completion names a build directory"
 fi
 if command -v bash >/dev/null 2>&1; then
-    bash -c '. /usr/share/bash-completion/completions/clai && complete -p clai' >/dev/null \
+    bash -c '. /usr/share/bash-completion/completions/codeagent && complete -p codeagent' >/dev/null \
         || fail "bash does not register the completion"
 fi
 
-apt-get remove -y --purge clai
+apt-get remove -y --purge codeagent
 for f in $files; do
     [ ! -e "$f" ] || fail "$f is left after removing the package"
 done

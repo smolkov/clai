@@ -1,4 +1,4 @@
-//! `clai new`, and `clai` without a command (see `spec/command.md`).
+//! `codeagent new`, and `codeagent` without a command (see `spec/command.md`).
 
 use std::path::PathBuf;
 
@@ -24,14 +24,14 @@ pub struct New {
     /// Model of the session, as PROVIDER/MODEL.
     #[arg(long, value_name = "PROVIDER/MODEL", add = ArgValueCompleter::new(complete::models))]
     pub model: Option<String>,
-    /// Turn on skill NAME in the session; repeatable. `clai skills` lists
+    /// Turn on skill NAME in the session; repeatable. `codeagent skills` lists
     /// them.
     #[arg(long = "skill", value_name = "NAME")]
     pub skills: Vec<String>,
     /// Workspace. Default: the current directory.
     #[arg(value_hint = ValueHint::DirPath)]
     pub dir: Option<PathBuf>,
-    /// `clai --continue`: attach to the last session of the workspace if
+    /// `codeagent --continue`: attach to the last session of the workspace if
     /// there is one (RFC 0025).
     #[arg(skip)]
     pub resume: bool,

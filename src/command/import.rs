@@ -1,4 +1,4 @@
-//! `clai import` (see `spec/command.md`).
+//! `codeagent import` (see `spec/command.md`).
 
 use std::path::PathBuf;
 
@@ -12,7 +12,7 @@ use crate::protocol::{Payload, Request};
 
 #[derive(Debug, Args)]
 pub struct Import {
-    /// File written by `clai export`.
+    /// File written by `codeagent export`.
     #[arg(value_hint = ValueHint::FilePath)]
     pub file: PathBuf,
     /// Session name. Default: the name in the file, made unique.

@@ -4,7 +4,7 @@
 #   ci/build.sh TARGET
 #
 # Linux targets are musl and must come out static. A cross build (another
-# architecture) uses `cargo zigbuild`; set CLAI_BUILDER=cargo or zigbuild to
+# architecture) uses `cargo zigbuild`; set CODEAGENT_BUILDER=cargo or zigbuild to
 # choose. The C parts of the crypto library (aws-lc-sys) need a C compiler
 # for the target: musl-gcc (Debian/Ubuntu: musl-tools) or zig.
 # Prints the path of the binary on standard output.
@@ -18,13 +18,13 @@ if command -v rustup >/dev/null 2>&1; then
     rustup target add "$target" >&2
 fi
 
-if [ -z "${CLAI_BUILD_COMMIT:-}" ] && git rev-parse --git-dir >/dev/null 2>&1; then
-    CLAI_BUILD_COMMIT=$(git rev-parse --short=7 HEAD)
-    CLAI_BUILD_DATE=$(git log -1 --format=%cs HEAD)
-    export CLAI_BUILD_COMMIT CLAI_BUILD_DATE
+if [ -z "${CODEAGENT_BUILD_COMMIT:-}" ] && git rev-parse --git-dir >/dev/null 2>&1; then
+    CODEAGENT_BUILD_COMMIT=$(git rev-parse --short=7 HEAD)
+    CODEAGENT_BUILD_DATE=$(git log -1 --format=%cs HEAD)
+    export CODEAGENT_BUILD_COMMIT CODEAGENT_BUILD_DATE
 fi
 
-builder=${CLAI_BUILDER:-}
+builder=${CODEAGENT_BUILDER:-}
 if [ -z "$builder" ]; then
     case "$target" in
         *-linux-musl) if runs_here "$target"; then builder=cargo; else builder=zigbuild; fi ;;
@@ -38,20 +38,20 @@ case "$builder:$target" in
         cc_var="CC_$(printf '%s' "$target" | tr '-' '_')"
         if eval "[ -z \"\${$cc_var:-}\" ]"; then
             command -v musl-gcc >/dev/null 2>&1 \
-                || fail "musl-gcc not found; install musl-tools, or set $cc_var or CLAI_BUILDER=zigbuild"
+                || fail "musl-gcc not found; install musl-tools, or set $cc_var or CODEAGENT_BUILDER=zigbuild"
             eval "export $cc_var=musl-gcc"
         fi
         ;;
 esac
 
-say "building $target with $builder (${CLAI_BUILD_COMMIT:-no commit})"
+say "building $target with $builder (${CODEAGENT_BUILD_COMMIT:-no commit})"
 case "$builder" in
     cargo) cargo build --release --locked --target "$target" >&2 ;;
     zigbuild) cargo zigbuild --release --locked --target "$target" >&2 ;;
-    *) fail "CLAI_BUILDER must be cargo or zigbuild, not $builder" ;;
+    *) fail "CODEAGENT_BUILDER must be cargo or zigbuild, not $builder" ;;
 esac
 
-bin="target/$target/release/clai"
+bin="target/$target/release/codeagent"
 [ -x "$bin" ] || fail "$bin was not built"
 
 case "$target" in

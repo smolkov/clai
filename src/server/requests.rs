@@ -296,7 +296,7 @@ impl Shared {
             Ok(built) => built,
             Err(e) if model.is_none() => {
                 return Err(ErrorReply::usage(format!(
-                    "cannot resume {}: {}; choose another model: clai chat {} --model PROVIDER/MODEL",
+                    "cannot resume {}: {}; choose another model: codeagent chat {} --model PROVIDER/MODEL",
                     meta.name, e.message, meta.name
                 )));
             }
@@ -350,7 +350,7 @@ impl Shared {
     /// them; the default is the one of `workspace` when it is given.
     fn models(&self, workspace: Option<&Path>) -> Reply {
         // Models come only from the user file; without a workspace any will
-        // do, and the default is the user file's or `CLAI_MODEL`.
+        // do, and the default is the user file's or `CODEAGENT_MODEL`.
         let temp = self.load.env.temp_dir.clone();
         let config = self.config(workspace.unwrap_or(&temp))?;
         let mut models = Vec::new();

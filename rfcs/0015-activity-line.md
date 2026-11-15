@@ -45,7 +45,7 @@ In:
 
 Out:
 
-- `clai chat`: it prints text as it comes, and a line rewritten in place
+- `codeagent chat`: it prints text as it comes, and a line rewritten in place
   would mix with streamed output. It can follow, for example as a spinner
   only before the first text.
 - New protocol events. The TUI already gets everything it needs: `state`,

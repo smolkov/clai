@@ -49,7 +49,7 @@ const HELLO_TIMEOUT: Duration = Duration::from_secs(10);
 pub struct Options {
     /// The runtime directory with the socket.
     pub dir: PathBuf,
-    /// Where sessions are saved: `$XDG_STATE_HOME/clai/sessions`.
+    /// Where sessions are saved: `$XDG_STATE_HOME/codeagent/sessions`.
     pub sessions_dir: PathBuf,
     /// Exit after this long without sessions and clients.
     pub idle: Duration,
@@ -464,7 +464,7 @@ async fn hello(
 pub fn version_mismatch(server: u32, client: &str) -> String {
     format!(
         "the server speaks protocol version {server} and this client version {client}; \
-         restart the server with `clai server stop`"
+         restart the server with `codeagent server stop`"
     )
 }
 
