@@ -7,6 +7,8 @@ notes are taken from that section by `ci/notes.sh`.
 
 ## Unreleased
 
+## 0.5.0 - 2026-11-15
+
 - `clai` is now `codeagent`: the command, the crate, the Debian package and
   the release files. The variables are `CODEAGENT_MODEL`, `CODEAGENT_THEME`
   and `CODEAGENT_LOG`; the directories `~/.config/codeagent` and
