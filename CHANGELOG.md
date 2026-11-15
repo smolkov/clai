@@ -7,6 +7,8 @@ notes are taken from that section by `ci/notes.sh`.
 
 ## Unreleased
 
+## 0.4.0 - 2026-11-15
+
 - Reports (RFC 0027): `clai run --report` prints a report instead of the
   last answer, as Markdown or with `--report=json` as JSON: the status,
   summary, findings and follow-ups the model hands in with the new
