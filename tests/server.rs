@@ -97,6 +97,10 @@ fn answer(mut stream: TcpStream, body: &str) {
 /// Stops its server when dropped.
 struct Env {
     root: PathBuf,
+    /// The runtime directory, short: the socket path in it must fit in
+    /// `sun_path` (108 bytes), and the target directory can be deep
+    /// (`target/package/codeagent-X.Y.Z/target/tmp` in `cargo package`).
+    run: PathBuf,
 }
 
 impl Env {
@@ -122,7 +126,9 @@ context_window = 100000
 "#
         );
         fs::write(root.join("config/codeagent/config.toml"), config).unwrap();
-        Env { root }
+        let run = std::env::temp_dir().join(format!("ca-{}-{name}", std::process::id()));
+        let _ = fs::remove_dir_all(&run);
+        Env { root, run }
     }
 
     fn ws(&self) -> PathBuf {
@@ -136,7 +142,7 @@ context_window = 100000
             .env("HOME", &self.root)
             .env("XDG_CONFIG_HOME", self.root.join("config"))
             .env("XDG_STATE_HOME", self.root.join("state"))
-            .env("XDG_RUNTIME_DIR", self.root.join("run"))
+            .env("XDG_RUNTIME_DIR", &self.run)
             .env("LANG", "C.UTF-8")
             .env_remove("LC_ALL")
             .env_remove("LC_CTYPE")
@@ -195,6 +201,7 @@ context_window = 100000
 impl Drop for Env {
     fn drop(&mut self) {
         let _ = self.run(&["server", "stop", "--force"]);
+        let _ = fs::remove_dir_all(&self.run);
     }
 }
 

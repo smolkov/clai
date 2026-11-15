@@ -468,7 +468,7 @@ A tag `vX.Y.Z` releases; the pipelines do the rest (RFC 0020):
    GitHub and to the GitLab mirror.
 4. GitHub checks, builds all targets, packs, tests the Debian packages,
    and publishes the release with the notes, `SHA256SUMS` and provenance;
-   then `cargo publish`. GitLab builds the Linux files, uploads them to its
+   then `cargo publish`, once crates.io is set up (below). GitLab builds the Linux files, uploads them to its
    package registry and creates its release.
 
 A version with `-` (`0.2.0-rc.1`) is a pre-release: released on GitHub as
@@ -483,7 +483,9 @@ crates.io, once:
   repository `smolkov/codeagent`, workflow `release.yml`, environment
   `crates-io`. Create the `crates-io` environment in the GitHub repository
   (with yourself as required reviewer, if each publish should wait for
-  you). Later releases publish without a stored token.
+  you). Then set the repository variable `CRATES_IO` to `true`
+  (`gh variable set CRATES_IO --body true`); until then the release skips
+  crates.io. Later releases publish without a stored token.
 
 ## Specification
 

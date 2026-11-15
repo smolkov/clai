@@ -151,9 +151,11 @@ jobs:
   # The first version is published by hand (see readme.md, "Release"); then
   # crates.io Trusted Publishing is set up for this repository, this file and
   # the crates-io environment, and this job publishes without a stored token.
+  # It runs only once the repository variable CRATES_IO is "true", so a
+  # release does not fail before crates.io is set up.
   publish:
     needs: [version, release]
-    if: needs.version.outputs.prerelease == 'false'
+    if: needs.version.outputs.prerelease == 'false' && vars.CRATES_IO == 'true'
     runs-on: ubuntu-24.04
     environment: crates-io
     permissions:
