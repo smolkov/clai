@@ -1,22 +1,20 @@
 //! `clai server`, `clai server stop`, `clai server status` (see `spec/command.md`).
 
 use std::io::{self, BufRead, IsTerminal, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::Duration;
 
 use clap::{Args, Subcommand};
 use tokio::signal::unix::{SignalKind, signal};
 use tokio_util::sync::CancellationToken;
 
-use super::{Context, Execute};
+use super::{Context, Execute, Runtime};
 use crate::client::{Client, Connect, unexpected};
-use crate::config::{Environment, LoadOptions};
+use crate::config::LoadOptions;
 use crate::error::{Error, Result};
-use crate::log;
 use crate::output::write_stdout;
 use crate::protocol::{Payload, Request};
-use crate::runtime::current_thread;
-use crate::server::{self, Options, runtime_dir};
+use crate::server::{self, Options};
 
 /// How long `stop` waits for the server to end its sessions.
 const STOP_TIMEOUT: Duration = Duration::from_secs(30);
@@ -52,40 +50,32 @@ impl Execute for Server {
     }
 
     fn run(&self, ctx: &Context) -> Result<()> {
-        let config = ctx.config();
         match self.action {
-            None => foreground(config, self.detached),
-            Some(ServerAction::Stop { force }) => stop(config, force),
-            Some(ServerAction::Status) => status(config),
+            None => foreground(ctx, self.detached),
+            Some(ServerAction::Stop { force }) => stop(ctx, force),
+            Some(ServerAction::Status) => status(ctx),
         }
     }
 }
 
 /// Runs the server until it is stopped, idle, or gets `SIGINT`/`SIGTERM`.
-fn foreground(config: Option<&Path>, detached: bool) -> Result<()> {
+fn foreground(ctx: &Context, detached: bool) -> Result<()> {
     if detached {
         // Fails only if already a group leader; then it stays where it is.
         let _ = nix::unistd::setsid();
     }
-    // `CLAI_MODEL` and `CLAI_THEME` come from each client, not from the
-    // environment the server happened to start in.
-    let env = Environment {
-        model: None,
-        theme: None,
-        ..Environment::from_process()
-    };
-    let sessions_dir = log::state_dir()
-        .ok_or_else(|| {
-            Error::Usage("cannot save sessions: neither XDG_STATE_HOME nor HOME is set".to_owned())
-        })?
-        .join("sessions");
+    let sessions_dir = ctx.paths.sessions.clone().ok_or_else(|| {
+        Error::Usage("cannot save sessions: neither XDG_STATE_HOME nor HOME is set".to_owned())
+    })?;
     let options = Options::new(
-        runtime_dir(),
+        ctx.paths.runtime.clone(),
         sessions_dir,
         LoadOptions {
-            config_file: config.map(Path::to_path_buf),
+            config_file: ctx.config_file.clone(),
             workspace: PathBuf::new(),
-            env,
+            // `CLAI_MODEL` and `CLAI_THEME` come from each client, not from
+            // the environment the server happened to start in.
+            env: ctx.startup.for_server(),
         },
     );
     let stop = options.stop.clone();
@@ -121,9 +111,9 @@ fn watch_signals(stop: CancellationToken, detached: bool) -> Result<()> {
     Ok(())
 }
 
-fn status(config: Option<&Path>) -> Result<()> {
-    let result = current_thread()?.block_on(async {
-        let mut client = Client::connect(&Connect::cli(config, false)).await?;
+fn status(ctx: &Context) -> Result<()> {
+    let result = ctx.block_on(Runtime::Client, async {
+        let mut client = Client::connect(&Connect::cli(ctx, false)).await?;
         match client.request(Request::Status).await? {
             Payload::Status(status) => Ok(status),
             other => Err(unexpected(&other)),
@@ -151,9 +141,9 @@ fn status(config: Option<&Path>) -> Result<()> {
     }
 }
 
-fn stop(config: Option<&Path>, force: bool) -> Result<()> {
-    current_thread()?.block_on(async {
-        let mut client = Client::connect(&Connect::cli(config, false)).await?;
+fn stop(ctx: &Context, force: bool) -> Result<()> {
+    ctx.block_on(Runtime::Client, async {
+        let mut client = Client::connect(&Connect::cli(ctx, false)).await?;
         // Sessions stay saved; only work in progress is interrupted.
         let busy = match client.request(Request::Status).await? {
             Payload::Status(status) => status.busy,

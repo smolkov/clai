@@ -26,7 +26,7 @@ impl Execute for Models {
     }
 
     fn run(&self, ctx: &Context) -> Result<()> {
-        let workspace = std::env::current_dir().map_err(Error::io("current directory"))?;
+        let workspace = ctx.workspace(None)?;
         let config = ctx.load(workspace.clone())?;
         if let Some(model) = &self.set_default {
             let options = ctx.load_options(workspace);
@@ -41,7 +41,7 @@ impl Execute for Models {
             }
             return Ok(());
         }
-        let getenv = |name: &str| std::env::var(name).ok();
+        let getenv = ctx.startup.getenv();
         let text = if self.json {
             render_json(&config, getenv)
         } else {

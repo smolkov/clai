@@ -36,6 +36,9 @@ Statements marked **(assumption)** need a decision from the user.
   when standard error is a terminal.
 - Commands that open the TUI need a terminal on standard input and output;
   otherwise they fail with exit code `2`.
+- The workspace (`DIR`, `-C DIR`, or the current directory) must be a
+  directory; it is used absolute and with links resolved, as the server
+  keeps a session's (RFC 0026).
 - Commands that use sessions (`attach`, `ls`, `kill`, `send`, `chat`, `new`) start
   the server if it is not running (see [`sessions.md`](sessions.md),
   "Server"). `models`, `commit` and `run` work without the server, and

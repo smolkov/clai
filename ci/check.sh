@@ -7,5 +7,7 @@
 
 say "cargo fmt"
 cargo fmt --all -- --check
+say "environment reads"
+sh "$(dirname -- "$0")/env-check.sh"
 say "cargo clippy"
 cargo clippy --all-targets --locked -- -D warnings

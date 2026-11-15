@@ -43,6 +43,9 @@ const FOOTER: u16 = 2;
 const FOOTER_INDENT: u16 = 2;
 /// Rows of the conversation kept above a tall question from the model.
 const KEEP_ABOVE_ASK: u16 = 3;
+/// Rows a box at the bottom gets before rows are kept for the conversation
+/// above it, on a small screen.
+const PANEL_MIN: u16 = 8;
 
 /// Where the parts of the screen go.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -54,10 +57,63 @@ pub struct Areas {
     /// A question from the model, in the place of the input (RFC 0022):
     /// its rows between the rule with its title and the rule below.
     pub ask: Option<Rect>,
-    /// No rows while a question from the model covers it.
+    /// A box a command opened, in the place of the input (RFC 0024): its
+    /// rows between the rule with its title and the rule below.
+    pub panel: Option<Rect>,
+    /// The settings on the whole screen (RFC 0024): the rows between the
+    /// rule with the title at the top and the rule above the footer.
+    pub screen: Option<Rect>,
+    /// No rows while a question from the model or a box covers it.
     pub input: Rect,
     pub status: Rect,
     pub info: Rect,
+}
+
+/// The box at the bottom: the one that takes the keys, as `App` routes
+/// them. Settings and the details view take the whole screen instead.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Panel {
+    Status,
+    Lsp,
+    Themes,
+    Picker,
+    Skills,
+    Sessions,
+    Dialog,
+}
+
+/// The box at the bottom, if one is open.
+pub fn panel(app: &App) -> Option<Panel> {
+    if app.status_box.is_some() {
+        Some(Panel::Status)
+    } else if app.lsp_box.is_some() {
+        Some(Panel::Lsp)
+    } else if app.theme_list.is_some() {
+        Some(Panel::Themes)
+    } else if app.picker.is_some() {
+        Some(Panel::Picker)
+    } else if app.skills_box.is_some() {
+        Some(Panel::Skills)
+    } else if app.session_list.is_some() {
+        Some(Panel::Sessions)
+    } else if app.dialog.is_some() {
+        Some(Panel::Dialog)
+    } else {
+        None
+    }
+}
+
+/// The rows the open box wants for its text at `width` cells.
+fn panel_rows(app: &App, panel: Panel, width: usize) -> usize {
+    match panel {
+        Panel::Status => status_box::wanted(app, width),
+        Panel::Lsp => lsp::wanted(app, width),
+        Panel::Themes => themes::wanted(app, width),
+        Panel::Picker => picker::wanted(app, width),
+        Panel::Skills => skills::wanted(app, width),
+        Panel::Sessions => sessions::wanted(app, width),
+        Panel::Dialog => popup::wanted(app),
+    }
 }
 
 /// How far the status box can scroll on a screen of `size`.
@@ -97,11 +153,55 @@ pub fn areas(app: &App, size: Rect) -> Option<Areas> {
         height: 1,
         ..footer
     };
+    // The settings take the screen; a theme list opened from them lies at
+    // its bottom.
+    let screen = app
+        .settings_box
+        .is_some()
+        .then(|| Rect::new(x, size.y + 1, width, (footer.y - size.y).saturating_sub(2)));
+    let keep = KEEP_ABOVE_ASK.min(size.height - MIN_HEIGHT);
+    if let Some(open) = panel(app) {
+        let rows = u16::try_from(panel_rows(app, open, usize::from(width))).unwrap_or(u16::MAX);
+        // The rows between the two rules; the conversation keeps `keep`
+        // rows above, unless the box would get fewer than `PANEL_MIN`.
+        let free = (footer.y - size.y).saturating_sub(2).max(1);
+        let most = free.saturating_sub(keep).max(rows.min(PANEL_MIN)).min(free);
+        let height = rows.clamp(1, most.max(1));
+        let panel = Rect::new(x, footer.y - 1 - height, width, height);
+        let above = if screen.is_some() {
+            0
+        } else {
+            (panel.y - 1).saturating_sub(size.y)
+        };
+        return Some(Areas {
+            conversation: Rect::new(x, size.y, width, above),
+            activity: None,
+            prompt: None,
+            ask: None,
+            panel: Some(panel),
+            screen,
+            input: Rect::new(x, panel.y, width, 0),
+            status,
+            info,
+        });
+    }
+    if let Some(screen) = screen {
+        return Some(Areas {
+            conversation: Rect::new(x, size.y, width, 0),
+            activity: None,
+            prompt: None,
+            ask: None,
+            panel: None,
+            screen: Some(screen),
+            input: Rect::new(x, footer.y - 1, width, 0),
+            status,
+            info,
+        });
+    }
     if let Some(rows) = ask::height(app, usize::from(width)) {
         // The question takes the rows of the input and the rules around
         // it; 3 rows of the conversation stay above, but not on the
         // smallest screens.
-        let keep = KEEP_ABOVE_ASK.min(size.height - MIN_HEIGHT);
         let most = (footer.y - size.y).saturating_sub(2 + keep).max(1);
         let height = u16::try_from(rows).unwrap_or(most).clamp(1, most);
         let ask = Rect::new(x, footer.y - 1 - height, width, height);
@@ -111,6 +211,8 @@ pub fn areas(app: &App, size: Rect) -> Option<Areas> {
             activity: None,
             prompt: None,
             ask: Some(ask),
+            panel: None,
+            screen: None,
             input: Rect::new(x, ask.y, width, 0),
             status,
             info,
@@ -142,6 +244,8 @@ pub fn areas(app: &App, size: Rect) -> Option<Areas> {
         activity,
         prompt,
         ask: None,
+        panel: None,
+        screen: None,
         input,
         status,
         info,
@@ -157,7 +261,9 @@ pub fn draw(app: &App, frame: &mut Frame<'_>) {
     };
     let look = &app.settings.look;
     let buffer = frame.buffer_mut();
-    conversation::draw(app, buffer, areas.conversation);
+    if areas.conversation.height > 0 {
+        conversation::draw(app, buffer, areas.conversation);
+    }
     if let Some(area) = areas.activity {
         activity::draw(app, buffer, area);
     }
@@ -172,7 +278,9 @@ pub fn draw(app: &App, frame: &mut Frame<'_>) {
             buffer.set_line(area.x, y, line, area.width);
         }
     }
-    if let Some(area) = areas.ask {
+    if areas.panel.is_some() || areas.screen.is_some() {
+        // A box covers the input.
+    } else if let Some(area) = areas.ask {
         ask::draw(app, frame, area);
     } else {
         let buffer = frame.buffer_mut();
@@ -185,7 +293,9 @@ pub fn draw(app: &App, frame: &mut Frame<'_>) {
     footer_row(buffer, areas.info, &info::text(app), look);
     match cursor(app, &areas) {
         Some((x, y))
-            if app.dialog.is_none()
+            if areas.panel.is_none()
+                && areas.screen.is_none()
+                && app.dialog.is_none()
                 && !app.prompt.as_ref().is_some_and(|p| p.is_ask())
                 && app.picker.is_none()
                 && app.session_list.is_none()
@@ -199,15 +309,24 @@ pub fn draw(app: &App, frame: &mut Frame<'_>) {
         }
         _ => {}
     }
-    commands::draw(app, frame, areas.conversation, areas.input.y - 1);
-    popup::draw(app, frame, size);
-    sessions::draw(app, frame, size);
-    picker::draw(app, frame, size);
-    skills::draw(app, frame, size);
-    settings::draw(app, frame, size);
-    themes::draw(app, frame, size);
-    status_box::draw(app, frame, size);
-    lsp::draw(app, frame, size);
+    if areas.panel.is_none() && areas.screen.is_none() {
+        commands::draw(app, frame, areas.conversation, areas.input.y - 1);
+    }
+    if let Some(area) = areas.screen {
+        settings::draw(app, frame, area);
+    }
+    if let Some(area) = areas.panel {
+        match panel(app) {
+            Some(Panel::Status) => status_box::draw(app, frame, area),
+            Some(Panel::Lsp) => lsp::draw(app, frame, area),
+            Some(Panel::Themes) => themes::draw(app, frame, area),
+            Some(Panel::Picker) => picker::draw(app, frame, area),
+            Some(Panel::Skills) => skills::draw(app, frame, area),
+            Some(Panel::Sessions) => sessions::draw(app, frame, area),
+            Some(Panel::Dialog) => popup::draw(app, frame, area),
+            None => {}
+        }
+    }
     details::draw(app, frame, size);
     paint(frame.buffer_mut(), look);
 }
@@ -247,6 +366,55 @@ fn too_small(frame: &mut Frame<'_>, size: Rect) {
     let y = size.height / 2;
     let area = Rect::new(size.x, size.y + y, size.width, size.height - y);
     frame.render_widget(paragraph, area);
+}
+
+/// The text area of a box at the bottom or on the whole screen, given its
+/// rows: clears them and draws the rule with the title above and the rule
+/// below, with a title at the right end of the top rule if given.
+pub(super) fn open_panel(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    (title, right): (
+        ratatui::text::Line<'static>,
+        Option<ratatui::text::Line<'static>>,
+    ),
+    look: &Look,
+) -> Rect {
+    frame.render_widget(ratatui::widgets::Clear, area);
+    let full = Rect::new(
+        area.x,
+        area.y.saturating_sub(1),
+        area.width,
+        area.height + 2,
+    );
+    let buffer = frame.buffer_mut();
+    rule(buffer, full, full.y, look);
+    rule(buffer, full, area.y + area.height, look);
+    let lead = look.symbols.rule.repeat(2);
+    let x = area.x + u16::try_from(lead.width()).unwrap_or(2);
+    let right_width = right.as_ref().map_or(0, |r| r.width());
+    let room = usize::from(area.width)
+        .saturating_sub(lead.width() + right_width + 2)
+        .max(1);
+    let title = ratatui::text::Line::from(
+        title
+            .spans
+            .into_iter()
+            .map(|mut s| {
+                if s.style == ratatui::style::Style::default() {
+                    s.style = look.styles.heading;
+                }
+                s
+            })
+            .collect::<Vec<_>>(),
+    );
+    buffer.set_line(x, full.y, &title, u16::try_from(room).unwrap_or(u16::MAX));
+    if let Some(right) = right {
+        let width = u16::try_from(right.width()).unwrap_or(0);
+        let at = (area.x + area.width).saturating_sub(width + 2);
+        buffer.set_line(at, full.y, &right, width);
+    }
+    area
 }
 
 /// A plain line across the screen with a title near its start:

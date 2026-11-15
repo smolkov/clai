@@ -7,17 +7,7 @@ use std::path::{Path, PathBuf};
 
 use crate::error::{Error, Result};
 
-/// `$XDG_RUNTIME_DIR/clai`, or `/tmp/clai-$UID` without it.
-pub fn runtime_dir() -> PathBuf {
-    match std::env::var_os("XDG_RUNTIME_DIR")
-        .map(PathBuf::from)
-        .filter(|p| p.is_absolute())
-    {
-        Some(dir) => dir.join("clai"),
-        None => std::env::temp_dir().join(format!("clai-{}", nix::unistd::getuid())),
-    }
-}
-
+/// The socket in the runtime directory `dir` (see [`crate::paths::Paths`]).
 pub fn socket_path(dir: &Path) -> PathBuf {
     dir.join("server.sock")
 }

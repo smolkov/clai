@@ -74,13 +74,13 @@ fn command(
         .map(|(_, words)| words.iter().map(|w| (*w).to_owned()).collect())
 }
 
-/// Whether `name` is an executable file in a directory of `PATH`.
-pub fn on_path(name: &str) -> bool {
+/// Whether `name` is an executable file in a directory of `path` (`PATH`).
+pub fn on_path(name: &str, path: Option<&std::ffi::OsStr>) -> bool {
     use std::os::unix::fs::PermissionsExt;
-    let Some(path) = std::env::var_os("PATH") else {
+    let Some(path) = path else {
         return false;
     };
-    std::env::split_paths(&path).any(|dir| {
+    std::env::split_paths(path).any(|dir| {
         Path::new(&dir)
             .join(name)
             .metadata()

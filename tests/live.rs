@@ -43,15 +43,18 @@ use clai::provider::{
 };
 
 fn provider(api: Api, base_url: String, key: KeySource) -> Arc<dyn Provider> {
-    from_config(&config::Provider {
-        name: "live".into(),
-        api,
-        base_url,
-        key,
-        timeout: Duration::from_secs(120),
-        max_retries: 2,
-        models: IndexMap::new(),
-    })
+    from_config(
+        &config::Provider {
+            name: "live".into(),
+            api,
+            base_url,
+            key,
+            timeout: Duration::from_secs(120),
+            max_retries: 2,
+            models: IndexMap::new(),
+        },
+        &clai::startup::Startup::from_process(),
+    )
     .unwrap()
 }
 

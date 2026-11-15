@@ -11,9 +11,6 @@ use crate::tui::style::{Colouring, Look};
 use crate::tui::themes::ThemeList;
 use crate::tui::wrap::fit;
 
-use super::popup;
-
-const WIDTH: u16 = 76;
 /// The rows that are not themes: filter, a blank line before and after the
 /// list, keys.
 const CHROME: usize = 4;
@@ -92,16 +89,22 @@ fn title(app: &App) -> String {
     }
 }
 
-pub fn draw(app: &App, frame: &mut Frame<'_>, size: Rect) {
+/// The rows the box wants at `width` cells (RFC 0024).
+pub fn wanted(app: &App, width: usize) -> usize {
+    let Some(themes) = &app.theme_list else {
+        return 0;
+    };
+    list(app, themes, width).0.len().max(1) + CHROME
+}
+
+pub fn draw(app: &App, frame: &mut Frame<'_>, area: Rect) {
     let Some(themes) = &app.theme_list else {
         return;
     };
     let look = &app.settings.look;
-    let cells = WIDTH.min(size.width.saturating_sub(4));
-    let width = usize::from(cells);
+    let width = usize::from(area.width);
     let (rows, selected) = list(app, themes, width);
-    let wanted = u16::try_from(rows.len().max(1) + CHROME).unwrap_or(u16::MAX);
-    let area = popup::open(frame, size, &title(app), cells, wanted, look);
+    let area = super::open_panel(frame, area, (Line::raw(title(app)), None), look);
     let room = usize::from(area.height).saturating_sub(CHROME).max(1);
     let first = (selected + 1).saturating_sub(room);
 

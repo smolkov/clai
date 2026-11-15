@@ -7,6 +7,18 @@ notes are taken from that section by `ci/notes.sh`.
 
 ## Unreleased
 
+- Startup (RFC 0026): the environment is read once; every workspace is
+  used with links resolved; only the server and `clai run` warn about a
+  log they cannot open; each log line names its process (`server[4242]`).
+- Syntax colours: in `atom-one-dark`, `nord` and `gruvbox-dark`, `let`,
+  `struct` and the like have the keyword colour, not the type colour; in
+  `ansi`, `struct`, `enum`, `impl` and `class` do, like `fn`. In all four,
+  type names (`struct P`, `enum E`) have the type colour; they had none.
+- Boxes at the bottom (RFC 0024): the model picker, session list, skills,
+  status, language servers, themes and help open in the place of the
+  input, at the full width, with the conversation above; the settings
+  take the whole screen.
+
 ## 0.3.1 - 2026-11-14
 
 The release of 0.3.0 did not complete: the arm64 Debian package failed its

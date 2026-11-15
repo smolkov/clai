@@ -24,8 +24,7 @@ impl Execute for Skills {
     }
 
     fn run(&self, ctx: &Context) -> Result<()> {
-        let workspace = super::common::workspace(None)?;
-        let workspace = workspace.canonicalize().unwrap_or(workspace);
+        let workspace = ctx.workspace(None)?;
         let options = ctx.load_options(workspace.clone());
         let config = crate::config::load(&options)?;
         let found = skills::find_for(&config, &workspace, &options.env);

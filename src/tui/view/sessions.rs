@@ -15,10 +15,6 @@ use crate::tui::sessions::{Mode, SessionList};
 use crate::tui::style::{Look, Symbols};
 use crate::tui::wrap::fit;
 
-use super::popup;
-
-/// The box's width, if the screen has room for it.
-const WIDTH: u16 = 76;
 /// The rows of the box that are not sessions: the heading, a blank line, the
 /// line of the step or a message, and the keys.
 const CHROME: usize = 4;
@@ -200,19 +196,23 @@ fn counts(list: &SessionList, shown: usize, rule: &str) -> String {
     parts.join(&format!(" {rule} "))
 }
 
-pub fn draw(app: &App, frame: &mut Frame<'_>, size: Rect) {
+/// The rows the box wants (RFC 0024).
+pub fn wanted(app: &App, _width: usize) -> usize {
+    app.session_list
+        .as_ref()
+        .map_or(0, |list| list.visible().len().max(1) + CHROME)
+}
+
+pub fn draw(app: &App, frame: &mut Frame<'_>, area: Rect) {
     let Some(list) = &app.session_list else {
         return;
     };
     let look = &app.settings.look;
     let symbols = &look.symbols;
-    let cells = WIDTH.min(size.width.saturating_sub(4));
-    let width = usize::from(cells);
+    let width = usize::from(area.width);
     let visible = list.visible();
     let rows = aligned(&table(list, &visible, symbols, width));
-    let count = visible.len().max(1);
-    let wanted = u16::try_from(count + CHROME).unwrap_or(u16::MAX);
-    let area = popup::open(frame, size, " Sessions ", cells, wanted, look);
+    let area = super::open_panel(frame, area, (Line::raw(" Sessions "), None), look);
     let room = usize::from(area.height).saturating_sub(CHROME).max(1);
     let at = visible
         .iter()

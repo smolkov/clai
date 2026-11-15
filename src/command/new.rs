@@ -43,8 +43,8 @@ impl Execute for New {
     }
 
     fn run(&self, ctx: &Context) -> Result<()> {
-        let config = ctx.config();
         let request = request(
+            ctx,
             self.name.clone(),
             self.model.clone(),
             self.dir.as_deref(),
@@ -62,7 +62,7 @@ impl Execute for New {
         if !self.detach {
             return tui::run(ctx, tui::Target::New(request));
         }
-        let session = with_client(config, true, async |client| create(client, request).await)?;
+        let session = with_client(ctx, true, async |client| create(client, request).await)?;
         write_stdout(&format!("{}\n", session.name))
     }
 }

@@ -180,6 +180,23 @@ impl Cli {
         Ok(cli)
     }
 
+    /// Which process this is, for the log: the server, a turn of
+    /// `clai run`, or a client.
+    pub fn role(&self) -> crate::log::Role {
+        use crate::command::server::{Server, ServerAction};
+        use crate::log::Role;
+        match &self.command {
+            Some(Command::Server(Server { action: None, .. })) => Role::Server,
+            Some(Command::Server(Server {
+                action: Some(ServerAction::Stop { .. } | ServerAction::Status),
+                ..
+            })) => Role::Client,
+            Some(Command::Run(_)) => Role::Run,
+            None if !self.top.task.is_empty() => Role::Run,
+            _ => Role::Client,
+        }
+    }
+
     /// The command to run. `clai` alone is `clai new`, and `clai TASK...`
     /// is `clai run TASK...`.
     pub fn into_command(self) -> Command {

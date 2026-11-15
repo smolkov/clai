@@ -14,14 +14,16 @@ use tokio::io::BufReader;
 use tokio::net::UnixStream;
 use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
 
-use crate::config::{self, Environment, LoadOptions};
+use crate::command::Context;
+use crate::config::{self, LoadOptions};
 use crate::error::{Error, Result};
 use crate::protocol::{
     self, ClientHello, ClientKind, ClientMessage, Outcome, Payload, Request, ServerHello,
     ServerMessage, SessionInfo, VERSION,
 };
 use crate::runtime::current_thread;
-use crate::server::{runtime_dir, socket_path, version_mismatch};
+use crate::server::{socket_path, version_mismatch};
+use crate::startup::Startup;
 
 /// How long a started server may take until it accepts connections.
 const START_TIMEOUT: Duration = Duration::from_secs(5);
@@ -29,7 +31,7 @@ const START_TIMEOUT: Duration = Duration::from_secs(5);
 /// How to reach the server.
 #[derive(Debug, Clone)]
 pub struct Connect {
-    /// The runtime directory; see [`runtime_dir`].
+    /// The runtime directory; see [`crate::paths::Paths::runtime`].
     pub dir: PathBuf,
     /// Start a server if none runs, with this `--config`.
     pub start: bool,
@@ -37,38 +39,42 @@ pub struct Connect {
     pub kind: ClientKind,
     pub name: String,
     pub answers: bool,
+    /// The environment, to check the configuration before a start; the
+    /// started server inherits the process's own.
+    pub env: Startup,
 }
 
 impl Connect {
     /// `clai chat`.
-    pub fn chat(config_file: Option<&Path>, answers: bool) -> Connect {
+    pub fn chat(ctx: &Context, answers: bool) -> Connect {
         Connect {
             kind: ClientKind::Chat,
             name: "clai chat".to_owned(),
             answers,
-            ..Connect::cli(config_file, true)
+            ..Connect::cli(ctx, true)
         }
     }
 
     /// The TUI; `name` is shown as who answered a question (`tui pts/3`).
-    pub fn tui(config_file: Option<&Path>, name: String) -> Connect {
+    pub fn tui(ctx: &Context, name: String) -> Connect {
         Connect {
             kind: ClientKind::Tui,
             name,
             answers: true,
-            ..Connect::cli(config_file, true)
+            ..Connect::cli(ctx, true)
         }
     }
 
     /// A terminal command such as `clai ls`.
-    pub fn cli(config_file: Option<&Path>, start: bool) -> Connect {
+    pub fn cli(ctx: &Context, start: bool) -> Connect {
         Connect {
-            dir: runtime_dir(),
+            dir: ctx.paths.runtime.clone(),
             start,
-            config_file: config_file.map(Path::to_path_buf),
+            config_file: ctx.config_file.clone(),
             kind: ClientKind::Cli,
             name: "clai".to_owned(),
             answers: false,
+            env: ctx.startup.clone(),
         }
     }
 }
@@ -222,9 +228,9 @@ async fn start(options: &Connect, socket: &Path) -> Result<UnixStream> {
     config::load(&LoadOptions {
         config_file: options.config_file.clone(),
         workspace: options.dir.clone(),
-        env: Environment::from_process(),
+        env: options.env.clone(),
     })?;
-    let exe = std::env::current_exe().map_err(Error::io("path of clai"))?;
+    let exe = crate::startup::current_exe().map_err(Error::io("path of clai"))?;
     let mut command = Command::new(exe);
     if let Some(file) = &options.config_file {
         command.arg("--config").arg(file);
@@ -263,11 +269,11 @@ async fn start(options: &Connect, socket: &Path) -> Result<UnixStream> {
 
 /// Runs `f` with a client connected as a terminal command.
 pub fn with_client<T>(
-    config_file: Option<&Path>,
+    ctx: &Context,
     start: bool,
     f: impl AsyncFnOnce(&mut Client) -> Result<T>,
 ) -> Result<T> {
-    let options = Connect::cli(config_file, start);
+    let options = Connect::cli(ctx, start);
     current_thread()?.block_on(async move {
         let mut client = Client::connect(&options).await?;
         f(&mut client).await

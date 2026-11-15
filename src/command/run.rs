@@ -11,7 +11,7 @@ use clap_complete::ArgValueCompleter;
 use tokio::signal::unix::{SignalKind, signal};
 use tokio_util::sync::CancellationToken;
 
-use super::common::{input_text, workspace};
+use super::common::input_text;
 use super::{Context, Execute};
 use crate::agent::{Agent, Asker, EndReason, EventSink, PolicyAsker, Setup, system_prompt, today};
 use crate::complete;
@@ -105,7 +105,7 @@ impl Run {
     /// `answering`: who answers questions.
     fn setup(&self, ctx: &Context, answering: Answering) -> Result<Prepared> {
         let can_ask = answering == Answering::Terminal;
-        let workspace = workspace(self.dir.as_deref())?;
+        let workspace = ctx.workspace(self.dir.as_deref())?;
         let options = ctx.load_options(workspace.clone());
         let config = config::load(&options)?;
         let model_ref = match &self.model {
@@ -115,7 +115,7 @@ impl Run {
         let Some((provider_config, model)) = config.model(&model_ref) else {
             return Err(Error::Usage(format!("unknown model `{model_ref}`")));
         };
-        let provider = provider::from_config(provider_config)
+        let provider = provider::from_config(provider_config, &ctx.startup)
             .map_err(|e| Error::Failed(format!("provider {}: {e}", provider_config.name)))?;
         let mut skills = Vec::new();
         if !self.skills.is_empty() {
@@ -136,7 +136,7 @@ impl Run {
             Workspace::new(&workspace, &config.permissions.extra_dirs, options.env.home)
                 .map_err(Error::io(workspace.display().to_string()))?;
         let place = workspace.tilde(workspace.root());
-        let unicode = unicode(config.tui.symbols, |name| std::env::var(name).ok());
+        let unicode = unicode(config.tui.symbols, ctx.startup.getenv());
         tracing::info!(model = %model_ref, "run");
         Ok(Prepared {
             setup: Setup {
@@ -153,7 +153,7 @@ impl Run {
                     lsp: Some(Arc::new(LspEnv::new(
                         Pool::new(),
                         &config.lsp,
-                        std::env::var_os("PATH").as_deref(),
+                        ctx.startup.var_os("PATH"),
                         "run".into(),
                         can_ask,
                         answering == Answering::Allow,

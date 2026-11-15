@@ -22,8 +22,6 @@ pub use events::Renderer;
 pub(crate) use events::{main_argument, short_result};
 pub use question::{Style, full_content, has_more, render_question, render_question_styled};
 
-use std::io::IsTerminal;
-
 use crate::agent::CallState;
 use crate::config::Symbols;
 use crate::protocol::TokenTotals;
@@ -40,10 +38,10 @@ pub struct Terminal {
 impl Terminal {
     /// From `tui.symbols` and the locale, and colour when standard output
     /// is a terminal and `NO_COLOR` is not set.
-    pub fn detect(symbols: Symbols) -> Terminal {
+    pub fn detect(symbols: Symbols, startup: &crate::startup::Startup) -> Terminal {
         Terminal {
-            unicode: unicode(symbols, |name| std::env::var(name).ok()),
-            colour: std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none(),
+            unicode: unicode(symbols, startup.getenv()),
+            colour: startup.stdout_terminal && startup.var_os("NO_COLOR").is_none(),
         }
     }
 }

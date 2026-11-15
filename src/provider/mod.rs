@@ -34,17 +34,31 @@ pub trait Provider: Send + Sync {
 const RETRY_BASE: Duration = Duration::from_secs(1);
 
 /// The provider for a configured provider, by its `api` type.
-pub fn from_config(provider: &config::Provider) -> Result<Arc<dyn Provider>, ProviderError> {
-    with_retry_base(provider, RETRY_BASE)
+/// The provider of a configuration; `env` holds the variable of
+/// `api_key_env`.
+pub fn from_config(
+    provider: &config::Provider,
+    env: &crate::startup::Startup,
+) -> Result<Arc<dyn Provider>, ProviderError> {
+    with_retry_base(provider, env, RETRY_BASE)
 }
 
 fn with_retry_base(
     provider: &config::Provider,
+    env: &crate::startup::Startup,
     base: Duration,
 ) -> Result<Arc<dyn Provider>, ProviderError> {
+    let env = Arc::new(env.clone());
     Ok(match provider.api {
-        Api::Anthropic => Arc::new(remote::Remote::new(anthropic::Anthropic, provider, base)?),
-        Api::OpenAiCompatible => Arc::new(remote::Remote::new(openai::OpenAi, provider, base)?),
+        Api::Anthropic => Arc::new(remote::Remote::new(
+            anthropic::Anthropic,
+            provider,
+            env,
+            base,
+        )?),
+        Api::OpenAiCompatible => {
+            Arc::new(remote::Remote::new(openai::OpenAi, provider, env, base)?)
+        }
     })
 }
 

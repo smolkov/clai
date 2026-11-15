@@ -31,15 +31,16 @@ use crate::sync::lock;
 
 use registry::{Entry, Registry, Slot};
 
-pub use paths::{lock_path, prepare, runtime_dir, socket_path};
+pub use paths::{lock_path, prepare, socket_path};
 
 /// Makes the provider for a configured provider; tests give a fake one.
 pub type ProviderFactory =
     Arc<dyn Fn(&config::Provider) -> std::result::Result<Arc<dyn Provider>, String> + Send + Sync>;
 
 /// The real providers.
-pub fn real_providers() -> ProviderFactory {
-    Arc::new(|p: &config::Provider| provider::from_config(p).map_err(|e| e.to_string()))
+/// The providers of the configuration; their keys come from `env`.
+pub fn real_providers(env: crate::startup::Startup) -> ProviderFactory {
+    Arc::new(move |p: &config::Provider| provider::from_config(p, &env).map_err(|e| e.to_string()))
 }
 
 /// How long a client may take to say hello.
@@ -68,8 +69,8 @@ impl Options {
             sessions_dir,
             idle: Duration::from_secs(60),
             reload_every: Duration::from_secs(2),
+            providers: real_providers(load.env.clone()),
             load,
-            providers: real_providers(),
             stop: CancellationToken::new(),
         }
     }

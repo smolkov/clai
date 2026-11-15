@@ -28,12 +28,15 @@ impl Execute for Completion {
         "completion"
     }
 
-    fn run(&self, _: &Context) -> Result<()> {
+    fn run(&self, ctx: &Context) -> Result<()> {
         let shell = match &self.shell {
             Some(shell) => shell.clone(),
-            None => shell_from_env(std::env::var_os("SHELL").as_deref())?,
+            None => shell_from_env(ctx.startup.var_os("SHELL"))?,
         };
-        write_stdout(&registration(&shell, &completer())?)
+        write_stdout(&registration(
+            &shell,
+            &completer(ctx.startup.current_dir.as_deref()),
+        )?)
     }
 }
 
@@ -70,13 +73,13 @@ fn shell_from_env(shell: Option<&std::ffi::OsStr>) -> Result<String> {
 
 /// How the script calls `clai`: as started, found through `PATH`, or as an
 /// absolute path when it was started by a path (as `CompleteEnv` does).
-fn completer() -> String {
+fn completer(cwd: Option<&std::path::Path>) -> String {
     let Some(argv0) = std::env::args_os().next() else {
         return "clai".to_owned();
     };
     let mut path = PathBuf::from(argv0);
     if path.components().count() > 1
-        && let Ok(cwd) = std::env::current_dir()
+        && let Some(cwd) = cwd
     {
         path = cwd.join(path);
     }

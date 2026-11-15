@@ -26,14 +26,13 @@ impl Execute for Import {
     }
 
     fn run(&self, ctx: &Context) -> Result<()> {
-        let config = ctx.config();
         let path =
             std::path::absolute(&self.file).map_err(Error::io(self.file.display().to_string()))?;
         let request = Request::Import {
             path,
             name: self.name.clone(),
         };
-        let name = with_client(config, true, async |client| {
+        let name = with_client(ctx, true, async |client| {
             match client.request(request).await? {
                 Payload::Session { session } => Ok(session.name),
                 other => Err(unexpected(&other)),

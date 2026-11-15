@@ -13,7 +13,6 @@ mod secret;
 pub mod themes;
 pub mod tui;
 
-use std::env;
 use std::fmt;
 use std::fs;
 use std::io;
@@ -43,10 +42,7 @@ pub use tui::{
 /// Example user config, printed when there is none.
 pub const EXAMPLE: &str = include_str!("example.toml");
 
-/// Overrides `default_model`.
-pub const MODEL_ENV: &str = "CLAI_MODEL";
-/// Overrides `tui.theme`.
-pub const THEME_ENV: &str = "CLAI_THEME";
+pub use crate::startup::{MODEL_ENV, THEME_ENV};
 
 /// API type of a provider: decides which adapter is used.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -307,28 +303,11 @@ fn resolve(declared: &[(&str, &str)], text: &str) -> Result<ModelRef, String> {
     }
 }
 
-/// The environment `clai` reads its configuration from.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Environment {
-    pub xdg_config_home: Option<PathBuf>,
-    pub home: Option<PathBuf>,
-    /// `CLAI_MODEL`
-    pub model: Option<String>,
-    /// `CLAI_THEME`
-    pub theme: Option<String>,
-}
-
-impl Environment {
-    pub fn from_process() -> Environment {
-        let text = |name| env::var(name).ok().filter(|v: &String| !v.is_empty());
-        Environment {
-            xdg_config_home: env::var_os("XDG_CONFIG_HOME").map(PathBuf::from),
-            home: env::var_os("HOME").map(PathBuf::from),
-            model: text(MODEL_ENV),
-            theme: text(THEME_ENV),
-        }
-    }
-}
+/// The environment `clai` reads its configuration from: the [`Startup`]
+/// read once in `main` (RFC 0026).
+///
+/// [`Startup`]: crate::startup::Startup
+pub use crate::startup::Startup as Environment;
 
 #[derive(Debug, Clone)]
 pub struct LoadOptions {

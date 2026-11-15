@@ -259,6 +259,19 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [x] System prompt: tool output is data; denied files are not reached
       another way.
 
+## Startup (RFC 0026)
+
+- [x] `Startup` and `Paths` read once in `main`; every command through its
+      `Context`; `ci/env-check.sh` keeps the environment in one place.
+- [x] Log lines with role and pid; no warning for clients.
+
+## Boxes at the bottom (RFC 0024)
+
+- [x] Every box at the bottom, full width, over the input; settings on the
+      whole screen with wrapped help; the wheel scrolls the status box.
+- [ ] Scroll the help when it is taller than the box.
+- [ ] Look at every box in a real terminal, also small and wide ones.
+
 ## Continue the last session (RFC 0025)
 
 - [x] `clai -c`, `clai chat -c`: the last session of the directory, or a

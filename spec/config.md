@@ -45,8 +45,12 @@ parent directories are not searched.
 | `NO_COLOR` | — | Any value turns all colours off. |
 | `CLAI_LOG` | — | Log level, see [Logging](#logging). |
 | `XDG_CONFIG_HOME`, `HOME` | — | Where the user file is. A relative `XDG_CONFIG_HOME` is ignored. |
+| `XDG_STATE_HOME`, `XDG_RUNTIME_DIR` | — | Where the log and saved sessions are, and the server's socket. A relative value is ignored. |
 
-An empty value counts as not set. An invalid value is a load error that
+`clai` reads its environment once, when it starts (RFC 0026), and every
+part of it works with that copy; `src/startup.rs` is the only code that
+reads the process, and `ci/check.sh` keeps it so. An empty value counts as
+not set. An invalid value is a load error that
 names the variable, e.g. `CLAI_MODEL: unknown model `gpt``.
 
 Format: TOML. Unknown keys are an error, not ignored, so typos are found.
@@ -866,8 +870,11 @@ terminal. **(assumption)**
 - The environment variable `CLAI_LOG` sets the level filter, e.g. `debug`
   or `clai=trace` (syntax of `tracing`'s `EnvFilter`). Default `info`; an
   invalid value falls back to `info`.
-- If the log file cannot be opened, `clai` prints one warning on standard
-  error and runs without a log.
+- If the log file cannot be opened, the server and `clai run` print one
+  warning on standard error and run without a log; other commands run
+  without one quietly (RFC 0026).
+- All processes write the same file; each line starts with the process and
+  its id: `server[4242]`, `client[4301]`, `run[4410]`.
 - API keys and other secrets are never written to the log, and neither
   are file contents or command output.
 - The log file is created with mode `0600` and its directory with mode

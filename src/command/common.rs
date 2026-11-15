@@ -3,29 +3,28 @@
 //! `-` for standard input.
 
 use std::io::Read;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::client::{Client, unexpected};
-use crate::config::MODEL_ENV;
 use crate::error::{Error, Result};
 use crate::output::note;
 use crate::protocol::{Payload, Request, SessionInfo};
+use crate::startup::Startup;
+
+use super::Context;
 
 /// The `new` request: `--model` or else this client's `CLAI_MODEL`, which
 /// the server checks; `DIR` or the current directory.
 pub fn request(
+    ctx: &Context,
     name: Option<String>,
     model: Option<String>,
     dir: Option<&Path>,
     skills: Vec<String>,
 ) -> Result<Request> {
-    let model = model.or_else(|| {
-        std::env::var(MODEL_ENV)
-            .ok()
-            .filter(|v| !v.trim().is_empty())
-    });
+    let model = model.or_else(|| ctx.startup.model.clone());
     Ok(Request::New {
-        workspace: workspace(dir)?,
+        workspace: ctx.workspace(dir)?,
         name,
         model,
         skills,
@@ -62,12 +61,11 @@ pub async fn create(client: &mut Client, request: Request) -> Result<Box<Session
 /// higher id, the one created later. Running and saved sessions count
 /// alike.
 pub fn last_session<'a>(sessions: &'a [SessionInfo], workspace: &Path) -> Option<&'a SessionInfo> {
-    let resolved = workspace
-        .canonicalize()
-        .unwrap_or_else(|_| workspace.to_path_buf());
+    // `Context::workspace` resolves links as the server does, so one form
+    // is enough (RFC 0026).
     sessions
         .iter()
-        .filter(|s| s.path == resolved || s.path == workspace)
+        .filter(|s| s.path == workspace)
         .max_by_key(|s| (s.updated, s.id))
 }
 
@@ -76,6 +74,7 @@ pub fn last_session<'a>(sessions: &'a [SessionInfo], workspace: &Path) -> Option
 /// a new session from `request`, with a note.
 pub async fn continue_session(
     client: &mut Client,
+    startup: &Startup,
     request: Request,
     model: Option<String>,
 ) -> Result<String> {
@@ -99,34 +98,20 @@ pub async fn continue_session(
     }
     note(&format!(
         "no session in {} yet; starting one",
-        shown(workspace)
+        startup.tilde(workspace)
     ));
     Ok(create(client, request).await?.name)
 }
 
 /// The session `clai send --continue` goes to; none is an error (exit `1`).
-pub fn last_session_name(sessions: &[SessionInfo], workspace: &Path) -> Result<String> {
+pub fn last_session_name(
+    sessions: &[SessionInfo],
+    workspace: &Path,
+    startup: &Startup,
+) -> Result<String> {
     last_session(sessions, workspace)
         .map(|s| s.name.clone())
-        .ok_or_else(|| Error::Failed(format!("no session in {}", shown(workspace))))
-}
-
-/// A directory as messages show it: `~/…` in the home directory.
-fn shown(path: &Path) -> String {
-    let home = std::env::var_os("HOME").map(PathBuf::from);
-    crate::skills::display(path, Path::new(""), home.as_deref())
-}
-
-/// `DIR` or the current directory, absolute; it must be a directory.
-pub fn workspace(dir: Option<&Path>) -> Result<PathBuf> {
-    let dir = match dir {
-        Some(dir) => dir.to_path_buf(),
-        None => std::env::current_dir().map_err(Error::io("current directory"))?,
-    };
-    if !dir.is_dir() {
-        return Err(Error::Usage(format!("{}: not a directory", dir.display())));
-    }
-    std::path::absolute(&dir).map_err(Error::io(dir.display().to_string()))
+        .ok_or_else(|| Error::Failed(format!("no session in {}", startup.tilde(workspace))))
 }
 
 /// Text from the command line: the words joined, or standard input for `-`.
@@ -211,9 +196,33 @@ mod tests {
     #[test]
     fn the_workspace_must_be_a_directory() {
         let tmp = tempfile::tempdir().unwrap();
-        assert!(workspace(Some(tmp.path())).unwrap().is_absolute());
+        let ctx = Context::default();
+        assert!(ctx.workspace(Some(tmp.path())).unwrap().is_absolute());
+        // Links are resolved, as the server keeps a session's workspace.
+        let link = tmp.path().join("link");
+        std::os::unix::fs::symlink(tmp.path(), &link).unwrap();
+        assert_eq!(
+            ctx.workspace(Some(&link)).unwrap(),
+            tmp.path().canonicalize().unwrap()
+        );
+        // A relative one is taken from the current directory of the startup.
+        let ctx = Context {
+            startup: Startup {
+                current_dir: Some(tmp.path().to_path_buf()),
+                ..Startup::default()
+            },
+            ..Context::default()
+        };
+        assert_eq!(
+            ctx.workspace(Some(Path::new("link"))).unwrap(),
+            tmp.path().canonicalize().unwrap()
+        );
+        assert_eq!(
+            ctx.workspace(None).unwrap(),
+            tmp.path().canonicalize().unwrap()
+        );
         let missing = tmp.path().join("missing");
-        match workspace(Some(&missing)) {
+        match ctx.workspace(Some(&missing)) {
             Err(Error::Usage(message)) => {
                 assert_eq!(message, format!("{}: not a directory", missing.display()));
             }
@@ -265,7 +274,7 @@ mod last_session_tests {
         assert_eq!(last_session(&sessions[2..], ws).unwrap().id, 5);
         assert!(last_session(&sessions[3..], ws).is_none());
         assert_eq!(
-            last_session_name(&sessions[3..], ws)
+            last_session_name(&sessions[3..], ws, &Startup::default())
                 .unwrap_err()
                 .to_string(),
             "no session in /nowhere/ws"

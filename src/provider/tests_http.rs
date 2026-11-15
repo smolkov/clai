@@ -175,6 +175,7 @@ fn provider(server: &Server, api: Api) -> Arc<dyn Provider> {
     let key = KeySource::Cmd("printf sk-test".into());
     with_retry_base(
         &provider_config(api, &server.url, key),
+        &crate::startup::Startup::default(),
         Duration::from_millis(10),
     )
     .unwrap()
@@ -430,7 +431,12 @@ async fn cancel_during_stream() {
 async fn cancel_during_retry_wait() {
     let server = serve(vec![Reply::status(503, "busy"); 3]).await;
     let config = provider_config(Api::Anthropic, &server.url, KeySource::None);
-    let provider = with_retry_base(&config, Duration::from_secs(30)).unwrap();
+    let provider = with_retry_base(
+        &config,
+        &crate::startup::Startup::default(),
+        Duration::from_secs(30),
+    )
+    .unwrap();
     let cancel = CancellationToken::new();
     let stream = provider.stream(request(), cancel.clone());
     let start = Instant::now();
@@ -447,7 +453,11 @@ async fn cancel_during_retry_wait() {
 async fn missing_key_is_auth_error() {
     let server = serve(vec![]).await;
     let key = KeySource::Env("CLAI_TEST_SURELY_UNSET_VARIABLE".into());
-    let provider = from_config(&provider_config(Api::Anthropic, &server.url, key)).unwrap();
+    let provider = from_config(
+        &provider_config(Api::Anthropic, &server.url, key),
+        &crate::startup::Startup::default(),
+    )
+    .unwrap();
     let events = collect(&provider).await;
     let err = last_error(&events);
     assert_eq!(err.kind, ErrorKind::Auth);
@@ -463,7 +473,7 @@ async fn unreachable_server_is_network_error() {
     drop(listener);
     let mut config = provider_config(Api::Anthropic, &url, KeySource::None);
     config.max_retries = 0;
-    let provider = from_config(&config).unwrap();
+    let provider = from_config(&config, &crate::startup::Startup::default()).unwrap();
     let events = collect(&provider).await;
     assert_eq!(last_error(&events).kind, ErrorKind::Network);
 }
@@ -471,7 +481,7 @@ async fn unreachable_server_is_network_error() {
 #[test]
 fn outside_runtime_is_error_not_panic() {
     let config = provider_config(Api::Anthropic, "http://127.0.0.1:1", KeySource::None);
-    let provider = from_config(&config).unwrap();
+    let provider = from_config(&config, &crate::startup::Startup::default()).unwrap();
     let mut stream = provider.stream(request(), CancellationToken::new());
     let first = futures_util::FutureExt::now_or_never(stream.next());
     match first {
