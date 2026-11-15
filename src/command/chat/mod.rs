@@ -5,7 +5,7 @@ mod questions;
 mod talk;
 
 use std::io::{self, BufRead, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 use clap::{Args, ValueHint};
@@ -103,10 +103,9 @@ impl Execute for Chat {
     }
 
     fn run(&self, ctx: &Context) -> Result<()> {
-        let config = ctx.config();
         match self.mode()? {
-            Mode::List(names) => self.list(config, names),
-            Mode::Script { name, answer } => script(config, name, answer, self.id.as_deref()),
+            Mode::List(names) => self.list(ctx, names),
+            Mode::Script { name, answer } => script(ctx, name, answer, self.id.as_deref()),
             Mode::Questions(names) => questions::questions(ctx, names),
             Mode::Attach(name) => talk::talk(
                 ctx,
@@ -118,13 +117,20 @@ impl Execute for Chat {
             Mode::Continue => talk::talk(
                 ctx,
                 talk::Target::Continue {
-                    request: super::common::request(None, self.model.clone(), None, Vec::new())?,
+                    request: super::common::request(
+                        ctx,
+                        None,
+                        self.model.clone(),
+                        None,
+                        Vec::new(),
+                    )?,
                     model: self.model.clone(),
                 },
             ),
             Mode::New(dir) => talk::talk(
                 ctx,
                 talk::Target::New(super::common::request(
+                    ctx,
                     self.name.clone(),
                     self.model.clone(),
                     dir.as_deref(),
@@ -174,9 +180,9 @@ impl Chat {
         }
     }
 
-    fn list(&self, config: Option<&Path>, names: &[String]) -> Result<()> {
+    fn list(&self, ctx: &Context, names: &[String]) -> Result<()> {
         let sessions = current_thread()?.block_on(async {
-            let mut client = Client::connect(&Connect::chat(config, false)).await?;
+            let mut client = Client::connect(&Connect::chat(ctx, false)).await?;
             client.list().await
         })?;
         let unknown: Vec<&String> = names
@@ -266,9 +272,9 @@ fn list_lines(questions: &[(&SessionInfo, &Question)], now: u64) -> String {
         .collect()
 }
 
-fn script(config: Option<&Path>, name: &str, answer: Answer, id: Option<&str>) -> Result<()> {
+fn script(ctx: &Context, name: &str, answer: Answer, id: Option<&str>) -> Result<()> {
     current_thread()?.block_on(async {
-        let mut client = Client::connect(&Connect::chat(config, false)).await?;
+        let mut client = Client::connect(&Connect::chat(ctx, false)).await?;
         let sessions = client.list().await?;
         let session = sessions
             .iter()
@@ -351,18 +357,23 @@ impl Lines {
 
 /// `tui.symbols` from the configuration, if it loads.
 pub(super) fn symbols(ctx: &Context) -> Symbols {
-    ctx.load(std::env::current_dir().unwrap_or_default())
+    ctx.workspace(None)
+        .and_then(|workspace| ctx.load(workspace))
         .map_or(Symbols::Auto, |c| c.tui.symbols)
 }
 
-/// Shows `text` through `$PAGER` (default `less`).
-fn pager(text: &str) {
-    let pager = std::env::var("PAGER")
-        .ok()
+/// The pager: `$PAGER`, default `less`.
+pub(super) fn pager_command(ctx: &Context) -> String {
+    ctx.startup
+        .var("PAGER")
         .filter(|p| !p.trim().is_empty())
-        .unwrap_or_else(|| "less".to_owned());
+        .unwrap_or_else(|| "less".to_owned())
+}
+
+/// Shows `text` through the pager `command`.
+fn pager(command: &str, text: &str) {
     let child = Command::new("sh")
-        .args(["-c", &pager])
+        .args(["-c", command])
         .stdin(Stdio::piped())
         .spawn();
     match child {
@@ -373,7 +384,7 @@ fn pager(text: &str) {
             let _ = child.wait();
         }
         Err(e) => {
-            note(&format!("pager {pager}: {e}"));
+            note(&format!("pager {command}: {e}"));
         }
     }
 }

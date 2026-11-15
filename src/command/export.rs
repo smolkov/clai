@@ -27,14 +27,13 @@ impl Execute for Export {
     }
 
     fn run(&self, ctx: &Context) -> Result<()> {
-        let config = ctx.config();
         let path =
             std::path::absolute(&self.file).map_err(Error::io(self.file.display().to_string()))?;
         let request = Request::Export {
             session: self.name.clone(),
             path,
         };
-        with_client(config, true, async |client| {
+        with_client(ctx, true, async |client| {
             client.request(request).await.map(|_| ())
         })
     }

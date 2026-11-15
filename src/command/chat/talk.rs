@@ -66,9 +66,9 @@ pub enum Target {
 }
 
 pub fn talk(ctx: &Context, target: Target) -> Result<()> {
-    let Terminal { unicode, colour } = Terminal::detect(symbols(ctx));
+    let Terminal { unicode, colour } = Terminal::detect(symbols(ctx), &ctx.startup);
     current_thread()?.block_on(async {
-        let mut client = Client::connect(&Connect::chat(ctx.config(), true)).await?;
+        let mut client = Client::connect(&Connect::chat(ctx, true)).await?;
         let name = match target {
             Target::Attach { name, model } => {
                 if let Some(model) = model {
@@ -83,11 +83,13 @@ pub fn talk(ctx: &Context, target: Target) -> Result<()> {
             }
             Target::New(request) => create(&mut client, request).await?.name,
             Target::Continue { request, model } => {
-                crate::command::common::continue_session(&mut client, request, model).await?
+                crate::command::common::continue_session(&mut client, &ctx.startup, request, model)
+                    .await?
             }
         };
         let session = attach(&mut client, &name).await?;
         let mut talk = Talk {
+            pager: super::pager_command(ctx),
             client,
             lines: Lines::start(),
             conversation: Conversation::new(unicode, colour),
@@ -267,6 +269,8 @@ fn skills_text(info: &crate::protocol::SkillsInfo, workspace: &std::path::Path) 
 }
 
 struct Talk {
+    /// The pager for the whole question.
+    pager: String,
     client: Client,
     lines: Lines,
     conversation: Conversation,
@@ -677,7 +681,10 @@ impl Talk {
                 self.dialog = Some(dialog.clone());
             }
             Step::View => {
-                pager(full_content(dialog.question()).unwrap_or_default());
+                pager(
+                    &self.pager,
+                    full_content(dialog.question()).unwrap_or_default(),
+                );
                 self.dialog = Some(dialog.clone());
             }
             Step::Answer(answer) => {

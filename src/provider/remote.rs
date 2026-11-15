@@ -66,6 +66,9 @@ struct Inner<C> {
     http: Http,
     base_url: String,
     key_source: KeySource,
+    /// Where `api_key_env` is looked up: the environment `clai` started
+    /// with (RFC 0026).
+    env: Arc<crate::startup::Startup>,
     key: OnceCell<Option<ApiKey>>,
     retry: RetryPolicy,
 }
@@ -79,6 +82,7 @@ impl<C: Codec> Remote<C> {
     pub fn new(
         codec: C,
         provider: &config::Provider,
+        env: Arc<crate::startup::Startup>,
         retry_base: Duration,
     ) -> Result<Self, ProviderError> {
         Ok(Remote {
@@ -88,6 +92,7 @@ impl<C: Codec> Remote<C> {
                 http: Http::new(provider.timeout)?,
                 base_url: provider.base_url.trim_end_matches('/').to_owned(),
                 key_source: provider.key.clone(),
+                env,
                 key: OnceCell::new(),
                 retry: RetryPolicy {
                     max_retries: provider.max_retries,
@@ -261,8 +266,9 @@ impl<C: Codec> Inner<C> {
         self.key
             .get_or_try_init(|| async {
                 let source = self.key_source.clone();
+                let env = Arc::clone(&self.env);
                 let resolved = tokio::task::spawn_blocking(move || {
-                    source.resolve(|name| std::env::var(name).ok(), KEY_CMD_TIMEOUT)
+                    source.resolve(env.getenv(), KEY_CMD_TIMEOUT)
                 })
                 .await
                 .map_err(|e| format!("reading the API key failed: {e}"))

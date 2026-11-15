@@ -11,8 +11,10 @@ use clap_complete::CompletionCandidate;
 use std::time::Duration;
 
 use crate::client::{Client, Connect};
-use crate::config::{self, Config, Environment, LoadOptions};
+use crate::command::Context;
+use crate::config::{self, Config};
 use crate::protocol::SessionInfo;
+use crate::startup::Startup;
 
 /// `--model`: every configured `provider/model`, described by its model id.
 ///
@@ -22,15 +24,12 @@ pub fn models(current: &OsStr) -> Vec<CompletionCandidate> {
     let Some(current) = current.to_str() else {
         return Vec::new();
     };
-    let Ok(workspace) = std::env::current_dir() else {
+    // Completion runs before `main` sets up a context: it makes its own.
+    let ctx = Context::new(Startup::from_process(), None);
+    let Some(workspace) = ctx.startup.current_dir.clone() else {
         return Vec::new();
     };
-    let options = LoadOptions {
-        config_file: None,
-        workspace,
-        env: Environment::from_process(),
-    };
-    match config::load(&options) {
+    match config::load(&ctx.load_options(workspace)) {
         Ok(config) => model_candidates(&config, current),
         Err(_) => Vec::new(),
     }
@@ -45,7 +44,7 @@ pub fn sessions(current: &OsStr) -> Vec<CompletionCandidate> {
     let Ok(runtime) = crate::runtime::current_thread() else {
         return Vec::new();
     };
-    let options = Connect::cli(None, false);
+    let options = Connect::cli(&Context::new(Startup::from_process(), None), false);
     let listed = runtime.block_on(async {
         tokio::time::timeout(Duration::from_secs(1), async {
             Client::connect(&options).await?.list().await
@@ -91,6 +90,7 @@ pub fn model_candidates(config: &Config, prefix: &str) -> Vec<CompletionCandidat
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::{Environment, LoadOptions};
     use std::path::PathBuf;
 
     #[test]

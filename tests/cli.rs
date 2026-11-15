@@ -83,22 +83,31 @@ fn short_form_is_run() {
 }
 
 #[test]
-fn unwritable_log_only_warns() {
+fn unwritable_log_warns_only_where_work_is_logged() {
     let file = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("state-is-a-file");
     std::fs::write(&file, "").unwrap();
-    let out = Command::new(env!("CARGO_BIN_EXE_clai"))
-        .args(["commit", &no_repository()])
-        .env("GIT_CEILING_DIRECTORIES", env!("CARGO_TARGET_TMPDIR"))
-        .env("XDG_STATE_HOME", &file)
-        .output()
-        .unwrap();
+    let run = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_clai"))
+            .args(args)
+            .env("GIT_CEILING_DIRECTORIES", env!("CARGO_TARGET_TMPDIR"))
+            .env("XDG_STATE_HOME", &file)
+            .env("XDG_CONFIG_HOME", env!("CARGO_TARGET_TMPDIR"))
+            .output()
+            .unwrap()
+    };
+    // A client goes on without a log, quietly (RFC 0026).
+    let out = run(&["commit", &no_repository()]);
     assert_eq!(out.status.code(), Some(1));
+    let err = stderr(&out);
+    assert!(!err.contains("cannot open log file"), "{err}");
+    assert!(err.contains("clai: not a git repository: "), "{err}");
+    // `clai run` does work to look back on: it warns, and goes on.
+    let out = run(&["run", "a task"]);
     let err = stderr(&out);
     assert!(
         err.starts_with("clai: warning: cannot open log file"),
         "{err}"
     );
-    assert!(err.contains("clai: not a git repository: "), "{err}");
 }
 
 #[test]

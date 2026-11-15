@@ -30,8 +30,7 @@ impl Execute for Kill {
     }
 
     fn run(&self, ctx: &Context) -> Result<()> {
-        let config = ctx.config();
-        let failed = with_client(config, true, async |client| {
+        let failed = with_client(ctx, true, async |client| {
             let names = if self.all {
                 client.list().await?.into_iter().map(|s| s.name).collect()
             } else {

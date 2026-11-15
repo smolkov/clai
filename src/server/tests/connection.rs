@@ -251,6 +251,7 @@ async fn pending_requests_fail_when_the_connection_ends() {
         kind: ClientKind::Tui,
         name: "tui".into(),
         answers: true,
+        env: Default::default(),
     })
     .await
     .unwrap();

@@ -11,6 +11,7 @@ use clai::command::completion::COMPLETE_ENV;
 use clai::error::Error;
 use clai::log;
 use clai::output::note;
+use clai::startup::Startup;
 
 fn main() -> ExitCode {
     // Answers `COMPLETE=<shell> clai -- <words>` and exits; must run before
@@ -28,12 +29,15 @@ fn main() -> ExitCode {
         }
     };
 
-    if let Err(err) = log::init() {
+    // The order of RFC 0026: the environment once, the paths from it, the
+    // log, then the command.
+    let ctx = Context::new(Startup::from_process(), cli.config.clone());
+    let role = cli.role();
+    if let Err(err) = log::init(&ctx.paths, &ctx.startup, role)
+        && role.warns()
+    {
         warn(&format!("{err}; logging is off"));
     }
-    let ctx = Context {
-        config_file: cli.config.clone(),
-    };
     let command = cli.into_command();
     let command = command.execute();
     tracing::info!(command = command.name(), "start");

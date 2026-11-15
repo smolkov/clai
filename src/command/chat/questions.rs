@@ -12,7 +12,7 @@ use crate::protocol::{Notice, Payload, Request, ServerMessage, SessionInfo};
 use crate::runtime::current_thread;
 use crate::text::{Dialog, Step, Style, Terminal, full_content, render_question_styled};
 
-use super::{Lines, pager, symbols};
+use super::{Lines, pager, pager_command, symbols};
 use crate::command::Context;
 
 /// A question waiting to be shown.
@@ -34,12 +34,14 @@ struct Interactive {
     said_waiting: bool,
     unicode: bool,
     colour: bool,
+    /// The pager for the whole question.
+    pager: String,
 }
 
 pub fn questions(ctx: &Context, names: &[String]) -> Result<()> {
-    let Terminal { unicode, colour } = Terminal::detect(symbols(ctx));
+    let Terminal { unicode, colour } = Terminal::detect(symbols(ctx), &ctx.startup);
     current_thread()?.block_on(async {
-        let mut client = Client::connect(&Connect::chat(ctx.config(), true)).await?;
+        let mut client = Client::connect(&Connect::chat(ctx, true)).await?;
         let all = client.list().await?;
         let chosen: Vec<&SessionInfo> = if names.is_empty() {
             all.iter().collect()
@@ -64,6 +66,7 @@ pub fn questions(ctx: &Context, names: &[String]) -> Result<()> {
             said_waiting: false,
             unicode,
             colour,
+            pager: pager_command(ctx),
         };
         for session in chosen {
             chat.attach(&session.name).await?;
@@ -247,7 +250,10 @@ impl Interactive {
                 self.current = Some((session, dialog));
             }
             Step::View => {
-                pager(full_content(dialog.question()).unwrap_or_default());
+                pager(
+                    &self.pager,
+                    full_content(dialog.question()).unwrap_or_default(),
+                );
                 self.out(dialog.prompt());
                 self.current = Some((session, dialog));
             }

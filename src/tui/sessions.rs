@@ -76,6 +76,8 @@ pub struct SessionList {
     /// (`~/ws/project`) and absolute.
     shown: String,
     base: PathBuf,
+    /// The home directory, for `~` in a typed workspace.
+    pub home: Option<PathBuf>,
     /// An error for the box's last line, e.g. a refused name.
     pub message: Option<String>,
     /// A result for the box's last line, e.g. `deleted 5 sessions`.
@@ -107,6 +109,7 @@ impl SessionList {
             current: attached.id,
             shown: attached.workspace.clone(),
             base: attached.path.clone(),
+            home: None,
             message: None,
             done: None,
             exit_on_esc: false,
@@ -225,7 +228,7 @@ impl SessionList {
             Mode::Workspace(mut editor) => match key.code {
                 KeyCode::Esc => (Mode::Browse, None),
                 KeyCode::Enter => {
-                    let workspace = resolve(&editor.text(), &self.base, home().as_deref());
+                    let workspace = resolve(&editor.text(), &self.base, self.home.as_deref());
                     let name = Editor::default();
                     (Mode::Name { workspace, name }, None)
                 }
@@ -240,7 +243,7 @@ impl SessionList {
             } => match key.code {
                 KeyCode::Esc => {
                     let mut editor = Editor::default();
-                    editor.set_text(&shown(&workspace, home().as_deref()));
+                    editor.set_text(&shown(&workspace, self.home.as_deref()));
                     (Mode::Workspace(editor), None)
                 }
                 KeyCode::Enter => {
@@ -419,12 +422,6 @@ fn line_edit(editor: &mut Editor, key: KeyEvent) {
     {
         editor.edit(edit);
     }
-}
-
-fn home() -> Option<PathBuf> {
-    std::env::var_os("HOME")
-        .filter(|h| !h.is_empty())
-        .map(PathBuf::from)
 }
 
 /// The typed workspace as an absolute path: `~` is the home directory, and a

@@ -186,6 +186,7 @@ impl Fixture {
             kind: ClientKind::Chat,
             name: name.into(),
             answers,
+            env: Default::default(),
         })
         .await
         .unwrap()

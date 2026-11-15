@@ -179,6 +179,8 @@ clai/
 │   │   ├── prompt.rs           system prompt, today's date
 │   │   ├── system_prompt.md    system prompt text
 │   │   └── tests.rs            turns against a scripted provider
+│   ├── startup.rs              the environment, read once (RFC 0026)
+│   ├── paths.rs                every directory and file, from it
 │   ├── skills/                 Skills (skills.md)
 │   │   ├── mod.rs              directories, priority, shadowing, active skills
 │   │   ├── parse.rs            `SKILL.md`: frontmatter, body, checks

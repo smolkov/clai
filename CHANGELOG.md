@@ -7,6 +7,9 @@ notes are taken from that section by `ci/notes.sh`.
 
 ## Unreleased
 
+- Startup (RFC 0026): the environment is read once; every workspace is
+  used with links resolved; only the server and `clai run` warn about a
+  log they cannot open; each log line names its process (`server[4242]`).
 - Syntax colours: in `atom-one-dark`, `nord` and `gruvbox-dark`, `let`,
   `struct` and the like have the keyword colour, not the type colour; in
   `ansi`, `struct`, `enum`, `impl` and `class` do, like `fn`. In all four,

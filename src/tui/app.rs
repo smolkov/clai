@@ -104,6 +104,8 @@ pub struct Theming {
     pub offset: i64,
     /// The user file `[tui]` is read from and saved to.
     pub user_file: PathBuf,
+    /// The home directory, to show paths as `~/…` and read `~` in them.
+    pub home: Option<PathBuf>,
 }
 
 /// `[tui]` as the user file has it, without `CLAI_THEME`.
@@ -1648,6 +1650,7 @@ impl App {
     /// ended, and at start for `clai attach` without a name, `Esc` leaves.
     pub fn show_sessions(&mut self) {
         let mut list = SessionList::new(self.sessions.clone(), &self.session, now_secs());
+        list.home.clone_from(&self.settings.theming.home);
         list.exit_on_esc = self.ended.is_some();
         self.session_list = Some(list);
     }

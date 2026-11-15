@@ -53,7 +53,6 @@ use crate::config::{self, Config, LoadOptions, Symbols};
 use crate::error::{Error, Result};
 use crate::protocol::{Payload, Request, ServerMessage, SessionInfo};
 use crate::runtime::current_thread;
-use crate::server::runtime_dir;
 
 pub use app::Exit;
 use app::{
@@ -82,7 +81,6 @@ pub enum Target {
 /// Runs the TUI until the user leaves. Every failure before the terminal
 /// changes is an ordinary error (see `spec/command.md`, "clai").
 pub fn run(ctx: &Context, target: Target) -> Result<()> {
-    let config = ctx.config();
     let workspace = match &target {
         Target::New(Request::New { workspace, .. })
         | Target::Continue {
@@ -90,7 +88,7 @@ pub fn run(ctx: &Context, target: Target) -> Result<()> {
             ..
         } => workspace.clone(),
         // No project file applies; the session has its own workspace.
-        _ => runtime_dir(),
+        _ => ctx.paths.runtime.clone(),
     };
     let options = ctx.load_options(workspace);
     let loaded = config::load(&options)?;
@@ -98,10 +96,10 @@ pub fn run(ctx: &Context, target: Target) -> Result<()> {
         std::io::stdin().is_terminal(),
         std::io::stdout().is_terminal(),
     )?;
-    let connect = Connect::tui(config, client_name());
+    let connect = Connect::tui(ctx, client_name());
     let exit = current_thread()?.block_on(async {
         let mut client = Client::connect(&connect).await?;
-        let (name, choose) = session_name(&mut client, target).await?;
+        let (name, choose) = session_name(&mut client, &ctx.startup, target).await?;
         let attached = attach(client, &name).await?;
         terminal::install_panic_hook();
         let guard = terminal::Guard::new(loaded.tui.mouse)?;
@@ -169,13 +167,17 @@ fn client_name() -> String {
 
 /// The name of the session to attach to, and whether the user still has to
 /// choose one in the session list; creates it for [`Target::New`].
-async fn session_name(client: &mut Client, target: Target) -> Result<(String, bool)> {
+async fn session_name(
+    client: &mut Client,
+    startup: &crate::startup::Startup,
+    target: Target,
+) -> Result<(String, bool)> {
     match target {
         Target::New(request) => Ok((create(client, request).await?.name, false)),
         Target::Attach(Some(name)) => Ok((name, false)),
         Target::Attach(None) => first_session(&client.list().await?),
         Target::Continue { request, model } => Ok((
-            crate::command::common::continue_session(client, request, model).await?,
+            crate::command::common::continue_session(client, startup, request, model).await?,
             false,
         )),
     }
@@ -222,13 +224,15 @@ async fn attach(mut client: Client, name: &str) -> Result<Attached> {
 
 fn settings(config: &Config, connect: &Connect, options: &LoadOptions) -> Settings {
     let tui = &config.tui;
-    let terminal = crate::text::Terminal::detect(tui.symbols);
+    let startup = &options.env;
+    let terminal = crate::text::Terminal::detect(tui.symbols, startup);
     let theming = Theming {
         themes: config.themes.clone(),
         warnings: config.theme_warnings.clone(),
         file: file_tui(config, options),
-        colouring: colouring(),
-        unicode_locale: crate::text::unicode(Symbols::Auto, |name| std::env::var(name).ok()),
+        colouring: colouring(startup),
+        unicode_locale: crate::text::unicode(Symbols::Auto, startup.getenv()),
+        home: startup.home.clone(),
         theme_env: options.env.theme.clone(),
         offset: local_offset(),
         user_file: config.user_file.clone(),
@@ -242,7 +246,7 @@ fn settings(config: &Config, connect: &Connect, options: &LoadOptions) -> Settin
     Settings {
         look: style::Look::themed(
             terminal.unicode,
-            style::Styles::themed(&tui.theme, &config.themes, colouring())
+            style::Styles::themed(&tui.theme, &config.themes, colouring(startup))
                 .highlighting(tui.syntax_highlight),
         ),
         client: connect.name.clone(),
@@ -303,9 +307,9 @@ fn save(
 
 /// The colours of this terminal, from `NO_COLOR`, standard output and
 /// `COLORTERM`.
-fn colouring() -> style::Colouring {
-    let colour = std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none();
-    style::Colouring::detect(colour, std::env::var("COLORTERM").ok().as_deref())
+fn colouring(startup: &crate::startup::Startup) -> style::Colouring {
+    let colour = startup.stdout_terminal && startup.var_os("NO_COLOR").is_none();
+    style::Colouring::detect(colour, startup.var("COLORTERM").as_deref())
 }
 
 /// The offset of local time from UTC in seconds, from `date`: the standard
@@ -453,10 +457,11 @@ async fn event_loop(
                 Effect::Exit(exit) => return Ok(exit),
                 Effect::Request(request) => send(&mut connection, request, &reports),
                 Effect::Copy(text) => {
+                    let path = options.env.var_os("PATH");
                     let plan = clipboard::Plan::new(
                         app.settings.tui.clipboard,
-                        |name| std::env::var(name).ok(),
-                        clipboard::on_path,
+                        options.env.getenv(),
+                        |name| clipboard::on_path(name, path),
                     );
                     if let Err(e) = clipboard::copy(&plan, &text) {
                         let _ = reports.send(Report::Input(Input::CopyFailed(e)));

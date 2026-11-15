@@ -1,55 +1,113 @@
 //! Logging to a file, never to the terminal (see `spec/config.md`, "Logging").
 
-use std::env;
 use std::fs::{DirBuilder, File, OpenOptions};
+use std::io::{self, Write};
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 
 use tracing_subscriber::EnvFilter;
+use tracing_subscriber::fmt::MakeWriter;
 
 use crate::error::{Error, Result};
+use crate::paths::Paths;
+use crate::startup::{LOG_ENV, Startup};
+use crate::sync::lock;
 
-/// Environment variable with the log filter.
-const LOG_ENV: &str = "CLAI_LOG";
 const DEFAULT_FILTER: &str = "info";
 
-/// `$XDG_STATE_HOME/clai`, falling back to `~/.local/state/clai`: the log
-/// and the saved sessions.
-pub fn state_dir() -> Option<PathBuf> {
-    let state = env::var_os("XDG_STATE_HOME")
-        .map(PathBuf::from)
-        .filter(|p| p.is_absolute())
-        .or_else(|| env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/state")))?;
-    Some(state.join("clai"))
+/// Which process writes a log line: all of them write one file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Role {
+    /// A command that talks to the server, or none.
+    Client,
+    Server,
+    /// `clai run`: a turn in its own process.
+    Run,
 }
 
-/// Path of the log file: `$XDG_STATE_HOME/clai/clai.log`, falling back to
-/// `~/.local/state/clai/clai.log`.
-pub fn log_path() -> Option<PathBuf> {
-    Some(state_dir()?.join("clai.log"))
+impl Role {
+    pub fn name(self) -> &'static str {
+        match self {
+            Role::Client => "client",
+            Role::Server => "server",
+            Role::Run => "run",
+        }
+    }
+
+    /// Whether a log that cannot be opened is worth a warning: the server
+    /// and `clai run` do work to look back on; a client does not.
+    pub fn warns(self) -> bool {
+        self != Role::Client
+    }
 }
 
-/// Starts logging to the log file. Returns the path of the file, or an error
-/// if it cannot be opened; the caller then continues without a log.
-pub fn init() -> Result<PathBuf> {
-    let path = log_path().ok_or_else(|| Error::Io {
+/// Starts logging to the log file of `paths`, each line after the role and
+/// the process id (`server[4242] …`). Returns the path of the file, or an
+/// error if it cannot be opened; the caller then goes on without a log.
+pub fn init(paths: &Paths, startup: &Startup, role: Role) -> Result<PathBuf> {
+    let path = paths.log.clone().ok_or_else(|| Error::Io {
         context: "log file".to_owned(),
-        source: std::io::Error::new(
-            std::io::ErrorKind::NotFound,
+        source: io::Error::new(
+            io::ErrorKind::NotFound,
             "neither XDG_STATE_HOME nor HOME is set",
         ),
     })?;
     let file = open(&path)?;
-    let filter =
-        EnvFilter::try_from_env(LOG_ENV).unwrap_or_else(|_| EnvFilter::new(DEFAULT_FILTER));
+    let filter = startup
+        .var(LOG_ENV)
+        .and_then(|f| EnvFilter::try_new(f).ok())
+        .unwrap_or_else(|| EnvFilter::new(DEFAULT_FILTER));
+    let writer = Prefixed {
+        file: Mutex::new(file),
+        prefix: format!("{}[{}] ", role.name(), std::process::id()),
+    };
     // Fails only if a subscriber is already set; logging then goes there.
     let _ = tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_ansi(false)
-        .with_writer(Mutex::new(file))
+        .with_writer(writer)
         .try_init();
     Ok(path)
+}
+
+/// The log file, with a prefix before each line. The formatter writes one
+/// event with one writer, so the prefix goes first.
+struct Prefixed<W> {
+    file: Mutex<W>,
+    prefix: String,
+}
+
+struct Line<'a, W> {
+    file: MutexGuard<'a, W>,
+    prefix: &'a str,
+    started: bool,
+}
+
+impl<'a, W: Write + 'a> MakeWriter<'a> for Prefixed<W> {
+    type Writer = Line<'a, W>;
+
+    fn make_writer(&'a self) -> Self::Writer {
+        Line {
+            file: lock(&self.file),
+            prefix: &self.prefix,
+            started: false,
+        }
+    }
+}
+
+impl<W: Write> Write for Line<'_, W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        if !self.started {
+            self.file.write_all(self.prefix.as_bytes())?;
+            self.started = true;
+        }
+        self.file.write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.file.flush()
+    }
 }
 
 /// Opens the log for appending: the file `0600` and its directory (the
@@ -83,6 +141,23 @@ mod tests {
 
     fn mode(path: &Path) -> u32 {
         fs::metadata(path).unwrap().permissions().mode() & 0o777
+    }
+
+    #[test]
+    fn lines_say_which_process_wrote_them() {
+        let writer = Prefixed {
+            file: Mutex::new(Vec::new()),
+            prefix: "server[42] ".to_owned(),
+        };
+        writer.make_writer().write_all(b"one\n").unwrap();
+        {
+            let mut line = writer.make_writer();
+            line.write_all(b"two ").unwrap();
+            line.write_all(b"parts\n").unwrap();
+        }
+        let text = String::from_utf8(lock(&writer.file).clone()).unwrap();
+        assert_eq!(text, "server[42] one\nserver[42] two parts\n");
+        assert!(Role::Server.warns() && Role::Run.warns() && !Role::Client.warns());
     }
 
     #[test]

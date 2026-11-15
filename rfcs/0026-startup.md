@@ -1,7 +1,7 @@
 # Startup: one place for the environment, paths and the command context
 
 - RFC: 0026
-- Status: draft
+- Status: done
 - Milestone: none; a refactoring of `src/main.rs`, `src/command/` and the
   modules that read the environment
 - Spec: [`spec/architecture.md`](../spec/architecture.md), "Project tree",
@@ -251,7 +251,7 @@ Only these, each from two copies that differ today:
 ## Implementation plan
 
 1. **Startup and Paths**
-   - Status: todo
+   - Status: done
    - Files: `src/startup.rs`, `src/paths.rs`, `src/lib.rs`, `src/main.rs`,
      `src/command/mod.rs`
    - Result: `main` builds both and puts them in `Context`; nothing uses
@@ -259,7 +259,7 @@ Only these, each from two copies that differ today:
    - Tests: their unit tests.
 
 2. **Configuration and directories**
-   - Status: todo
+   - Status: done
    - Files: `src/config/mod.rs`, `src/config/themes.rs`, `src/log.rs`,
      `src/server/paths.rs`, `src/command/server.rs`, `src/client/mod.rs`,
      `src/skills/mod.rs`
@@ -268,7 +268,7 @@ Only these, each from two copies that differ today:
    - Tests: config, server and client tests.
 
 3. **Commands**
-   - Status: todo
+   - Status: done
    - Files: `src/command/*.rs`, `src/command/chat/`, `src/tui/mod.rs`,
      `src/complete.rs`
    - Result: every command uses `ctx.workspace`, `ctx.config`,
@@ -277,13 +277,13 @@ Only these, each from two copies that differ today:
      `std::env::var` appears only in `src/startup.rs` (and tests).
 
 4. **Logging**
-   - Status: todo
+   - Status: done
    - Files: `src/log.rs`, `src/main.rs`
    - Result: role and pid per line; the warning rule.
    - Tests: the log test.
 
 5. **Spec and readme**
-   - Status: todo
+   - Status: done
    - Files: the spec files above, `todo.md`
    - Result: the spec describes the startup.
    - Tests: `ci/check.sh`, `ci/test.sh`.
@@ -303,6 +303,8 @@ Only these, each from two copies that differ today:
 
 ## Open questions
 
+All answered; see "Answers".
+
 1. Should `Startup` replace `config::Environment` entirely (proposal), or
    wrap it, so the config module keeps its own type for its tests?
 2. Workspace with links resolved for every command (proposal), or keep the
@@ -313,3 +315,42 @@ Only these, each from two copies that differ today:
    `ci/check.sh` (proposal), or only a review rule in `agent.md`?
 5. One log file for all processes with the role in each line (proposal), or
    a separate `server.log`?
+
+## Answers
+
+1. to 5. The user asked to build it, so the proposals hold: `Startup`
+   replaces `config::Environment` (the name stays as an alias, so the
+   config module and its tests read as before); the workspace is resolved
+   with links for every command; a client without a log is quiet; the
+   check is in `ci/check.sh` (`ci/env-check.sh`); one log file, the role
+   and pid on each line.
+
+## Notes from building
+
+- **Startup keeps every variable.** Many parts look variables up by name
+  (`api_key_env`, `LANG` and `LC_*` for the symbols, `PAGER`, `SHELL`,
+  `PATH`, `NO_COLOR`, `COLORTERM`, the clipboard's `WAYLAND_DISPLAY` and
+  `DISPLAY`), so `Startup` holds a copy of all of them with `var`,
+  `var_os` and `getenv`; the typed fields (`home`, `xdg_*`, `model`,
+  `theme`) are made from that copy. Tests build one with `from_vars`.
+- **The provider reads `api_key_env` from it.** `provider::from_config`
+  takes the `Startup`; the server's provider factory holds the server's.
+- **The TUI** gets the home directory through `Theming::home` (the
+  settings title, `~` in a typed workspace of the session list) and the
+  clipboard's `PATH` from the load options.
+- **Completion** runs before `main` builds a context, on every Tab, so it
+  makes its own with `Startup::from_process()`.
+- **The server's runtime** stays its own `multi_thread()` with a
+  shutdown timeout; `Context::block_on` serves the client commands.
+- **The check** is `ci/env-check.sh`, run by `ci/check.sh` and tested in
+  `tests/ci.sh`. Test code is exempt: files named `tests.rs`, files under
+  `tests/`, and a file's rest after its first `#[cfg(test)]`.
+  `std::env::args_os`, `split_paths`, `consts` and `current_exe` (in
+  `startup::current_exe`) read no environment and are allowed.
+- **Behaviour changes, as listed:** links resolved in every workspace
+  (`last_session` compares one form now); a relative `XDG_STATE_HOME` or
+  `XDG_RUNTIME_DIR` ignored in one place; no log warning for clients
+  (the test `unwritable_log_warns_only_where_work_is_logged`); the role
+  and pid on each log line.
+- `Startup::default()` is `from_vars` with no variables, so its
+  temporary directory is `/tmp` as in a real start.

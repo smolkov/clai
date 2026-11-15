@@ -3,7 +3,7 @@
 use clap::Args;
 use clap_complete::ArgValueCompleter;
 
-use super::common::{input_text, last_session_name, workspace};
+use super::common::{input_text, last_session_name};
 use super::{Context, Execute};
 use crate::client::with_client;
 use crate::complete;
@@ -41,18 +41,19 @@ impl Execute for Send {
     }
 
     fn run(&self, ctx: &Context) -> Result<()> {
-        let config = ctx.config();
         let text = input_text(&self.words(), "message")?.text;
         // Only `--continue` looks at the current directory.
         let workspace = if self.resume {
-            Some(workspace(None)?)
+            Some(ctx.workspace(None)?)
         } else {
             None
         };
         let name = self.name.clone().unwrap_or_default();
-        with_client(config, true, async |client| {
+        with_client(ctx, true, async |client| {
             let session = match &workspace {
-                Some(workspace) => last_session_name(&client.list().await?, workspace)?,
+                Some(workspace) => {
+                    last_session_name(&client.list().await?, workspace, &ctx.startup)?
+                }
                 None => name,
             };
             client

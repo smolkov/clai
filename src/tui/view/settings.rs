@@ -63,11 +63,12 @@ pub fn draw(app: &App, frame: &mut Frame<'_>, area: Rect) {
     };
     let look = &app.settings.look;
     let symbols = &look.symbols;
-    let file = app.settings.theming.user_file.display().to_string();
-    let home = std::env::var("HOME").unwrap_or_default();
-    let file = match file.strip_prefix(&home) {
-        Some(rest) if !home.is_empty() => format!("~{rest}"),
-        _ => file,
+    let theming = &app.settings.theming;
+    let file = match &theming.home {
+        Some(home) => {
+            crate::skills::display(&theming.user_file, std::path::Path::new(""), Some(home))
+        }
+        None => theming.user_file.display().to_string(),
     };
     let title = format!(" Settings {} {file} ", symbols.rule);
     let width = usize::from(area.width);

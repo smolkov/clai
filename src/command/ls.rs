@@ -24,8 +24,7 @@ impl Execute for Ls {
     }
 
     fn run(&self, ctx: &Context) -> Result<()> {
-        let config = ctx.config();
-        let sessions = with_client(config, true, async |client| client.list().await)?;
+        let sessions = with_client(ctx, true, async |client| client.list().await)?;
         let text = if self.json {
             let list: Vec<Value> = sessions.iter().map(json_of).collect();
             format!("{}\n", Value::Array(list))

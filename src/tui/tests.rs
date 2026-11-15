@@ -73,6 +73,7 @@ fn settings(unicode: bool, colour: bool) -> Settings {
             theme_env: None,
             offset: 3600,
             user_file: "/home/u/.config/clai/config.toml".into(),
+            home: Some("/home/u".into()),
         },
     }
 }

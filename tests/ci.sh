@@ -99,6 +99,14 @@ refuse "toolchain differs from GitLab" "uses 1.98.0" env CLAI_TOOLCHAIN_TOML="$t
     CLAI_GITLAB_CI="$tmp/other.yml" sh ci/version.sh toolchain
 expect "the repository's toolchain matches GitLab" "" sh ci/version.sh toolchain
 
+mkdir -p "$tmp/src/a/tests"
+printf 'pub fn read() -> Startup { Startup::from_process() }\n' >"$tmp/src/startup.rs"
+printf 'fn ok() {}\n#[cfg(test)]\nmod t { fn g() { let _ = std::env::var("X"); } }\n' >"$tmp/src/a/clean.rs"
+printf 'fn t() { let _ = std::env::var_os("Y"); }\n' >"$tmp/src/a/tests/helper.rs"
+expect "no environment reads outside startup" "" sh ci/env-check.sh "$tmp/src"
+printf '// std::env::var("HOME") in a comment\nfn f() { let _ = std::env::current_dir(); }\n' >"$tmp/src/a/bad.rs"
+refuse "an environment read outside startup" "bad.rs:2:" sh ci/env-check.sh "$tmp/src"
+
 if [ "$failures" -gt 0 ]; then
     echo "$failures ci script tests failed" >&2
     exit 1

@@ -12,7 +12,6 @@ use clap::{Args, ValueHint};
 use clap_complete::ArgValueCompleter;
 use tokio_util::sync::CancellationToken;
 
-use super::common::workspace;
 use super::run::{INTERRUPTED, NO_SIGNAL, SIGINT, watch_signals};
 use super::{Context, Execute};
 use crate::commit::{self, Repo, Scope};
@@ -53,7 +52,7 @@ impl Execute for Commit {
     }
 
     fn run(&self, ctx: &Context) -> Result<()> {
-        let dir = workspace(self.dir.as_deref())?;
+        let dir = ctx.workspace(self.dir.as_deref())?;
         let repo = Repo::open(&dir)?;
         let root = repo.root().to_path_buf();
         let options = ctx.load_options(root.clone());
@@ -78,10 +77,10 @@ impl Execute for Commit {
             workspace: &workspace,
         };
         let prepared = commit::prepare(&repo, self.scope(), &checker, self.hint.as_deref())?;
-        let provider = provider::from_config(provider_config)
+        let provider = provider::from_config(provider_config, &ctx.startup)
             .map_err(|e| Error::Failed(format!("provider {}: {e}", provider_config.name)))?;
         if io::stderr().is_terminal() {
-            let dots = if unicode(config.tui.symbols, |name| std::env::var(name).ok()) {
+            let dots = if unicode(config.tui.symbols, ctx.startup.getenv()) {
                 "…"
             } else {
                 "..."

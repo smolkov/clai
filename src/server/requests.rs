@@ -191,7 +191,7 @@ impl Shared {
                 lsp: Some(Arc::new(LspEnv::new(
                     self.lsp.clone(),
                     &config.lsp,
-                    std::env::var_os("PATH").as_deref(),
+                    self.load.env.var_os("PATH"),
                     id.to_string(),
                     true,
                     false,
@@ -351,12 +351,12 @@ impl Shared {
     fn models(&self, workspace: Option<&Path>) -> Reply {
         // Models come only from the user file; without a workspace any will
         // do, and the default is the user file's or `CLAI_MODEL`.
-        let temp = std::env::temp_dir();
+        let temp = self.load.env.temp_dir.clone();
         let config = self.config(workspace.unwrap_or(&temp))?;
         let mut models = Vec::new();
         for provider in config.providers.values() {
             for model in provider.models.values() {
-                models.push(model_info(&config, provider, model));
+                models.push(model_info(&config, provider, model, &self.load.env));
             }
         }
         let path = lock(&self.config).path.clone();
@@ -420,7 +420,7 @@ impl Shared {
             let model_ref = config.resolve_model(&session.model).ok()?;
             let (provider, model) = config.model(&model_ref)?;
             Some(ModelStatus {
-                info: model_info(config, provider, model),
+                info: model_info(config, provider, model, &self.load.env),
                 api: provider.api.name().to_owned(),
                 base_url: provider.base_url.clone(),
                 temperature: model.temperature,
@@ -516,7 +516,7 @@ impl Shared {
         // Sessions that are gone keep no summary.
         lock(&self.summaries).retain(|dir, _| stores.iter().any(|(s, _)| s.dir() == dir));
         let configured: std::collections::HashSet<String> = self
-            .config(&std::env::temp_dir())
+            .config(&self.load.env.temp_dir.clone())
             .map(|config| {
                 config
                     .providers
@@ -843,7 +843,7 @@ impl Conn {
             }
             (_, Found::Running(handle)) => {
                 // Models come only from the user file; any workspace will do.
-                let config = shared.config(&std::env::temp_dir())?;
+                let config = shared.config(&shared.load.env.temp_dir.clone())?;
                 let model_ref = config.resolve_model(model).map_err(ErrorReply::usage)?;
                 let Some((provider_config, model_config)) = config.model(&model_ref) else {
                     return Err(ErrorReply::usage(format!("unknown model `{model_ref}`")));
@@ -921,8 +921,13 @@ impl Conn {
 }
 
 /// A configured model as `models` lists it.
-fn model_info(config: &Config, provider: &config::Provider, model: &config::Model) -> ModelInfo {
-    let getenv = |name: &str| std::env::var(name).ok();
+fn model_info(
+    config: &Config,
+    provider: &config::Provider,
+    model: &config::Model,
+    env: &crate::startup::Startup,
+) -> ModelInfo {
+    let getenv = env.getenv();
     ModelInfo {
         model: format!("{}/{}", provider.name, model.name),
         provider: provider.name.clone(),
