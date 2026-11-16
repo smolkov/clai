@@ -162,7 +162,7 @@ An adapter:
   unknown event types and block types are logged at debug level.
   **(assumption)**
 - never panics on any input from the network: anything it cannot decode is
-  a `Protocol` error (see [`agent.md`](../agent.md), "Never crash"). A
+  a `Protocol` error (see [`AGENTS.md`](../AGENTS.md), "Never crash"). A
   single event larger than 16 MiB is a `Protocol` error too.
 
 HTTPS uses the system's trusted certificates plus the bundled Mozilla root

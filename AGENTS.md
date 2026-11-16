@@ -6,10 +6,10 @@
 
 | File                     | Purpose                                                        |
 |--------------------------|----------------------------------------------------------------|
-| `spec/`                  | Source of truth for behaviour, one file per topic. The user edits it directly. |
+| `spec/`                  | Source of truth for behaviour, one file per topic.Keep in sync with the code.|
 | `spec/readme.md`         | Start of the specification: purpose, goals, terms; it is the source of truth for `codeagent`. |
+| `rfcs/`                  | Proposals for a change before it is built, one file each; process, template, statuses and index in `rfcs/readme.md`. |
 | `readme.md`              | User documentation.                                            |
-| `implementation.md`      | Architecture, modules, dependencies and milestone order of the implementation. |
 | `todo.md`                | Tasks and their status.                                        |
 
 ## Workflow

@@ -1,4 +1,4 @@
-//! Locking without panics (see `agent.md`, "Never crash").
+//! Locking without panics (see `AGENTS.md`, "Never crash").
 
 use std::sync::{Mutex, MutexGuard, PoisonError};
 

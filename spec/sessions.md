@@ -38,7 +38,7 @@ Statements marked **(assumption)** need a decision from the user.
   and resume later (see [Persistence](#persistence)).
 - The server is a local, single-user process. It never listens on a network
   port.
-- The server must not crash (see `agent.md`, "Never crash"). An error in one
+- The server must not crash (see `AGENTS.md`, "Never crash"). An error in one
   session is reported in that session and never affects other sessions.
 - Client and server exchange versioned messages. A client that does not match
   the server's protocol version gets a clear error that tells the user to

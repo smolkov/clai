@@ -24,7 +24,7 @@ is wrong until the user decides otherwise.
   the user only when a decision is needed (see [`sessions.md`](sessions.md),
   "Background work").
 - Never crash: errors are reported and the session continues (see
-  [`agent.md`](../agent.md), "Never crash").
+  [`AGENTS.md`](../AGENTS.md), "Never crash").
 - Start fast and ship as a single static binary with no runtime dependencies.
 - Be predictable: the same configuration and input give the same tool
   behaviour; only the model's answers vary.
@@ -123,7 +123,7 @@ files appear there as draft chapters (empty links).
 The book is configured in [`book.toml`](book.toml). Build it with
 `mdbook build spec` (output in `target/spec-book/`), or read it with live
 reload with `mdbook serve spec --open`. Links to files outside `spec/`
-(`agent.md`, `implementation.md`) work in the repository, not in the book.
+(`AGENTS.md`, `implementation.md`) work in the repository, not in the book.
 
 When a spec file is added, renamed or removed, update this table and
 `SUMMARY.md` in the same change.
@@ -145,7 +145,7 @@ When a spec file is added, renamed or removed, update this table and
 | [`providers.md`](providers.md) | draft | Agent–provider interface: shared request, message, event and error types; adapters per API type that encode and decode the provider's format; retries. |
 | `context.md` | planned | System prompt, project instructions, history size and truncation. |
 
-Related files outside `spec/`: [`agent.md`](../agent.md) (rules for the
+Related files outside `spec/`: [`AGENTS.md`](../AGENTS.md) (rules for the
 coding agent working on this repository).
 
 ## Open questions

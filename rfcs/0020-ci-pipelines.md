@@ -4,7 +4,7 @@
 - Status: accepted (built; the pipelines run on the first push)
 - Milestone: Release (`todo.md`, "Next milestones")
 - Spec: [`spec/readme.md`](../spec/readme.md), open question 4
-  (platforms); [`agent.md`](../agent.md), "Before committing"; the
+  (platforms); [`AGENTS.md`](../AGENTS.md), "Before committing"; the
   "Static musl build check" items in [`todo.md`](../todo.md)
 
 ## Summary
@@ -25,7 +25,7 @@ the same on both forges and on a developer's machine.
 
 ## Motivation
 
-- `agent.md` asks for `cargo fmt`, `clippy -D warnings` and `cargo test`
+- `AGENTS.md` asks for `cargo fmt`, `clippy -D warnings` and `cargo test`
   before each commit. Nothing checks it; a commit from another machine
   or a hurried one goes in unchecked.
 - `todo.md` has "Static musl build check" twice, moved to Release because
@@ -99,7 +99,7 @@ call. Each runs locally too. **(proposal)**
 | `ci/notes.sh VERSION` | Prints the section of `VERSION` from `CHANGELOG.md`; fails if there is none. |
 | `ci/version.sh TAG` | Fails unless `TAG` is `v` plus the `version` in `Cargo.toml`. |
 
-`ci/check.sh` and `ci/test.sh` are what `agent.md` asks for, so
+`ci/check.sh` and `ci/test.sh` are what `AGENTS.md` asks for, so
 "Before committing" can name them.
 
 ### Toolchain
@@ -380,7 +380,7 @@ crates.io metadata, `include` and `[package.metadata.deb]`.
 - `spec/readme.md`: open question 4 (platforms) answered: Linux and
   macOS, not Windows; or as decided.
 - `spec/command.md`: the `--version` output with commit and date.
-- `agent.md`, "Before committing": `ci/check.sh` and `ci/test.sh` as the
+- `AGENTS.md`, "Before committing": `ci/check.sh` and `ci/test.sh` as the
   short form.
 - `readme.md`: "Install" with the archives, the `.deb`
   (`sudo apt install ./codeagent_0.2.0-1_amd64.deb`) and `cargo install codeagent
@@ -419,7 +419,7 @@ crates.io metadata, `include` and `[package.metadata.deb]`.
 1. **Scripts, toolchain and version**
    - Status: done
    - Files: `ci/*.sh`, `tests/ci.sh`, `rust-toolchain.toml`,
-     `Cargo.toml`, `src/cli.rs`, `tests/cli.rs`, `agent.md`
+     `Cargo.toml`, `src/cli.rs`, `tests/cli.rs`, `AGENTS.md`
    - Result: check, test and build run locally the same way; the musl
      build is checked static; `--version` shows the commit.
    - Tests: the script tests, `tests/cli.rs`.

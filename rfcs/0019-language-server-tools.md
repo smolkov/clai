@@ -317,7 +317,7 @@ name, command, root and environment. Protocol `8`.
   `window/workDoneProgress/create` and `client/registerCapability` are
   acknowledged; `window/showMessageRequest` gets no choice; anything else
   gets "method not found". `codeagent` never applies a `workspace/applyEdit`.
-- **Malformed messages** fail the server, never the session (`agent.md`,
+- **Malformed messages** fail the server, never the session (`AGENTS.md`,
   "Never crash"). A header without `Content-Length`, a header line over
   1 KiB, a body over 64 MiB or a body that is not JSON-RPC is malformed.
 

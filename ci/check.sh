@@ -1,5 +1,5 @@
 #!/bin/sh
-# Format and lints, as agent.md "Before committing" asks.
+# Format and lints, as AGENTS.md "Before committing" asks.
 #
 #   ci/check.sh
 

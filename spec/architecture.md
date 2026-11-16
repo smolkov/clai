@@ -96,7 +96,7 @@ codeagent/
 ├── Cargo.toml, Cargo.lock      one crate, one binary `codeagent`
 ├── clippy.toml                 lint settings (never-crash rules)
 ├── readme.md                   user-facing overview and status
-├── agent.md                    rules for the coding agent on this repository
+├── AGENTS.md                   rules for the coding agent on this repository
 ├── implementation.md           modules, dependencies, milestones
 ├── todo.md                     progress per milestone
 │
@@ -460,7 +460,7 @@ call. A buggy client can therefore not allow more than the user chose.
 
 Errors are values that pass up the layers, each layer adding what it knows,
 until one decides what the user sees. Nothing on the way panics or exits the
-server (see [`agent.md`](../agent.md), "Never crash").
+server (see [`AGENTS.md`](../AGENTS.md), "Never crash").
 
 | Error in | Becomes |
 |----------|---------|

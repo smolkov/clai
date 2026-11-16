@@ -312,7 +312,7 @@ All answered; see "Answers".
 3. Clients without a log file: quiet (proposal), or keep the warning on
    every command?
 4. Should the check "no `std::env::var` outside `startup.rs`" be in
-   `ci/check.sh` (proposal), or only a review rule in `agent.md`?
+   `ci/check.sh` (proposal), or only a review rule in `AGENTS.md`?
 5. One log file for all processes with the role in each line (proposal), or
    a separate `server.log`?
 

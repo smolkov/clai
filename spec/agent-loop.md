@@ -421,7 +421,7 @@ what was done and what was cancelled.
 ## Errors
 
 The loop never panics and never ends the session (see
-[`agent.md`](../agent.md), "Never crash"). A tool error is a result for the
+[`AGENTS.md`](../AGENTS.md), "Never crash"). A tool error is a result for the
 model, not an error of the turn.
 
 | Error | The loop |

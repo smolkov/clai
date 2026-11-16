@@ -310,7 +310,7 @@ left alone:
   - A new test checks that `execute().name()` gives each command's name,
     `server stop` and `server status` included.
 - **Checks:** `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
-  `cargo test` after every step, as `agent.md` says.
+  `cargo test` after every step, as `AGENTS.md` says.
 
 ## Implementation plan
 
