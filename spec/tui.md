@@ -360,7 +360,7 @@ Changing the model of a running session:
 | Entry          | Display |
 |----------------|---------|
 | User message   | Prefixed with `>`, in the user colour. |
-| Model text     | `●` (`*` in ASCII, in the accent colour) before its first row; the other rows indented by two columns, so the text forms one column. Rendered Markdown: headings, emphasis, lists, inline code, code blocks with syntax highlighting. Streams in as it arrives, with the marker from its first row. An answer cut by tool calls gets the marker on each part. |
+| Model text     | `●` (`*` in ASCII, in the accent colour) before its first row; the other rows indented by two columns, so the text forms one column. Rendered Markdown: headings, emphasis, lists, inline code, code blocks with syntax highlighting, tables. A table is drawn as columns two cells apart, as wide as their text, with the head in bold and a rule under it; when it is wider than the screen, the widest columns are narrowed first (down to 8 cells) and their cells wrap. Column alignment (`:-`, `-:`, `:-:`) is kept. Streams in as it arrives, with the marker from its first row. An answer cut by tool calls gets the marker on each part. |
 | Tool call      | One summary line: marker, the tool's short name, main argument, state. |
 | Tool preview   | Below the summary of a finished edit, write or command, and of a failed call: see below. |
 | Tool details   | Below the summary when expanded: diff for edits, file excerpt for reads, command and output for commands. |

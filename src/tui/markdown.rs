@@ -1,17 +1,25 @@
 //! Markdown as lines for the screen: headings, emphasis, lists, inline code,
-//! code blocks, quotes. Code blocks are highlighted by the language of their
+//! code blocks, quotes, tables. Code blocks are highlighted by the language of their
 //! fence (see `highlight`). An unfinished block, while the text streams, is
 //! shown as if it were closed.
 
-use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{Alignment, CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use ratatui::style::{Modifier, Style};
-use ratatui::text::Line;
+use ratatui::text::{Line, Span};
 
 use unicode_width::UnicodeWidthStr;
 
 use super::highlight;
 use super::style::Look;
 use super::wrap::{Piece, Source, wrap_rows};
+
+/// The extensions of the parser: `~~strike~~` and tables.
+const EXTENSIONS: Options = Options::ENABLE_STRIKETHROUGH.union(Options::ENABLE_TABLES);
+/// Between the columns of a table.
+const COLUMN_GAP: &str = "  ";
+/// A column is not made narrower than this to fit the width, unless its
+/// text is shorter.
+const MIN_COLUMN: usize = 8;
 
 /// `text` as rows of at most `width` cells.
 pub fn lines(text: &str, width: usize, look: &Look) -> Vec<Line<'static>> {
@@ -25,7 +33,7 @@ pub fn lines(text: &str, width: usize, look: &Look) -> Vec<Line<'static>> {
 /// indentation are not text, list markers are.
 pub fn rows(text: &str, width: usize, look: &Look) -> Vec<(Line<'static>, Source)> {
     let mut r = Renderer::new(width, look);
-    for event in Parser::new_ext(text, Options::ENABLE_STRIKETHROUGH) {
+    for event in Parser::new_ext(text, EXTENSIONS) {
         r.event(event);
     }
     r.finish()
@@ -35,7 +43,7 @@ pub fn rows(text: &str, width: usize, look: &Look) -> Vec<(Line<'static>, Source
 pub fn code_blocks(text: &str) -> Vec<String> {
     let mut blocks = Vec::new();
     let mut open: Option<String> = None;
-    for event in Parser::new_ext(text, Options::ENABLE_STRIKETHROUGH) {
+    for event in Parser::new_ext(text, EXTENSIONS) {
         match event {
             Event::Start(Tag::CodeBlock(_)) => open = Some(String::new()),
             Event::Text(text) => {
@@ -70,6 +78,18 @@ struct Renderer<'a> {
     code: Option<(String, String)>,
     /// Targets of open links, shown after their text.
     links: Vec<String>,
+    /// The open table.
+    table: Option<Table>,
+}
+
+/// A table while it is read: its cells, drawn at its end.
+#[derive(Default)]
+struct Table {
+    aligns: Vec<Alignment>,
+    /// The rows, the head first; each cell its inline text.
+    rows: Vec<Vec<Vec<Piece>>>,
+    /// Whether the first row is the head.
+    head: bool,
 }
 
 impl<'a> Renderer<'a> {
@@ -86,6 +106,7 @@ impl<'a> Renderer<'a> {
             quotes: 0,
             code: None,
             links: Vec::new(),
+            table: None,
         }
     }
 
@@ -254,6 +275,27 @@ impl<'a> Renderer<'a> {
                 };
                 self.marker = Some(marker);
             }
+            Tag::Table(aligns) => {
+                self.flush();
+                self.blank();
+                self.table = Some(Table {
+                    aligns: aligns.clone(),
+                    ..Table::default()
+                });
+            }
+            Tag::TableHead => {
+                self.modifiers.push(Modifier::BOLD);
+                if let Some(table) = &mut self.table {
+                    table.head = true;
+                    table.rows.push(Vec::new());
+                }
+            }
+            Tag::TableRow => {
+                if let Some(table) = &mut self.table {
+                    table.rows.push(Vec::new());
+                }
+            }
+            Tag::TableCell => self.pieces.clear(),
             Tag::Emphasis => self.modifiers.push(Modifier::ITALIC),
             Tag::Strong => self.modifiers.push(Modifier::BOLD),
             Tag::Strikethrough => self.modifiers.push(Modifier::CROSSED_OUT),
@@ -292,6 +334,19 @@ impl<'a> Renderer<'a> {
                 }
             }
             TagEnd::Item => self.flush(),
+            TagEnd::TableCell => {
+                let cell = std::mem::take(&mut self.pieces);
+                if let Some(row) = self.table.as_mut().and_then(|t| t.rows.last_mut()) {
+                    row.push(cell);
+                }
+            }
+            TagEnd::TableHead => {
+                self.modifiers.pop();
+            }
+            TagEnd::Table => {
+                self.table_rows();
+                self.blank();
+            }
             TagEnd::Emphasis | TagEnd::Strong | TagEnd::Strikethrough => {
                 self.modifiers.pop();
             }
@@ -308,7 +363,94 @@ impl<'a> Renderer<'a> {
         }
     }
 
+    /// Draws the open table: columns as wide as their text, narrowed to fit
+    /// the width with their cells wrapped, and a rule under the head.
+    fn table_rows(&mut self) {
+        let Some(table) = self.table.take() else {
+            return;
+        };
+        let columns = table.rows.iter().map(Vec::len).max().unwrap_or(0);
+        if columns == 0 {
+            return;
+        }
+        let indent = self.indent();
+        let room = self
+            .width
+            .saturating_sub(indent.width())
+            .saturating_sub(COLUMN_GAP.len() * (columns - 1));
+        let natural: Vec<usize> = (0..columns)
+            .map(|c| {
+                table
+                    .rows
+                    .iter()
+                    .filter_map(|row| row.get(c))
+                    .map(|cell| cell.iter().map(|(t, _)| t.width()).sum::<usize>())
+                    .max()
+                    .unwrap_or(0)
+                    .max(1)
+            })
+            .collect();
+        let widths = fit(&natural, room);
+        let dim = self.look.styles.dim;
+        let blank = (String::new(), self.base);
+        for (r, row) in table.rows.iter().enumerate() {
+            let cells: Vec<Vec<Line<'static>>> = (0..columns)
+                .map(|c| {
+                    let width = widths.get(c).copied().unwrap_or(1);
+                    let pieces = row.get(c).map_or(&[][..], Vec::as_slice);
+                    let lines: Vec<Line<'static>> = wrap_rows(pieces, width, &blank, &blank)
+                        .into_iter()
+                        .map(|(line, _)| line)
+                        .collect();
+                    if lines.is_empty() {
+                        vec![Line::default()]
+                    } else {
+                        lines
+                    }
+                })
+                .collect();
+            let height = cells.iter().map(Vec::len).max().unwrap_or(1);
+            for i in 0..height {
+                let mut spans = vec![Span::styled(indent.clone(), dim)];
+                for (c, cell) in cells.iter().enumerate() {
+                    let width = widths.get(c).copied().unwrap_or(1);
+                    let line = cell.get(i).cloned().unwrap_or_default();
+                    let free = width.saturating_sub(line.width());
+                    let align = table.aligns.get(c).copied().unwrap_or(Alignment::None);
+                    let (before, after) = match align {
+                        Alignment::Right => (free, 0),
+                        Alignment::Center => (free / 2, free - free / 2),
+                        Alignment::Left | Alignment::None => (0, free),
+                    };
+                    if c > 0 {
+                        spans.push(Span::raw(COLUMN_GAP));
+                    }
+                    if before > 0 {
+                        spans.push(Span::raw(" ".repeat(before)));
+                    }
+                    spans.extend(line.spans);
+                    // No spaces at the end of a row.
+                    if after > 0 && c + 1 < columns {
+                        spans.push(Span::raw(" ".repeat(after)));
+                    }
+                }
+                trim_end(&mut spans);
+                self.out
+                    .push((Line::from(spans), Source::text(indent.width())));
+            }
+            if r == 0 && table.head {
+                let rule: Vec<String> = widths
+                    .iter()
+                    .map(|w| self.look.symbols.rule.repeat(*w))
+                    .collect();
+                let text = format!("{indent}{}", rule.join(COLUMN_GAP));
+                self.out.push((Line::styled(text, dim), Source::skipped()));
+            }
+        }
+    }
+
     fn finish(mut self) -> Vec<(Line<'static>, Source)> {
+        self.table_rows();
         self.code();
         self.flush();
         while self.out.last().is_some_and(|(l, _)| l.width() == 0) {
@@ -316,6 +458,40 @@ impl<'a> Renderer<'a> {
         }
         self.out
     }
+}
+
+/// Removes the spaces at the end of a row: of empty cells and of wrapped
+/// text in the last column.
+fn trim_end(spans: &mut Vec<Span<'static>>) {
+    while let Some(last) = spans.last_mut() {
+        let trimmed = last.content.trim_end_matches(' ');
+        if !trimmed.is_empty() {
+            let len = trimmed.len();
+            last.content.to_mut().truncate(len);
+            return;
+        }
+        spans.pop();
+    }
+}
+
+/// Column widths for `natural` widths in `room` cells: as they are when
+/// they fit; otherwise the widest are narrowed first, down to
+/// [`MIN_COLUMN`], and then all of them, down to one cell.
+fn fit(natural: &[usize], room: usize) -> Vec<usize> {
+    let mut widths = natural.to_vec();
+    for floor in [MIN_COLUMN, 1] {
+        while widths.iter().sum::<usize>() > room {
+            let Some(widest) = widths
+                .iter_mut()
+                .filter(|w| **w > floor)
+                .max_by_key(|w| **w)
+            else {
+                break;
+            };
+            *widest -= 1;
+        }
+    }
+    widths
 }
 
 #[cfg(test)]
@@ -471,5 +647,73 @@ mod tests {
         for line in lines("# long heading text\n\n- item with long text", 6, &look()) {
             assert!(line.width() <= 6, "{line}");
         }
+    }
+
+    #[test]
+    fn tables_are_drawn_as_columns() {
+        let md = "before\n\n| Option | Value |\n|--------|-------|\n| buildtype | release (-O2) |\n| cpp_std | c++20 |\n\nafter";
+        assert_eq!(
+            text(md, 80),
+            [
+                "before",
+                "",
+                "Option     Value",
+                "─────────  ─────────────",
+                "buildtype  release (-O2)",
+                "cpp_std    c++20",
+                "",
+                "after",
+            ]
+        );
+        assert!(style_of(md, "Option").add_modifier.contains(Modifier::BOLD));
+        assert!(
+            !style_of(md, "cpp_std")
+                .add_modifier
+                .contains(Modifier::BOLD)
+        );
+    }
+
+    #[test]
+    fn table_cells_wrap_to_fit_the_width() {
+        let md = "| Option | Value |\n|---|---|\n| type | rx6 defines DEVICETYPE_RX6 limited to ten channels |";
+        let rows = text(md, 30);
+        assert_eq!(
+            rows,
+            [
+                "Option  Value",
+                "──────  ──────────────────────",
+                "type    rx6 defines",
+                "        DEVICETYPE_RX6 limited",
+                "        to ten channels",
+            ]
+        );
+        for row in &rows {
+            assert!(row.width() <= 30, "{row}");
+        }
+    }
+
+    #[test]
+    fn table_alignment_and_missing_cells() {
+        let md = "| a | n |\n|:-|-:|\n| x | 1 |\n| long | 100 |\n| y |";
+        assert_eq!(
+            text(md, 80),
+            ["a       n", "────  ───", "x       1", "long  100", "y"]
+        );
+    }
+
+    #[test]
+    fn a_table_while_streaming() {
+        assert_eq!(
+            text("| a | b |\n|---|---|\n| 1 |", 80),
+            ["a  b", "─  ─", "1"]
+        );
+    }
+
+    #[test]
+    fn column_widths() {
+        assert_eq!(fit(&[5, 10], 20), [5, 10]);
+        assert_eq!(fit(&[5, 30], 20), [5, 15]);
+        assert_eq!(fit(&[20, 30], 20), [10, 10]);
+        assert_eq!(fit(&[20, 30], 4), [2, 2]);
     }
 }

@@ -31,6 +31,8 @@ notes are taken from that section by `ci/notes.sh`.
   the end unless `--keep-tmp` is given. Shown as `scratch` in the status
   view, as `tmp` in `codeagent ls --json`, and under `scratch` in run
   reports. `[session] scratch = false` turns it off.
+- The TUI draws Markdown tables as aligned columns, with cells that wrap
+  to fit the screen; before, a table showed as one run-on line.
 
 ## 0.5.0 - 2026-11-15
 
