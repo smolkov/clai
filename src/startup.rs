@@ -116,6 +116,13 @@ impl Startup {
         |name| self.var(name)
     }
 
+    /// The variables that are valid UTF-8, as name and value.
+    pub fn vars(&self) -> impl Iterator<Item = (String, String)> + '_ {
+        self.vars.iter().filter_map(|(name, value)| {
+            Some((name.to_str()?.to_owned(), value.to_str()?.to_owned()))
+        })
+    }
+
     /// The variables, owned, for a getter that must outlive `self`.
     pub fn getenv_owned(&self) -> impl Fn(&str) -> Option<String> + Send + Sync + 'static {
         let copy = self.clone();

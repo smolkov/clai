@@ -37,6 +37,7 @@ pub use question::{
     Reply, SessionRef, TurnInfo,
 };
 
+use crate::secrets::Redactor;
 use crate::sync::lock;
 use stream::{StreamEnd, Streamed};
 
@@ -45,6 +46,38 @@ const NOT_RUN_LIMIT: &str = "not run: the turn was stopped at its limit";
 const CANCELLED: &str = "cancelled by the user";
 const NO_ONE: &str = "denied: needs permission, and no one can answer";
 const LSP_NOT_STARTED: &str = "language server not started: denied by the user";
+/// Added to the result of a command that holds a placeholder (RFC 0030).
+const COMMAND_PLACEHOLDER: &str = "\nrun_command does not fill in secrets; use the environment \
+                                   variable that holds the value instead";
+/// Command output without a newline held back at most, in bytes, before
+/// it is sent on with its secrets hidden.
+const PROGRESS_HOLD: usize = 4096;
+/// The bullet about placeholders, for the system prompt.
+const SECRETS_BULLET: &str = "- Secrets in files, output and messages are shown as \
+     [secret: KIND #ID]. Never ask for their values. You may write a placeholder into a file \
+     you edit and the real value is kept; in commands, use the environment variable instead.\n";
+
+/// The prompt with the bullet about placeholders, before the one about
+/// focused changes.
+fn with_secrets(system: &str) -> String {
+    match system.find("- Keep changes focused") {
+        Some(at) => format!(
+            "{}{SECRETS_BULLET}{}",
+            system.get(..at).unwrap_or(""),
+            system.get(at..).unwrap_or("")
+        ),
+        None => format!("{system}\n{SECRETS_BULLET}"),
+    }
+}
+
+/// The details of a call with the secrets in their strings hidden.
+fn hide_in_details(secrets: &Redactor, details: &tools::Details) -> tools::Details {
+    serde_json::to_value(details)
+        .ok()
+        .map(|value| secrets.redact_json(&value))
+        .and_then(|value| serde_json::from_value(value).ok())
+        .unwrap_or_else(|| details.clone())
+}
 
 /// What a session gives its agent.
 pub struct Setup {
@@ -62,6 +95,9 @@ pub struct Setup {
     /// Someone can answer questions from the model (`ask_user`): a session
     /// on the server, `codeagent run` on a terminal.
     pub can_ask: bool,
+    /// Hides secrets from the model (RFC 0030); `None` with `[secrets]
+    /// redact = false`.
+    pub secrets: Option<Arc<Redactor>>,
 }
 
 /// The provider and model of a session, with its `provider/model` name. The
@@ -175,6 +211,7 @@ pub struct Agent {
     offers_report: bool,
     /// The last valid `report` call.
     report: Option<Reported>,
+    secrets: Option<Arc<Redactor>>,
 }
 
 /// Requests and tool calls: in the current budget, and in the whole turn.
@@ -236,6 +273,10 @@ impl Agent {
             Some(lsp) => with_lsp(&setup.system, &lsp.languages()),
             None => setup.system,
         };
+        let system = match &setup.secrets {
+            Some(secrets) => with_secrets(&secrets.hide(&system)),
+            None => system,
+        };
         Agent {
             cancel_reason: CancelReason::default(),
             model: ModelHandle::new(setup.provider, setup.model, setup.model_name),
@@ -254,6 +295,7 @@ impl Agent {
             journal: None,
             offers_report: false,
             report: None,
+            secrets: setup.secrets,
         }
     }
 
@@ -342,6 +384,11 @@ impl Agent {
         self.model.clone()
     }
 
+    /// What hides secrets from the model in this session.
+    pub fn secrets(&self) -> Option<Arc<Redactor>> {
+        self.secrets.clone()
+    }
+
     /// The handle to change the active skills.
     pub fn skills(&self) -> SkillsHandle {
         self.skills.clone()
@@ -367,6 +414,9 @@ impl Agent {
             Arc::new(self.base_workspace.with_read_dirs(&dirs))
         };
         self.system = with_skills(&self.base_system, &workspace, &skills);
+        if let Some(secrets) = &self.secrets {
+            self.system = secrets.hide(&self.system);
+        }
         self.env.workspace = workspace;
     }
 
@@ -420,6 +470,7 @@ impl Agent {
         events.emit(SessionEvent::State {
             state: State::Working,
         });
+        let message = self.hide_in_message(message, events);
         events.emit(SessionEvent::UserMessage {
             text: message.clone(),
         });
@@ -556,7 +607,7 @@ impl Agent {
             if stop.is_none() && budget.tool_calls >= self.limits.max_tool_calls {
                 stop = self.limit(budget, events, asker, cancel).await;
             }
-            let (output, state) = match stop {
+            let (mut output, state) = match stop {
                 Some(stop) => {
                     let (text, state) = stop.not_run(self.cancel_reason.get().as_deref());
                     (ToolOutput::error(text), state)
@@ -570,6 +621,11 @@ impl Agent {
                     (output, state)
                 }
             };
+            // Nothing of a secret goes to the model or into the log.
+            if let Some(secrets) = &self.secrets {
+                output.text = secrets.hide(&output.text);
+                output.full = secrets.hide(&output.full);
+            }
             events.emit(SessionEvent::ToolCall(ToolCallEvent {
                 details: None,
                 id: call.id.clone(),
@@ -585,7 +641,6 @@ impl Agent {
             }));
             // A repeated read of an unchanged file points to the earlier
             // result the model still has (RFC 0028).
-            let mut output = output;
             if call.name == "read_file"
                 && !output.is_error
                 && let Some(earlier) = self.history.unchanged_read(
@@ -750,11 +805,22 @@ impl Agent {
         if call.name == report::NAME {
             return self.report_call(call, events);
         }
-        let prepared = match tools::prepare(&self.env, &call.name, &call.arguments) {
+        let arguments = match self.restore_secrets(call) {
+            Ok(arguments) => arguments,
+            Err(text) => return (ToolOutput::error(text), CallState::Error, None),
+        };
+        let mut prepared = match tools::prepare(
+            &self.env,
+            &call.name,
+            arguments.as_ref().unwrap_or(&call.arguments),
+        ) {
             Prepared::Failed(output) => return (output, CallState::Error, None),
             Prepared::Denied(output) => return (output, CallState::Denied, None),
             Prepared::Ready(prepared) => prepared,
         };
+        if let Some(secrets) = &self.secrets {
+            prepared.details = hide_in_details(secrets, &prepared.details);
+        }
         let summary = Some(prepared.summary.clone());
         if prepared.action() == Action::Ask {
             self.emit_call(
@@ -811,11 +877,43 @@ impl Agent {
         let env = self.env.clone();
         let run = prepared.run_with_progress(&env, cancel.clone(), Some(tx));
         let forward = async {
+            // Whole lines only, so a secret is not split between two parts.
+            let mut pending = String::new();
             while let Some(text) = rx.recv().await {
+                let text = match &self.secrets {
+                    Some(secrets) => {
+                        pending.push_str(&text);
+                        let cut = match pending.rfind('\n') {
+                            Some(at) => at + 1,
+                            None if pending.len() > PROGRESS_HOLD => pending.len(),
+                            None => continue,
+                        };
+                        let rest = pending.split_off(cut);
+                        secrets.hide(&std::mem::replace(&mut pending, rest))
+                    }
+                    None => text,
+                };
+                self.emit_call(events, call, CallState::Running, None, Some(text), None);
+            }
+            if let Some(secrets) = &self.secrets
+                && !pending.is_empty()
+            {
+                let text = secrets.hide(&pending);
                 self.emit_call(events, call, CallState::Running, None, Some(text), None);
             }
         };
-        let (output, ()) = tokio::join!(run, forward);
+        let (mut output, ()) = tokio::join!(run, forward);
+        if call.name == "run_command"
+            && self.secrets.is_some()
+            && call
+                .arguments
+                .get("command")
+                .and_then(Value::as_str)
+                .is_some_and(|c| crate::secrets::count(c) > 0)
+        {
+            output.text.push_str(COMMAND_PLACEHOLDER);
+            output.full.push_str(COMMAND_PLACEHOLDER);
+        }
         if cancel.is_cancelled() {
             return (output, CallState::Cancelled, Some(Stop::Cancelled));
         }
@@ -825,6 +923,81 @@ impl Agent {
             CallState::Done
         };
         (output, state, None)
+    }
+
+    /// The user's message with its secrets hidden, and a notice that says
+    /// which.
+    fn hide_in_message(&self, message: String, events: &EventSink) -> String {
+        let Some(secrets) = &self.secrets else {
+            return message;
+        };
+        let redacted = secrets.redact(&message);
+        if redacted.hidden.is_empty() {
+            return message;
+        }
+        let mut names: Vec<&str> = redacted
+            .hidden
+            .iter()
+            .map(|p| {
+                p.strip_prefix("[secret: ")
+                    .and_then(|p| p.strip_suffix(']'))
+                    .unwrap_or(p)
+            })
+            .collect();
+        names.dedup();
+        events.emit(SessionEvent::Notice {
+            text: format!(
+                "hidden from the model in your message: {}",
+                names.join(", ")
+            ),
+        });
+        redacted.text
+    }
+
+    /// The arguments of `edit_file` and `write_file` with the values of the
+    /// placeholders the session has seen put back, for files in the
+    /// workspace and the writable extra directories (RFC 0030). `None`
+    /// when nothing changes; an error for an `old_text` with a placeholder
+    /// whose value is not known.
+    fn restore_secrets(&self, call: &CallIn) -> Result<Option<Value>, String> {
+        let Some(secrets) = &self.secrets else {
+            return Ok(None);
+        };
+        let fields: &[&str] = match call.name.as_str() {
+            "edit_file" => &["old_text", "new_text"],
+            "write_file" => &["content"],
+            _ => return Ok(None),
+        };
+        let Some(path) = call.arguments.get("path").and_then(Value::as_str) else {
+            return Ok(None);
+        };
+        let resolved = self.env.workspace.resolve(path);
+        if resolved.is_outside() || self.env.workspace.in_scratch(&resolved) {
+            return Ok(None);
+        }
+        let mut arguments = call.arguments.clone();
+        let mut changed = false;
+        for field in fields {
+            let Some(text) = arguments.get(*field).and_then(Value::as_str) else {
+                continue;
+            };
+            let restored = secrets.restore(text);
+            if *field == "old_text"
+                && let Some(first) = restored.unknown.first()
+            {
+                return Err(format!(
+                    "old_text contains {first}, whose value is not known in this session; \
+                     read the file again"
+                ));
+            }
+            if restored.text != text
+                && let Some(slot) = arguments.get_mut(*field)
+            {
+                *slot = Value::String(restored.text);
+                changed = true;
+            }
+        }
+        Ok(changed.then_some(arguments))
     }
 
     fn emit_call(

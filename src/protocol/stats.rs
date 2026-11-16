@@ -140,6 +140,10 @@ pub struct Stats {
     pub last_active: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub turn: Option<RunningTurn>,
+    /// Secrets hidden from the model in the user's messages and in tool
+    /// results (RFC 0030), counted by their placeholders.
+    #[serde(default)]
+    pub secrets_hidden: u64,
 }
 
 impl Stats {
@@ -158,7 +162,8 @@ impl Stats {
                     self.stop_working(at);
                 }
             }
-            SessionEvent::UserMessage { .. } => {
+            SessionEvent::UserMessage { text } => {
+                self.secrets_hidden += crate::secrets::count(text) as u64;
                 self.turn = Some(RunningTurn {
                     started: at,
                     ..RunningTurn::default()
@@ -181,6 +186,9 @@ impl Stats {
                 } else {
                     call.name.as_str()
                 };
+                if let Some(result) = &call.result {
+                    self.secrets_hidden += crate::secrets::count(&result.text) as u64;
+                }
                 let counts = self.tools.entry(name.to_owned()).or_default();
                 match call.state {
                     CallState::Done => counts.done += 1,

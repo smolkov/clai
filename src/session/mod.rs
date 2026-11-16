@@ -344,6 +344,8 @@ struct Actor {
     events: mpsc::UnboundedReceiver<SessionEvent>,
     sink: EventSink,
     asker: Arc<SessionAsker>,
+    /// Hides secrets in queued messages before they are saved (RFC 0030).
+    secrets: Option<Arc<crate::secrets::Redactor>>,
 }
 
 impl Actor {
@@ -383,6 +385,7 @@ impl Actor {
             skills_handle,
             skills,
             cancel_reason: agent.cancel_reason(),
+            secrets: agent.secrets(),
             agent: Some(agent),
             turn: None,
             state: State::Idle,
@@ -646,7 +649,14 @@ impl Actor {
         let Some(store) = &self.store else {
             return;
         };
-        self.meta.queued = self.queue.iter().cloned().collect();
+        self.meta.queued = self
+            .queue
+            .iter()
+            .map(|text| match &self.secrets {
+                Some(secrets) => secrets.hide(text),
+                None => text.clone(),
+            })
+            .collect();
         let result = store.write_meta(&self.meta);
         self.saved(result);
     }

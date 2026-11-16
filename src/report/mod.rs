@@ -115,6 +115,9 @@ pub struct Report {
     pub tool_calls: Vec<ToolCall>,
     pub counts: Counts,
     pub usage: Usage,
+    /// Secrets hidden from the model in the task and the tool results
+    /// (RFC 0030).
+    pub secrets_hidden: usize,
     /// Seconds.
     pub duration: u64,
 }
@@ -137,11 +140,15 @@ pub struct Collector {
     usage: Usage,
     /// The last error event: the summary of a failed run.
     error: Option<String>,
+    secrets_hidden: usize,
 }
 
 impl Collector {
     pub fn event(&mut self, event: &SessionEvent) {
         match event {
+            SessionEvent::UserMessage { text } => {
+                self.secrets_hidden += crate::secrets::count(text);
+            }
             SessionEvent::ToolCall(call) => {
                 if let Some(summary) = &call.summary {
                     self.summaries.insert(call.id.clone(), summary.clone());
@@ -154,6 +161,7 @@ impl Collector {
                     .as_ref()
                     .map(|r| r.text.clone())
                     .unwrap_or_default();
+                self.secrets_hidden += crate::secrets::count(&text);
                 let summary = self
                     .summaries
                     .get(&call.id)
@@ -278,6 +286,7 @@ impl Collector {
             tool_calls: self.calls.iter().map(|s| s.call.clone()).collect(),
             counts,
             usage: self.usage,
+            secrets_hidden: self.secrets_hidden,
             duration: run.duration,
         }
     }
@@ -344,6 +353,11 @@ pub fn render_text(report: &Report, place: &str, unicode: bool) -> String {
         Outcome::Done => {}
         Outcome::Limit => out.push_str("\nThe run stopped at its limit.\n"),
         Outcome::Failed => out.push_str("\nThe run failed.\n"),
+    }
+    match report.secrets_hidden {
+        0 => {}
+        1 => out.push_str("\n1 secret was hidden from the model.\n"),
+        n => out.push_str(&format!("\n{n} secrets were hidden from the model.\n")),
     }
     if !report.summary.is_empty() {
         out.push_str(&format!("\n{}\n", report.summary));

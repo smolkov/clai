@@ -231,3 +231,21 @@ fn model_error() {
         stderr(&out)
     );
 }
+
+#[test]
+fn keys_in_the_diff_are_hidden() {
+    let server = Server::start(vec![say("config: add the deploy token\n")]);
+    let env = Env::new("secret", &server, "");
+    repository(&env);
+    let key = "ghp_aZ3kQ9mX2pL7vB1nR8tY4wC6hJ0sD5fG1234";
+    fs::write(env.work().join("deploy.yml"), format!("token: {key}\n")).unwrap();
+    git(&env.work(), &["add", "deploy.yml"]);
+    let out = codeagent(&env, &["commit"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let user = server.requests()[0]["messages"][1]["content"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(!user.contains(key), "{user}");
+    assert!(user.contains("+token: [secret: github token #"), "{user}");
+}

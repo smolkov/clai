@@ -688,3 +688,20 @@ fn lsp_tool_line_counts_the_result() {
         "fake-rs: no answer"
     );
 }
+
+#[test]
+fn hidden_secrets_on_the_tool_line() {
+    let text = "     1→a = [secret: token #12ab]\n     2→b = [secret: password #34cd]";
+    assert_eq!(
+        short_result("read_file", CallState::Done, text),
+        "2 lines, 2 secrets hidden"
+    );
+    assert_eq!(
+        short_result(
+            "run_command",
+            CallState::Done,
+            "[secret: env X #0001]\nexit code 0"
+        ),
+        "exit code 0, 1 secret hidden"
+    );
+}

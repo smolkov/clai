@@ -19,6 +19,7 @@ pub mod provider;
 pub mod report;
 pub mod runtime;
 pub mod scratch;
+pub mod secrets;
 pub mod server;
 pub mod session;
 pub mod skills;

@@ -93,6 +93,11 @@ A file that `read_file` may not read (a built-in secret file such as
 
 For a rename, both the old and the new path count.
 
+Secrets in the diffs and the agent file, such as a key about to be
+committed, are replaced by placeholders before the request (see
+[`agent-loop.md`](agent-loop.md), "Secrets"); the commit itself is not
+stopped.
+
 ## Agent file
 
 The project's agent file holds its rules for commit messages. It is, at the

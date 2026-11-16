@@ -2182,3 +2182,24 @@ async fn scratch_directories_live_with_their_sessions() {
     assert!(!tmp.parent().unwrap().exists());
     fx.stop().await;
 }
+
+#[tokio::test]
+async fn queued_messages_are_saved_without_their_secrets() {
+    let fx = Fixture::start(vec![Script::new(vec![Step::Hang, say("ok"), say("ok")])]).await;
+    let mut c = fx.client("tui pts/1", true).await;
+    new_session(&mut c, &fx.ws, Some("a")).await;
+    attach(&mut c, "a").await;
+    send(&mut c, "a", "first").await;
+    let key = "ghp_aZ3kQ9mX2pL7vB1nR8tY4wC6hJ0sD5fG1234";
+    send(&mut c, "a", &format!("then use {key}")).await;
+    let saved = store::list(&fx.sessions_dir());
+    let meta = fs::read_to_string(saved[0].0.dir().join("session.json")).unwrap();
+    assert!(meta.contains("then use [secret: github token #"), "{meta}");
+    assert!(!meta.contains(key));
+    c.request(Request::Cancel {
+        session: "a".into(),
+    })
+    .await
+    .unwrap();
+    fx.stop().await;
+}

@@ -11,8 +11,8 @@ Statements marked **(assumption)** need a decision from the user.
 
 | File                          | Scope   | May define |
 |-------------------------------|---------|------------|
-| `~/.config/codeagent/config.toml`  | User    | Everything: providers, models, defaults, `[limits]`, `[history]`, `[session]`, `[permissions]`, `[commit]`, `[tui]`, `[themes]`, `[lsp]`, `[skills]`. |
-| `<workspace>/.codeagent/config.toml` | Project | Defaults and limits only: `default_model`, `[limits]` (only lower, see [Limits](#limits)), `[permissions]` (restricted, see [Permissions](#permissions)), `[commit]`, `[lsp]` (restricted, see [LSP](#lsp)). Not providers, models, `[history]`, `[session]`, `[tui]`, `[themes]` or `[skills]`. |
+| `~/.config/codeagent/config.toml`  | User    | Everything: providers, models, defaults, `[limits]`, `[history]`, `[session]`, `[secrets]`, `[permissions]`, `[commit]`, `[tui]`, `[themes]`, `[lsp]`, `[skills]`. |
+| `<workspace>/.codeagent/config.toml` | Project | Defaults and limits only: `default_model`, `[limits]` (only lower, see [Limits](#limits)), `[permissions]` (restricted, see [Permissions](#permissions)), `[commit]`, `[lsp]` (restricted, see [LSP](#lsp)), `[secrets]` (only `patterns` and `values_env`, see [Secrets](#secrets)). Not providers, models, `[history]`, `[session]`, `[tui]`, `[themes]` or `[skills]`. |
 
 `$XDG_CONFIG_HOME` replaces `~/.config` when it is set.
 
@@ -383,6 +383,9 @@ builtin_except = ["deploy/certs/*.pem", ".env.test"]
 It lifts only the built-in rules: a `deny` rule of the user or project
 file on the same path still denies.
 
+Secrets in files that are not denied, such as a key in `config.toml`, are
+hidden from the model by [`[secrets]`](#secrets) instead.
+
 One built-in `allow` rule comes with the session's scratch directory
 (RFC 0029; see `spec/sessions.md`, "Scratch directory"): the `read` and
 `edit` groups on `<scratch dir>/**`, shown as `built-in`. It is checked
@@ -497,6 +500,24 @@ The scratch directory: `spec/sessions.md`, "Scratch directory". With
 `false` there is no directory, no `TMPDIR` or `CODEAGENT_TMP`, no prompt
 line and no built-in `allow` rule. User file only; a change applies to
 sessions started or resumed after it.
+
+## Secrets
+
+```toml
+[secrets]
+redact = true          # hide secrets from the model; false: send text as it is
+assignments = true     # also `password = "…"` and the like with random values
+values_env = ["MY_SERVICE_TOKEN"]            # more variables whose values are secret
+patterns = ["acme_[a-z0-9]{32}"]             # more key formats (regular expressions)
+allow = ["sk-test-not-a-real-key-000000000"] # values that are never hidden
+```
+
+What is hidden and where: [`agent-loop.md`](agent-loop.md), "Secrets"
+(RFC 0030). `redact`, `assignments` and `allow` are user file only. A
+project file may add `patterns` and `values_env`, which only hide more;
+the other keys there are an error. A pattern that is not a regular
+expression is an error. A change applies to sessions started or resumed
+after it, and to `codeagent commit`.
 
 ## LSP
 

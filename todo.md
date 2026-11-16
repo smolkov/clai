@@ -385,7 +385,7 @@ Milestones and their order: [`implementation.md`](implementation.md).
       model, write the sums into `bench/readme.md` (needs a key)
 - [x] Scratch directory per session (RFC 0029): `TMPDIR`, built-in allow
       rule, `--keep-tmp`, `[session] scratch`
-- [ ] Hide secrets from the model (RFC 0030, draft): placeholders for keys
+- [x] Hide secrets from the model (RFC 0030): placeholders for keys
       in messages, results and prompts; values put back in file edits
 - [x] Language server tools: `lsp` tool, `[lsp]`, diagnostics after edits
       (RFC 0019; see its section)

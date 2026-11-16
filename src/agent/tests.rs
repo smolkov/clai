@@ -16,6 +16,9 @@ use crate::provider::{Event, EventStream, Message};
 
 use super::*;
 
+/// A known secret value of the test sessions (RFC 0030).
+const TEST_SECRET: &str = "test-secret-value-0001";
+
 const CONFIG: &str = r#"
 [permissions]
 run_command = "ask"
@@ -183,6 +186,10 @@ impl Fixture {
             },
             system,
             can_ask: true,
+            secrets: Some(Arc::new(crate::secrets::Redactor::new(
+                &crate::config::SecretsSettings::default(),
+                vec![("env TEST_TOKEN".into(), TEST_SECRET.into())],
+            ))),
         });
         Fixture {
             _tmp: tmp,
@@ -1614,4 +1621,117 @@ async fn the_scratch_directory_is_made_and_used_without_questions() {
     f.script.steps.lock().unwrap().push_back(say("again"));
     f.turn("again", &no_questions()).await;
     assert!(scratch.exists());
+}
+
+#[tokio::test]
+async fn secrets_are_hidden_from_the_model() {
+    let mut f = Fixture::new(vec![
+        calls(&[("c1", "read_file", json!({"path": "app.toml"}))]),
+        calls(&[(
+            "c2",
+            "run_command",
+            // Prints the secret, built when it runs.
+            json!({"command": "echo test-secret-value-000$((0+1))"}),
+        )]),
+        say("done"),
+    ]);
+    let github = format!("ghp_{}", "aZ3kQ9mX2pL7vB1nR8tY4wC6hJ0sD5fG1234");
+    f.write(
+        "app.toml",
+        &format!("name = \"app\"\ntoken = \"{github}\"\n"),
+    );
+    let (_, events) = f
+        .turn(&format!("my key is {TEST_SECRET}, fix it"), &no_questions())
+        .await;
+    let hidden = crate::secrets::placeholder("env TEST_TOKEN", TEST_SECRET);
+    let requests = f.script.requests.lock().unwrap().clone();
+    let sent =
+        serde_json::to_string(&requests.iter().map(|r| &r.messages).collect::<Vec<_>>()).unwrap();
+    assert!(!sent.contains(TEST_SECRET), "{sent}");
+    assert!(!sent.contains(&github), "{sent}");
+    assert!(sent.contains(&hidden), "{sent}");
+    assert!(sent.contains("[secret: github token #"), "{sent}");
+    // The prompt says what placeholders are.
+    assert!(requests[0].system.contains("[secret: KIND #ID]"));
+    // Nothing reaches the events, which are saved and shown, either.
+    let logged = serde_json::to_string(&events).unwrap();
+    assert!(!logged.contains(TEST_SECRET) && !logged.contains(&github));
+    assert!(
+        events.iter().any(|e| matches!(e, SessionEvent::Notice { text }
+            if text == &format!("hidden from the model in your message: env TEST_TOKEN #{}", &hidden[hidden.len() - 5..hidden.len() - 1]))),
+        "{events:#?}"
+    );
+    let r = last_results(&f);
+    assert_eq!(r[0].0, format!("{hidden}\nexit code 0"));
+}
+
+#[tokio::test]
+async fn file_edits_keep_the_hidden_values() {
+    let hidden = crate::secrets::placeholder("env TEST_TOKEN", TEST_SECRET);
+    let mut f = Fixture::new(vec![
+        calls(&[("r1", "read_file", json!({"path": "app.toml"}))]),
+        calls(&[(
+            "e1",
+            "edit_file",
+            json!({
+                "path": "app.toml",
+                "old_text": format!("token = \"{hidden}\"\nport = 1"),
+                "new_text": format!("token = \"{hidden}\"\nport = 2"),
+            }),
+        )]),
+        calls(&[(
+            "w1",
+            "write_file",
+            json!({"path": "copy.toml", "content": format!("token = \"{hidden}\"\n")}),
+        )]),
+        calls(&[(
+            "c1",
+            "run_command",
+            json!({"command": format!("echo '{hidden}'")}),
+        )]),
+        say("done"),
+    ]);
+    f.write(
+        "app.toml",
+        &format!("token = \"{TEST_SECRET}\"\nport = 1\n"),
+    );
+    let asker = TestAsker::answers(vec![Answer::Allow, Answer::Allow, Answer::Allow]);
+    let (_, events) = f.turn("change the port", &asker).await;
+    assert_eq!(
+        fs::read_to_string(f.root.join("app.toml")).unwrap(),
+        format!("token = \"{TEST_SECRET}\"\nport = 2\n")
+    );
+    assert_eq!(
+        fs::read_to_string(f.root.join("copy.toml")).unwrap(),
+        format!("token = \"{TEST_SECRET}\"\n")
+    );
+    // The command got the placeholder, not the value.
+    let r = last_results(&f);
+    assert!(r[0].0.starts_with(&hidden), "{r:?}");
+    assert!(r[0].0.contains("does not fill in secrets"), "{r:?}");
+    // The questions and the diffs show placeholders only.
+    let logged = serde_json::to_string(&events).unwrap();
+    assert!(!logged.contains(TEST_SECRET), "{logged}");
+    for q in asker.asked() {
+        assert!(!format!("{q:?}").contains(TEST_SECRET));
+    }
+}
+
+#[tokio::test]
+async fn an_unknown_placeholder_in_old_text_fails() {
+    let mut f = Fixture::new(vec![
+        calls(&[(
+            "e1",
+            "edit_file",
+            json!({"path": "a.txt", "old_text": "k = [secret: token #0000]", "new_text": "k = 1"}),
+        )]),
+        say("done"),
+    ]);
+    f.write("a.txt", "k = 1\n");
+    f.turn("edit", &no_questions()).await;
+    let r = last_results(&f);
+    assert!(
+        r[0].0.contains("whose value is not known in this session") && r[0].1,
+        "{r:?}"
+    );
 }

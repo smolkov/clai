@@ -199,6 +199,12 @@ fn session(status: &SessionStatus, options: &Options<'_>) -> Section {
             rows.push(row(label, value));
         }
     }
+    if status.stats.secrets_hidden > 0 {
+        rows.push(row(
+            "secrets",
+            format!("{} hidden from the model", status.stats.secrets_hidden),
+        ));
+    }
     rows.push(row(
         "created",
         format!(
@@ -721,10 +727,11 @@ Server         0.4.0 - pid 7 - 1 session, 0 running - 1 client
         let mut status = saved();
         status.scratch = Some("/run/user/1000/codeagent/sessions/x/tmp".into());
         status.scratch_size = Some(34_000);
+        status.stats.secrets_hidden = 2;
         let text = text(&sections(&status, &options));
         assert!(
             text.contains(
-                "  workspace    ~/ws/docs\n  scratch      /run/user/1000/codeagent/sessions/x/tmp  (34 kB)\n"
+                "  workspace    ~/ws/docs\n  scratch      /run/user/1000/codeagent/sessions/x/tmp  (34 kB)\n  secrets      2 hidden from the model\n"
             ),
             "{text}"
         );

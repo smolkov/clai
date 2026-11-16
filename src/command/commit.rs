@@ -76,7 +76,15 @@ impl Execute for Commit {
             session: &session,
             workspace: &workspace,
         };
-        let prepared = commit::prepare(&repo, self.scope(), &checker, self.hint.as_deref())?;
+        let mut prepared = commit::prepare(&repo, self.scope(), &checker, self.hint.as_deref())?;
+        // A key about to be committed is not sent to the model (RFC 0030).
+        if let Some(secrets) = crate::secrets::Redactor::from_config(
+            &config.secrets,
+            config.providers.values(),
+            ctx.startup.vars(),
+        ) {
+            prepared.message = secrets.hide(&prepared.message);
+        }
         let provider = provider::from_config(provider_config, &ctx.startup)
             .map_err(|e| Error::Failed(format!("provider {}: {e}", provider_config.name)))?;
         if io::stderr().is_terminal() {

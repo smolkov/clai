@@ -155,6 +155,13 @@ impl Workspace {
         self.scratch.as_ref().map(|s| &s.scratch)
     }
 
+    /// Whether a resolved path lies in the scratch directory.
+    pub fn in_scratch(&self, path: &Resolved) -> bool {
+        self.scratch
+            .as_ref()
+            .is_some_and(|s| path.abs.starts_with(&s.path))
+    }
+
     /// The built-in rule for the scratch directory, checked with the others.
     pub fn scratch_rule(&self) -> Option<&Rule> {
         self.scratch.as_ref().map(|s| &s.rule)

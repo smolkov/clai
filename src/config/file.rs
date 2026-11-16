@@ -26,6 +26,18 @@ pub struct UserFile {
     pub skills: Option<SkillsFile>,
     pub history: Option<HistoryFile>,
     pub session: Option<SessionFile>,
+    pub secrets: Option<SecretsFile>,
+}
+
+/// `[secrets]` (RFC 0030).
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SecretsFile {
+    pub redact: Option<Spanned<bool>>,
+    pub assignments: Option<Spanned<bool>>,
+    pub values_env: Option<Vec<String>>,
+    pub patterns: Option<Vec<Spanned<String>>>,
+    pub allow: Option<Spanned<Vec<String>>>,
 }
 
 /// `[session]` (RFC 0029).
@@ -62,6 +74,8 @@ pub struct ProjectFile {
     pub skills: Option<Spanned<toml::Value>>,
     pub history: Option<Spanned<toml::Value>>,
     pub session: Option<Spanned<toml::Value>>,
+    /// Only `patterns` and `values_env`; checked by hand.
+    pub secrets: Option<SecretsFile>,
 }
 
 /// `[skills]` (RFC 0023).

@@ -172,6 +172,87 @@ impl Limits {
     }
 }
 
+/// `[secrets]` (RFC 0030): what is hidden from the model.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SecretsSettings {
+    /// Hide secrets at all.
+    pub redact: bool,
+    /// Also `password = "…"` and the like with random values.
+    pub assignments: bool,
+    /// More environment variables whose values are secret.
+    pub values_env: Vec<String>,
+    /// More key formats, as regular expressions; all compile.
+    pub patterns: Vec<String>,
+    /// Values that are never hidden.
+    pub allow: Vec<String>,
+}
+
+impl Default for SecretsSettings {
+    fn default() -> SecretsSettings {
+        SecretsSettings {
+            redact: true,
+            assignments: true,
+            values_env: Vec::new(),
+            patterns: Vec::new(),
+            allow: Vec::new(),
+        }
+    }
+}
+
+impl SecretsSettings {
+    /// Adds a file's `[secrets]`; a project file may only add `patterns`
+    /// and `values_env`.
+    fn apply(
+        &mut self,
+        ctx: FileCtx<'_>,
+        file: &file::SecretsFile,
+        project: bool,
+        errors: &mut Vec<ConfigError>,
+    ) {
+        let user_only = |key: &str, span: std::ops::Range<usize>, errors: &mut Vec<ConfigError>| {
+            errors.push(ctx.error(
+                Some(span),
+                Some(format!("secrets.{key}")),
+                "only allowed in the user file; a project file may add patterns and values_env",
+            ));
+        };
+        if let Some(v) = &file.redact {
+            if project {
+                user_only("redact", v.span(), errors);
+            } else {
+                self.redact = *v.get_ref();
+            }
+        }
+        if let Some(v) = &file.assignments {
+            if project {
+                user_only("assignments", v.span(), errors);
+            } else {
+                self.assignments = *v.get_ref();
+            }
+        }
+        if let Some(v) = &file.allow {
+            if project {
+                user_only("allow", v.span(), errors);
+            } else {
+                self.allow.extend(v.get_ref().iter().cloned());
+            }
+        }
+        if let Some(names) = &file.values_env {
+            self.values_env.extend(names.iter().cloned());
+        }
+        for pattern in file.patterns.iter().flatten() {
+            match regex::Regex::new(pattern.get_ref()) {
+                Ok(_) => self.patterns.push(pattern.get_ref().clone()),
+                Err(e) => errors.push(ctx.error(
+                    Some(pattern.span()),
+                    Some("secrets.patterns".into()),
+                    format!("not a regular expression: {e}"),
+                )),
+            }
+        }
+    }
+}
+
 /// `[history]`: which old tool results go to the model as placeholders
 /// (RFC 0008, trimmed in steps by RFC 0028).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -275,6 +356,8 @@ pub struct Config {
     pub history: HistorySettings,
     /// `[session] scratch`: a scratch directory per session (RFC 0029).
     pub scratch: bool,
+    /// `[secrets]`: what is hidden from the model (RFC 0030).
+    pub secrets: SecretsSettings,
     pub permissions: Permissions,
     pub commit: Commit,
     pub tui: Tui,
@@ -664,6 +747,10 @@ fn build(
     if let Some(file) = &user_file.history {
         history.apply(user, file, &mut errors);
     }
+    let mut secrets = SecretsSettings::default();
+    if let Some(file) = &user_file.secrets {
+        secrets.apply(user, file, false, &mut errors);
+    }
     let scratch = user_file
         .session
         .as_ref()
@@ -704,6 +791,9 @@ fn build(
         }
         if let Some(value) = &file.lsp {
             lsp::apply_project(ctx, value, &mut lsp, &mut errors);
+        }
+        if let Some(value) = &file.secrets {
+            secrets.apply(ctx, value, true, &mut errors);
         }
         if let Some(value) = &file.default_model {
             default_given = true;
@@ -761,6 +851,7 @@ fn build(
             limits,
             history,
             scratch,
+            secrets,
             permissions,
             commit,
             tui,

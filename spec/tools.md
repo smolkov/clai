@@ -61,6 +61,15 @@ Statements marked **(assumption)** need a decision from the user.
 - Written files are UTF-8. `edit_file` keeps all text outside the replaced
   part byte for byte, including line endings and a missing final newline.
 
+### Secrets in results
+
+Results reach the model, the clients and the saved session with their
+secrets replaced by placeholders (RFC 0030; see
+[`agent-loop.md`](agent-loop.md), "Secrets"). The tool line says how many:
+`✓ read_file config.toml (lines 1–40) — 40 lines, 1 secret hidden`.
+`edit_file` and `write_file` put the values of known placeholders back;
+`run_command` does not.
+
 ### Result size
 
 At most 30 000 characters of a result go to the model. A longer result keeps

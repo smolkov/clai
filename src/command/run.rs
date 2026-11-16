@@ -236,6 +236,12 @@ impl Run {
                 history: config.history,
                 system: system_prompt(&workspace, &today()),
                 can_ask,
+                secrets: crate::secrets::Redactor::from_config(
+                    &config.secrets,
+                    config.providers.values(),
+                    ctx.startup.vars(),
+                )
+                .map(Arc::new),
                 env: Env {
                     permissions: Arc::new(config.permissions.clone()),
                     session: Arc::new(SessionRules::default()),

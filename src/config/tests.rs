@@ -1436,3 +1436,50 @@ fn session_scratch_setting() {
     let e = errs(&with("[session]\nscratch_dir = \"/x\"\n"), None);
     assert!(e[0].contains("unknown field `scratch_dir`"), "{e:?}");
 }
+
+#[test]
+fn secrets_settings() {
+    use crate::config::SecretsSettings;
+    assert_eq!(ok(BASE).secrets, SecretsSettings::default());
+    let config = ok(&with(
+        "[secrets]\nredact = true\nassignments = false\nvalues_env = [\"A_VAR\"]\npatterns = [\"acme_[0-9]{4}\"]\nallow = [\"sk-test-123\"]\n",
+    ));
+    assert_eq!(
+        config.secrets,
+        SecretsSettings {
+            redact: true,
+            assignments: false,
+            values_env: vec!["A_VAR".into()],
+            patterns: vec!["acme_[0-9]{4}".into()],
+            allow: vec!["sk-test-123".into()],
+        }
+    );
+    assert!(!ok(&with("[secrets]\nredact = false\n")).secrets.redact);
+    let e = errs(&with("[secrets]\npatterns = [\"(open\"]\n"), None);
+    assert!(
+        e[0].contains("secrets.patterns: not a regular expression"),
+        "{e:?}"
+    );
+}
+
+#[test]
+fn a_project_may_only_hide_more() {
+    let config = load_with(
+        BASE,
+        Some("[secrets]\npatterns = [\"acme_[0-9]{4}\"]\nvalues_env = [\"B\"]\n"),
+        &Environment::default(),
+    )
+    .unwrap();
+    assert_eq!(config.secrets.patterns, ["acme_[0-9]{4}"]);
+    assert_eq!(config.secrets.values_env, ["B"]);
+    let e = errs(
+        BASE,
+        Some("[secrets]\nredact = false\nassignments = false\nallow = [\"x\"]\n"),
+    );
+    assert_eq!(e.len(), 3, "{e:?}");
+    assert!(
+        e.iter()
+            .all(|e| e.contains("only allowed in the user file")),
+        "{e:?}"
+    );
+}

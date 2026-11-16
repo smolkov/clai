@@ -312,6 +312,8 @@ Sessions are managed with `codeagent`, `codeagent new`, `codeagent attach`, `cod
 Every session of the server is saved as it goes, so it survives a server
 stop, a crash or a reboot. `codeagent run` sessions are not saved. The
 [scratch directory](#scratch-directory) is not part of the saved session.
+Saved text has its secrets hidden (see `spec/agent-loop.md`, "Secrets"),
+also queued messages; the values stay in the server's memory only.
 
 - **Where:** `$XDG_STATE_HOME/codeagent/sessions/<id>/` (fallback
   `~/.local/state/codeagent/sessions/`), directories with mode `0700`, files with

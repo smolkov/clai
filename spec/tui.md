@@ -978,6 +978,9 @@ answer; a first answer that fails closes it with the error.
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
+- The `secrets` row counts the secrets hidden from the model in the
+  session (`3 hidden from the model`; see [`agent-loop.md`](agent-loop.md),
+  "Secrets"); it is left out at zero.
 - Rows that do not apply are left out: extra dirs when there are none,
   scratch (the session's scratch directory and the size of its files, see
   [`sessions.md`](sessions.md), "Scratch directory") when it does not exist, the

@@ -1,7 +1,7 @@
 # Hide secrets from the model
 
 - RFC: 0030
-- Status: draft
+- Status: done
 - Spec: [`spec/agent-loop.md`](../spec/agent-loop.md), "System prompt",
   "Messages"; [`spec/tools.md`](../spec/tools.md), "Calls and results",
   "run_command"; [`spec/config.md`](../spec/config.md), "Built-in rules";
@@ -292,7 +292,7 @@ hash it needs does worse work.
 ## Implementation plan
 
 1. **Detection and placeholders**
-   - Status: todo
+   - Status: done
    - Files: `src/secrets/mod.rs` (new: `Redactor`, `Found`, formats,
      entropy), `src/secrets/tests.rs`
    - Result: `Redactor::redact(text) -> Redacted { text, found }` and
@@ -300,14 +300,14 @@ hash it needs does worse work.
    - Tests: the format table, lookalikes, known values, assignments, ids.
 
 2. **Config and known values**
-   - Status: todo
+   - Status: done
    - Files: `src/config/file.rs`, `src/config/mod.rs`, `src/config/tests.rs`
    - Result: `[secrets]`; the redactor is built from the provider keys and
      the environment.
    - Tests: parse, project rules, invalid pattern.
 
 3. **The agent**
-   - Status: todo
+   - Status: done
    - Files: `src/agent/mod.rs`, `src/agent/prompt.rs`,
      `src/agent/system_prompt.md`, `src/agent/tests.rs`
    - Result: user messages, tool results, `ask_user` answers and the
@@ -315,7 +315,7 @@ hash it needs does worse work.
    - Tests: the agent cases above.
 
 4. **Putting values back**
-   - Status: todo
+   - Status: done
    - Files: `src/tools/edit_file.rs`, `src/tools/write_file.rs`,
      `src/tools/run_command.rs`, `src/tools/tests.rs`
    - Result: files keep their secrets through edits; commands never get
@@ -323,7 +323,7 @@ hash it needs does worse work.
    - Tests: the putting-back cases.
 
 5. **Progress, commit, display**
-   - Status: todo
+   - Status: done
    - Files: `src/tools/run_command.rs`, `src/commit/`, `src/text/`,
      `src/tui/`, `src/report/`
    - Result: live output, the commit prompt, tool-line marks, the status
@@ -331,7 +331,7 @@ hash it needs does worse work.
    - Tests: split chunks, commit prompt, rendering.
 
 6. **Spec and readme**
-   - Status: todo
+   - Status: done
    - Files: the spec files above, `readme.md`, `CHANGELOG.md`, `todo.md`
    - Result: the behaviour is written down, with its limits.
 
@@ -354,7 +354,44 @@ hash it needs does worse work.
   but it turns every command into a way to send the key anywhere; the
   environment variable does the same job safely.
 
+## Changes while building
+
+Approved with the build ("implement rfc0030"); the open questions took the
+proposals. Where the build differs from the design above:
+
+- **Keys from `api_key_cmd`** are not known values: getting them would run
+  the command once more for each session. Their formats still catch
+  provider keys.
+- **Known values** are found with a plain substring search per value, not
+  Aho–Corasick: a session has a handful, and it needs no new dependency.
+  Values that are paths are left out, like those under 8 characters.
+- **The user's message** is shown as the model gets it, with
+  placeholders, not with a masked value such as `sk-ant-…3f9a`; what is
+  shown is what is saved.
+- **Counting** uses the placeholders in the text: the tool line, the
+  `secrets` row of the status view (`3 hidden from the model`, not split
+  by source) and `secrets_hidden` in run reports count them, so the
+  protocol and the saved format stay as they were.
+- **`run_command` with a placeholder** runs as written; the note is
+  added to its result rather than refusing the call.
+- **Queued messages** are hidden before `session.json` is written; the
+  design forgot that they are saved before their turn starts.
+- **The `read_file` header** does not say how many lines a hidden private
+  key had; the placeholder on one line is enough to see it.
+- **The whole system prompt** is redacted, not only the skills and agent
+  files.
+
 ## Open questions
+
+Answered while building:
+
+1. A kind and a short id, as proposed.
+2. Hidden without asking, with a notice.
+3. Assignments on by default; `assignments = false` turns them off.
+4. No: the TUI does not show hidden values.
+5. No: `codeagent commit` hides keys but does not refuse to commit.
+
+Asked in the draft:
 
 1. Placeholders with a kind and a short id (proposed), or plain
    `[secret]`? The id helps the model and putting values back; it shows

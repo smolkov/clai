@@ -191,8 +191,18 @@ fn lsp_result(lines: &[&str]) -> String {
     first.to_owned()
 }
 
-/// What a tool line says about the result.
+/// What a tool line says about the result, with the number of secrets
+/// hidden in it (RFC 0030).
 pub(crate) fn short_result(tool: &str, state: CallState, text: &str) -> String {
+    let short = result_summary(tool, state, text);
+    match crate::secrets::count(text) {
+        0 => short,
+        1 => format!("{short}, 1 secret hidden"),
+        n => format!("{short}, {n} secrets hidden"),
+    }
+}
+
+fn result_summary(tool: &str, state: CallState, text: &str) -> String {
     let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
     match (tool, state) {
         ("run_command", _) => lines.last().copied().unwrap_or_default().to_owned(),

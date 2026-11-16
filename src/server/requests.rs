@@ -192,6 +192,12 @@ impl Shared {
             history: config.history,
             system: system_prompt(&ws, &today()),
             can_ask: true,
+            secrets: crate::secrets::Redactor::from_config(
+                &config.secrets,
+                config.providers.values(),
+                self.load.env.vars(),
+            )
+            .map(Arc::new),
             env: Env {
                 permissions: Arc::new(config.permissions.clone()),
                 session: Arc::new(SessionRules::default()),

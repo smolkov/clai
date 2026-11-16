@@ -224,6 +224,7 @@ fn the_json_shape() {
         "tool_calls",
         "counts",
         "usage",
+        "secrets_hidden",
         "duration",
     ] {
         assert!(value.get(key).is_some(), "{key}");
@@ -331,4 +332,26 @@ fn scratch_files_are_apart_from_the_changes() {
     let r = c.report(run(Outcome::Done), None, "");
     assert!(r.scratch.is_empty());
     assert_eq!(r.changes.len(), 3);
+}
+
+#[test]
+fn hidden_secrets_are_counted() {
+    let mut c = Collector::default();
+    c.event(&SessionEvent::UserMessage {
+        text: "key [secret: env K #0a0a]".into(),
+    });
+    c.event(&ended(
+        "1",
+        "read_file",
+        CallState::Done,
+        json!({"path": "a"}),
+        "     1→t = [secret: token #0b0b]",
+    ));
+    let r = c.report(run(Outcome::Done), None, "");
+    assert_eq!(r.secrets_hidden, 2);
+    let text = render_text(&r, "~/ws/p", true);
+    assert!(
+        text.contains("\n2 secrets were hidden from the model.\n"),
+        "{text}"
+    );
 }

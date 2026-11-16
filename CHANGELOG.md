@@ -7,6 +7,13 @@ notes are taken from that section by `ci/notes.sh`.
 
 ## Unreleased
 
+- Secrets are hidden from the model (RFC 0030): API keys, tokens,
+  passwords and private keys in messages, file contents, command output,
+  the prompt and the commit diff become placeholders like `[secret:
+  github token #81c0]`. File edits keep the real values; commands never
+  get them. Tool lines, the status view and run reports count them.
+  `[secrets]` sets it up.
+
 ## 0.6.0 - 2026-11-16
 
 - Fewer tokens, same answers (RFC 0028):

@@ -348,6 +348,30 @@ the model read one, add it to `builtin_except` in your own config file:
 builtin_except = ["deploy/certs/*.pem"]
 ```
 
+## Secrets
+
+Before anything goes to the model, `codeagent` replaces API keys, tokens,
+passwords and private keys with placeholders like `[secret: github token
+#81c0]`: in your messages, in file contents and command output, in the
+prompt and in the diff for `codeagent commit`. It knows your providers'
+keys and secret-looking environment variables (`*_TOKEN`, `*_KEY`, …),
+the formats of common keys, and random values after names like
+`password =`. The model, the saved session and the log never get the
+value. When the model edits a file that holds one, the value is kept;
+commands never get it. Tool lines and the status view say how many were
+hidden.
+
+Detection cannot find every secret; keep secret files denied (see
+Permissions). Settings, user file only for the switches:
+
+```toml
+[secrets]
+assignments = false            # only known values and key formats
+values_env = ["MY_SERVICE_TOKEN"]
+patterns = ["acme_[a-z0-9]{32}"]
+allow = ["sk-test-not-a-real-key-000000000"]
+```
+
 ## Scratch directory
 
 Each session gets a private directory for temporary files, outside the

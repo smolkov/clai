@@ -176,6 +176,72 @@ every result in full (RFC 0008, RFC 0028).
 - `trim_results = false` sends the history whole. The keys:
   [`config.md`](config.md), "History".
 
+### Secrets
+
+Before text goes to the model, the session's redactor (RFC 0030) replaces
+each secret in it with a placeholder, `[secret: KIND #ID]`, for example
+`[secret: anthropic key #3f9a]` or `[secret: env GITHUB_TOKEN #81c0]`.
+`ID` is four hex digits of an FNV-1a hash of the value: the same value
+gives the same placeholder in every result and after a resume, so the
+request prefix stays stable.
+
+What counts as a secret, the earlier source winning where matches overlap:
+
+1. **Known values:** the API keys of the configured providers written in
+   the file or named by `api_key_env`, and the values of environment
+   variables whose names end in `_KEY`, `_TOKEN`, `_SECRET`,
+   `_PASSWORD`, `_PASS`, `_PAT`, `_CREDENTIALS` or `_APIKEY` (also
+   `GITHUB_TOKEN`, `GH_TOKEN`, `NPM_TOKEN`, `AWS_SECRET_ACCESS_KEY`,
+   `AWS_SESSION_TOKEN`, `HF_TOKEN`, and `[secrets] values_env`). Values
+   under 8 characters and paths are left out.
+2. **Key formats:** Anthropic, OpenAI, GitHub, GitLab, AWS access, Google,
+   Slack, Stripe and Hugging Face keys by their prefixes, private key
+   blocks, JWTs, the password in `scheme://user:password@host`, the token
+   after `Bearer`, and `[secrets] patterns`.
+3. **Assignments** (unless `assignments = false`): the value after a name
+   with `key`, `token`, `secret`, `password`, `passwd`, `pwd`,
+   `credential` or `auth`, when it looks random: 12 characters or more,
+   letters and digits, at least 3.5 bits of entropy per character, and no
+   name, reference or stand-in (`MY_KEY`, `$TOKEN`, `${{ … }}`,
+   `<your-key>`, `changeme`, a path).
+
+Values in `[secrets] allow` are never hidden.
+
+Where it applies:
+
+| Text | When |
+|------|------|
+| User messages | Before the message enters the history; a `notice` names what was hidden (`hidden from the model in your message: env GITHUB_TOKEN #81c0`). Queued messages are saved hidden too. |
+| Tool results | The result and its full output, before they are stored or sent; `ask_user` answers are results too. |
+| Live command output | Whole lines only, so a secret is not split between two parts; a part without a newline is held back up to 4 KiB. |
+| Call details | The diff and other details of a call, also in a permission question. |
+| The system prompt | All of it, with the skills' text. |
+
+The model never sees a value, so the events, the saved session and an
+export hold none either. Detection finds the formats above and most
+random-looking assignments, not every secret: the built-in `deny` rules
+for secret files stay the first line.
+
+The values of the placeholders a session has hidden stay in its memory
+only. `edit_file` (`old_text`, `new_text`) and `write_file` (`content`)
+get them back before they run, for files in the workspace and writable
+extra directories, not in the scratch directory, so a file keeps its key
+when the model edits it. A placeholder in `old_text` whose value the session
+does not know (after a server restart) fails with `old_text contains
+[secret: … #…], whose value is not known in this session; read the file
+again`. `run_command` never gets values: a command with a placeholder runs
+as written, and its result ends with `run_command does not fill in
+secrets; use the environment variable that holds the value instead`.
+
+The prompt gets a bullet before the one about focused changes:
+
+```
+- Secrets in files, output and messages are shown as [secret: KIND #ID].
+  Never ask for their values. You may write a placeholder into a file you
+  edit and the real value is kept; in commands, use the environment
+  variable instead.
+```
+
 ### System prompt
 
 The first version has a short, fixed system prompt. Its text lives in the

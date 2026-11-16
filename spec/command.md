@@ -279,6 +279,7 @@ What the report holds:
 | `tool_calls` | `codeagent` | Every tool call but `report`, in order: `tool`, `summary`, `state` (`done`, `error`, `denied`, `cancelled`) and `result`, as on the tool line. |
 | `counts` | `codeagent` | The calls by state: `done`, `error`, `denied`, `cancelled`. |
 | `usage` | `codeagent` | `input_tokens`, `output_tokens` and `requests` of all turns of the run. |
+| `secrets_hidden` | `codeagent` | Secrets hidden from the model in the task and the tool results (see [`agent-loop.md`](agent-loop.md), "Secrets"); the text says `2 secrets were hidden from the model.` when there are any. |
 | `duration` | `codeagent` | Seconds. |
 
 Paths are relative to the workspace when inside it.
