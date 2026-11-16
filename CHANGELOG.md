@@ -7,6 +7,11 @@ notes are taken from that section by `ci/notes.sh`.
 
 ## Unreleased
 
+- Ten more bundled themes, each with matching syntax colours (RFC 0031):
+  `emacs`, `flexoki-dark`, `flexoki-light`, `material-oceanic`, `monokai`,
+  `nightfox`, `one-light`, `solarized-dark`, `textual-dark` and
+  `tokyo-night`. A theme's `code` key takes the new names too.
+
 ## 0.8.0 - 2026-11-16
 
 - Secrets are hidden from the model (RFC 0030): API keys, tokens,

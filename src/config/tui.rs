@@ -199,11 +199,20 @@ fn parse_hex(s: &str) -> Option<Colour> {
 
 /// The names the `code` key of a theme takes: `codeagent`'s own (`ansi`, and those
 /// of the bundled themes) and the themes `syntect` bundles.
-pub const CODE_THEMES: [&str; 11] = [
+pub const CODE_THEMES: [&str; 20] = [
     "ansi",
     "atom-one-dark",
     "nord",
     "gruvbox-dark",
+    "emacs",
+    "flexoki-dark",
+    "flexoki-light",
+    "material-oceanic",
+    "monokai",
+    "nightfox",
+    "one-light",
+    "textual-dark",
+    "tokyo-night",
     "base16-ocean.dark",
     "base16-eighties.dark",
     "base16-mocha.dark",

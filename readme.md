@@ -157,7 +157,9 @@ with its share of the tokens, and a chart of tokens per day. `R` counts again.
 (comments and order stay), `Esc` closes. `/theme` lists the themes and previews
 the selected one; `Enter` takes it and saves it as the default, `/theme NAME`
 does so directly. Besides `terminal`, `dark` and `light`, `codeagent` brings
-`atom-one-dark`, `nord`, `gruvbox-dark` and `solarized-light`. Your own themes go
+`atom-one-dark`, `nord`, `gruvbox-dark`, `solarized-light`, `emacs`,
+`flexoki-dark`, `flexoki-light`, `material-oceanic`, `monokai`, `nightfox`,
+`one-light`, `solarized-dark`, `textual-dark` and `tokyo-night`. Your own themes go
 in the config file as `[themes.NAME]` or as files in `~/.config/codeagent/themes/`,
 e.g. `themes/mine.toml`:
 
@@ -181,7 +183,7 @@ the end of command output under finished calls; `all`; `none`), `clipboard`
 `activity`; `syntax_highlight` colours code blocks, diffs, new files and
 commands by their language, with the syntax theme a theme's `code` key names
 (`ansi` on the terminal's 16 colours, `atom-one-dark`, `nord`, `gruvbox-dark`,
-`base16-ocean.dark`, `InspiredGitHub`, `Solarized (dark)`, …; each bundled theme
+`monokai`, `tokyo-night` and the other bundled themes' names, `base16-ocean.dark`, `InspiredGitHub`, `Solarized (dark)`, …; each bundled theme
 uses the syntax colours of its own scheme); `NO_COLOR` turns colours off. `expand_tool_calls = true`
 still works and means `tool_preview = "all"`.
 

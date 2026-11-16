@@ -1,0 +1,18 @@
+# Textual Dark, bundled with codeagent. Copy it to ~/.config/codeagent/themes/textual-dark.toml
+# to change it there; that file then replaces this one.
+# Colours: the textual-dark theme of Textual by Textualize (MIT); syntax
+# colours from its vscode_dark text area theme.
+base        = "dark"
+background  = "#121212"
+text        = "#e0e0e0"
+dim         = "#808080"
+user        = "#ffa62b"
+accent      = "#0178d4"
+border      = "#2c2c2c"
+selection   = "#1e1e1e"
+success     = "#4ebf71"
+error       = "#ba3c5b"
+warning     = "#ffa62b"
+diff_add    = "#4ebf71"
+diff_remove = "#ba3c5b"
+code        = "textual-dark"

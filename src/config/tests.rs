@@ -817,6 +817,21 @@ fn the_code_key_names_a_syntax_theme() {
         ),
         "{e:?}"
     );
+    assert!(e[0].contains("tokyo-night"), "{e:?}");
+    for name in [
+        "emacs",
+        "flexoki-dark",
+        "flexoki-light",
+        "material-oceanic",
+        "monokai",
+        "nightfox",
+        "one-light",
+        "textual-dark",
+        "tokyo-night",
+    ] {
+        let config = ok(&with(&format!("[themes.t]\ncode = \"{name}\"\n")));
+        assert_eq!(config.themes["t"].code.as_deref(), Some(name));
+    }
     // The bundled themes name one.
     for (name, theme) in &crate::config::themes::file_themes(&[]).0 {
         let code = theme.code.as_deref().unwrap_or_default();
@@ -1007,7 +1022,22 @@ fn bundled_themes_load_without_errors() {
         .collect();
     assert_eq!(
         bundled,
-        ["atom-one-dark", "nord", "gruvbox-dark", "solarized-light"]
+        [
+            "atom-one-dark",
+            "nord",
+            "gruvbox-dark",
+            "solarized-light",
+            "emacs",
+            "flexoki-dark",
+            "flexoki-light",
+            "material-oceanic",
+            "monokai",
+            "nightfox",
+            "one-light",
+            "solarized-dark",
+            "textual-dark",
+            "tokyo-night",
+        ]
     );
     assert!(
         config.theme_warnings.is_empty(),
@@ -1024,6 +1054,54 @@ fn bundled_themes_load_without_errors() {
     // One of them as `tui.theme`.
     let config = ok(&with("[tui]\ntheme = \"nord\"\n"));
     assert_eq!(config.tui.theme, "nord");
+}
+
+/// The relative luminance of a colour, as WCAG defines it.
+fn luminance(colour: &Colour) -> f64 {
+    let Colour::Rgb(r, g, b) = *colour else {
+        panic!("not #rrggbb: {colour:?}")
+    };
+    let channel = |c: u8| {
+        let c = f64::from(c) / 255.0;
+        if c <= 0.039_28 {
+            c / 12.92
+        } else {
+            ((c + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+}
+
+#[test]
+fn bundled_themes_have_enough_contrast() {
+    // The themes of RFC 0031; the four older ones keep their published
+    // colours, some of which are below these ratios.
+    let older = ["atom-one-dark", "nord", "gruvbox-dark", "solarized-light"];
+    let (themes, broken) = crate::config::themes::file_themes(&[]);
+    assert!(broken.is_empty(), "{broken:?}");
+    for (name, theme) in themes.iter().filter(|(n, _)| !older.contains(&n.as_str())) {
+        let colour = |key: &str| {
+            theme
+                .colours
+                .iter()
+                .find(|(k, _)| *k == key)
+                .map(|(_, c)| luminance(c))
+                .unwrap_or_else(|| panic!("{name}: no {key}"))
+        };
+        let background = colour("background");
+        for (key, min) in [
+            ("text", 4.5),
+            ("dim", 3.0),
+            ("accent", 3.0),
+            ("success", 3.0),
+            ("error", 3.0),
+            ("warning", 3.0),
+        ] {
+            let fg = colour(key);
+            let ratio = (fg.max(background) + 0.05) / (fg.min(background) + 0.05);
+            assert!(ratio >= min, "{name}: {key} {ratio:.2} < {min}");
+        }
+    }
 }
 
 #[test]
@@ -1048,7 +1126,17 @@ fn theme_files_come_after_the_bundled_ones_and_replace_them() {
             "nord",
             "gruvbox-dark",
             "solarized-light",
-            "mine"
+            "emacs",
+            "flexoki-dark",
+            "flexoki-light",
+            "material-oceanic",
+            "monokai",
+            "nightfox",
+            "one-light",
+            "solarized-dark",
+            "textual-dark",
+            "tokyo-night",
+            "mine",
         ]
     );
     assert_eq!(

@@ -1,0 +1,17 @@
+# Monokai, bundled with codeagent. Copy it to ~/.config/codeagent/themes/monokai.toml
+# to change it there; that file then replaces this one.
+# Colours: Monokai by Wimer Hazenberg, the classic Sublime Text palette.
+base        = "dark"
+background  = "#272822"
+text        = "#f8f8f2"
+dim         = "#90908a"
+user        = "#a6e22e"
+accent      = "#66d9ef"
+border      = "#49483e"
+selection   = "#3e3d32"
+success     = "#a6e22e"
+error       = "#f92672"
+warning     = "#fd971f"
+diff_add    = "#a6e22e"
+diff_remove = "#f92672"
+code        = "monokai"

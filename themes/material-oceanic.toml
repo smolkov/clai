@@ -1,0 +1,17 @@
+# Material Oceanic, bundled with codeagent. Copy it to ~/.config/codeagent/themes/material-oceanic.toml
+# to change it there; that file then replaces this one.
+# Colours: Material Theme, Oceanic variant, by Mattia Astorino (MIT).
+base        = "dark"
+background  = "#263238"
+text        = "#b0bec5"
+dim         = "#78909c"
+user        = "#89ddff"
+accent      = "#82aaff"
+border      = "#37474f"
+selection   = "#314549"
+success     = "#c3e88d"
+error       = "#f07178"
+warning     = "#ffcb6b"
+diff_add    = "#c3e88d"
+diff_remove = "#f07178"
+code        = "material-oceanic"

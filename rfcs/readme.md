@@ -27,7 +27,7 @@ accepted; the RFC records why.
 
 Not needed for bug fixes, refactoring without behaviour change, tests, or
 wording in the spec. The plan the agent writes before each task (see
-[`agent.md`](../agent.md), "Workflow") is enough there.
+[`AGENTS.md`](../AGENTS.md), "Workflow") is enough there.
 
 ## Process
 
@@ -152,3 +152,4 @@ Sections that do not apply may be left out.
 | [0028](0028-fewer-tokens.md) | Fewer tokens, same answers | done |
 | [0029](0029-session-scratch-directory.md) | A scratch directory for each session | done |
 | [0030](0030-hide-secrets-from-the-model.md) | Hide secrets from the model | done |
+| [0031](0031-more-bundled-themes.md) | More bundled themes | done |

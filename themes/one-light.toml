@@ -1,0 +1,17 @@
+# Atom One Light, bundled with codeagent. Copy it to ~/.config/codeagent/themes/one-light.toml
+# to change it there; that file then replaces this one.
+# Colours: Atom's One Light theme (MIT).
+base        = "light"
+background  = "#fafafa"
+text        = "#383a42"
+dim         = "#696c77"
+user        = "#0184bc"
+accent      = "#4078f2"
+border      = "#d3d3d4"
+selection   = "#e5e5e6"
+success     = "#50a14f"
+error       = "#e45649"
+warning     = "#986801"
+diff_add    = "#50a14f"
+diff_remove = "#e45649"
+code        = "one-light"

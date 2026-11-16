@@ -183,6 +183,7 @@ Milestones and their order: [`implementation.md`](implementation.md).
       256-colour fallback (RFC 0006).
 - [x] Theme files in `themes/` next to the user file; bundled `atom-one-dark`,
       `nord`, `gruvbox-dark`, `solarized-light`.
+- [x] Ten more bundled themes with their syntax colours (RFC 0031).
 - [x] `[tui]` applied live: from `/settings`, `/theme` and `config_reloaded`.
 - [x] Saving `[tui]` into the user file with `toml_edit`: comments kept,
       checked, atomic, refused when the file changed.

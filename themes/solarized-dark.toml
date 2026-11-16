@@ -1,0 +1,17 @@
+# Solarized (dark), bundled with codeagent. Copy it to ~/.config/codeagent/themes/solarized-dark.toml
+# to change it there; that file then replaces this one.
+# Colours: Solarized by Ethan Schoonover (MIT).
+base        = "dark"
+background  = "#002b36"
+text        = "#839496"
+dim         = "#657b83"
+user        = "#2aa198"
+accent      = "#268bd2"
+border      = "#073642"
+selection   = "#073642"
+success     = "#859900"
+error       = "#dc322f"
+warning     = "#b58900"
+diff_add    = "#859900"
+diff_remove = "#dc322f"
+code        = "Solarized (dark)"

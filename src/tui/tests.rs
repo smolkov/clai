@@ -3714,7 +3714,7 @@ fn a_broken_theme_file_cannot_be_taken() {
 fn theme_names_in_the_argument_list() {
     let mut app = app();
     typed(&mut app, "/theme so");
-    assert_eq!(values(&app), ["solarized-light"]);
+    assert_eq!(values(&app), ["solarized-light", "solarized-dark"]);
 }
 
 #[test]
@@ -3893,7 +3893,7 @@ fn frame_theme_list() {
     app.settings.theming.warnings = vec![warning("bad")];
     command(&mut app, "/theme");
     app.update(key(KeyCode::Down));
-    insta::assert_snapshot!(screen(&mut app, 80, 30));
+    insta::assert_snapshot!(screen(&mut app, 80, 40));
 }
 
 #[test]
@@ -3904,7 +3904,7 @@ fn frame_theme_list_ascii() {
         Instant::now(),
     );
     command(&mut app, "/theme");
-    let text = screen(&mut app, 80, 30);
+    let text = screen(&mut app, 80, 40);
     assert!(text.is_ascii(), "{text}");
     insta::assert_snapshot!(text);
 }
@@ -3920,6 +3920,8 @@ fn frame_of_each_theme() {
         "nord",
         "gruvbox-dark",
         "solarized-light",
+        "tokyo-night",
+        "one-light",
     ] {
         let mut app = app_with(vec![
             SessionEvent::UserMessage { text: "hi".into() },

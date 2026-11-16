@@ -1,0 +1,17 @@
+# Nightfox, bundled with codeagent. Copy it to ~/.config/codeagent/themes/nightfox.toml
+# to change it there; that file then replaces this one.
+# Colours: the nightfox style of nightfox.nvim by EdenEast (MIT).
+base        = "dark"
+background  = "#192330"
+text        = "#cdcecf"
+dim         = "#738091"
+user        = "#63cdcf"
+accent      = "#719cd6"
+border      = "#39506d"
+selection   = "#2b3b51"
+success     = "#81b29a"
+error       = "#c94f6d"
+warning     = "#dbc074"
+diff_add    = "#81b29a"
+diff_remove = "#c94f6d"
+code        = "nightfox"

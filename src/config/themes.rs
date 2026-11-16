@@ -12,7 +12,8 @@ use super::file::ThemeFile;
 use super::tui::{BuiltinTheme, Theme, ThemeSource, build_theme};
 
 /// The themes built into the binary, from `themes/` in the repository.
-pub const BUNDLED: [(&str, &str); 4] = [
+/// The four first, then the others by name.
+pub const BUNDLED: [(&str, &str); 14] = [
     (
         "atom-one-dark",
         include_str!("../../themes/atom-one-dark.toml"),
@@ -26,6 +27,31 @@ pub const BUNDLED: [(&str, &str); 4] = [
         "solarized-light",
         include_str!("../../themes/solarized-light.toml"),
     ),
+    ("emacs", include_str!("../../themes/emacs.toml")),
+    (
+        "flexoki-dark",
+        include_str!("../../themes/flexoki-dark.toml"),
+    ),
+    (
+        "flexoki-light",
+        include_str!("../../themes/flexoki-light.toml"),
+    ),
+    (
+        "material-oceanic",
+        include_str!("../../themes/material-oceanic.toml"),
+    ),
+    ("monokai", include_str!("../../themes/monokai.toml")),
+    ("nightfox", include_str!("../../themes/nightfox.toml")),
+    ("one-light", include_str!("../../themes/one-light.toml")),
+    (
+        "solarized-dark",
+        include_str!("../../themes/solarized-dark.toml"),
+    ),
+    (
+        "textual-dark",
+        include_str!("../../themes/textual-dark.toml"),
+    ),
+    ("tokyo-night", include_str!("../../themes/tokyo-night.toml")),
 ];
 
 /// A theme file as read: its name, path and text, or why it could not be read.

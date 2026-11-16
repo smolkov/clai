@@ -1,0 +1,17 @@
+# GNU Emacs (default light faces), bundled with codeagent. Copy it to ~/.config/codeagent/themes/emacs.toml
+# to change it there; that file then replaces this one.
+# Colours: the default faces of GNU Emacs (GPL-3.0-or-later); colour values only.
+base        = "light"
+background  = "#ffffff"
+text        = "#000000"
+dim         = "#7f7f7f"
+user        = "#0000ff"
+accent      = "#483d8b"
+border      = "#bfbfbf"
+selection   = "#eedc82"
+success     = "#228b22"
+error       = "#ff0000"
+warning     = "#cd6600"
+diff_add    = "#228b22"
+diff_remove = "#ff0000"
+code        = "emacs"

@@ -1166,16 +1166,26 @@ picker.
 │ Filter:                                                                      │
 │                                                                              │
 │ built in                                                                     │
-│   terminal         ✓ current                                                 │
+│   terminal          ✓ current                                                │
 │ ▶ dark                                                                       │
 │   light                                                                      │
 │ bundled                                                                      │
-│   atom-one-dark    base dark                                                 │
-│   nord             base dark                                                 │
-│   gruvbox-dark     base dark                                                 │
-│   solarized-light  base light                                                │
+│   atom-one-dark     base dark                                                │
+│   nord              base dark                                                │
+│   gruvbox-dark      base dark                                                │
+│   solarized-light   base light                                               │
+│   emacs             base light                                               │
+│   flexoki-dark      base dark                                                │
+│   flexoki-light     base light                                               │
+│   material-oceanic  base dark                                                │
+│   monokai           base dark                                                │
+│   nightfox          base dark                                                │
+│   one-light         base light                                               │
+│   solarized-dark    base dark                                                │
+│   textual-dark      base dark                                                │
+│   tokyo-night       base dark                                                │
 │ theme files                                                                  │
-│   bad              ⚠ themes/bad.toml:1: base: …                              │
+│   bad               ⚠ themes/bad.toml:1: base: …                             │
 │                                                                              │
 │ Enter take and save as default ─ Esc back to terminal                        │
 └──────────────────────────────────────────────────────────────────────────────┘
@@ -1333,10 +1343,13 @@ language:
 - **Colours** come from the syntax theme the theme's `code` key names
   ([`config.md`](config.md), "Themes"). Without one: `ansi` for `terminal`,
   `base16-ocean.dark` for `dark`, `InspiredGitHub` for `light`. The bundled
-  themes use the syntax colours of the same scheme: `atom-one-dark`, `nord`
-  and `gruvbox-dark` are `codeagent`'s own, made from each scheme's palette
+  themes use the syntax colours of the same scheme: `atom-one-dark`, `nord`,
+  `gruvbox-dark`, `emacs`, `flexoki-dark`, `flexoki-light`,
+  `material-oceanic`, `monokai`, `nightfox`, `one-light`, `textual-dark` and
+  `tokyo-night` are `codeagent`'s own, made from each scheme's palette
   (keywords, strings, numbers, functions, types, variables, operators, tags,
-  comments in italic), and `solarized-light` uses `Solarized (light)`. In
+  comments in italic); `solarized-light` uses `Solarized (light)` and
+  `solarized-dark` `Solarized (dark)`. In
   them, as in the published schemes, every word the grammar calls storage
   (`let`, `fn`, `struct`, also `i32`) has the keyword colour, and type
   names (`P` in `struct P`, `String`) the type colour. `ansi`

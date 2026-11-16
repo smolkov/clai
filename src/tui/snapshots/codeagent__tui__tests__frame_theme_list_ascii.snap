@@ -1,6 +1,5 @@
 ---
 source: src/tui/tests.rs
-assertion_line: 3898
 expression: text
 ---
                                                                                 
@@ -20,14 +19,24 @@ expression: text
 Filter:                                                                         
                                                                                 
 built in                                                                        
-> terminal         + current                                                    
+> terminal          + current                                                   
   dark                                                                          
   light                                                                         
 bundled                                                                         
-  atom-one-dark    base dark                                                    
-  nord             base dark                                                    
-  gruvbox-dark     base dark                                                    
-  solarized-light  base light                                                   
+  atom-one-dark     base dark                                                   
+  nord              base dark                                                   
+  gruvbox-dark      base dark                                                   
+  solarized-light   base light                                                  
+  emacs             base light                                                  
+  flexoki-dark      base dark                                                   
+  flexoki-light     base light                                                  
+  material-oceanic  base dark                                                   
+  monokai           base dark                                                   
+  nightfox          base dark                                                   
+  one-light         base light                                                  
+  solarized-dark    base dark                                                   
+  textual-dark      base dark                                                   
+  tokyo-night       base dark                                                   
                                                                                 
 Enter take and save as default - Esc back to terminal                           
 --------------------------------------------------------------------------------

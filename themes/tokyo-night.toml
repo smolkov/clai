@@ -1,0 +1,17 @@
+# Tokyo Night, bundled with codeagent. Copy it to ~/.config/codeagent/themes/tokyo-night.toml
+# to change it there; that file then replaces this one.
+# Colours: the night style of Tokyo Night by enkia (MIT).
+base        = "dark"
+background  = "#1a1b26"
+text        = "#c0caf5"
+dim         = "#737aa2"
+user        = "#7dcfff"
+accent      = "#7aa2f7"
+border      = "#3b4261"
+selection   = "#283457"
+success     = "#9ece6a"
+error       = "#f7768e"
+warning     = "#e0af68"
+diff_add    = "#9ece6a"
+diff_remove = "#f7768e"
+code        = "tokyo-night"

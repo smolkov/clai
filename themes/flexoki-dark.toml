@@ -1,0 +1,17 @@
+# Flexoki (dark), bundled with codeagent. Copy it to ~/.config/codeagent/themes/flexoki-dark.toml
+# to change it there; that file then replaces this one.
+# Colours: Flexoki by Steph Ango, https://stephango.com/flexoki (MIT).
+base        = "dark"
+background  = "#100f0f"
+text        = "#cecdc3"
+dim         = "#878580"
+user        = "#3aa99f"
+accent      = "#4385be"
+border      = "#403e3c"
+selection   = "#282726"
+success     = "#879a39"
+error       = "#d14d41"
+warning     = "#d0a215"
+diff_add    = "#879a39"
+diff_remove = "#d14d41"
+code        = "flexoki-dark"

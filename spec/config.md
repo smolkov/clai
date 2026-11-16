@@ -701,7 +701,7 @@ A theme gives a colour to each part of the interface.
 | `terminal` | Uses only the terminal's 16-colour palette, so it follows the terminal's own theme. Default. |
 | `dark` | Built-in theme for dark backgrounds, using 256 colours. |
 | `light` | Built-in theme for light backgrounds, using 256 colours. |
-| `atom-one-dark`, `nord`, `gruvbox-dark`, `solarized-light` | Bundled with `codeagent`, see [Theme files](#theme-files). |
+| `atom-one-dark`, `nord`, `gruvbox-dark`, `solarized-light`, `emacs`, `flexoki-dark`, `flexoki-light`, `material-oceanic`, `monokai`, `nightfox`, `one-light`, `solarized-dark`, `textual-dark`, `tokyo-night` | Bundled with `codeagent`, see [Theme files](#theme-files). |
 | `NAME` | A theme defined as `[themes.NAME]` in the user file, or as a theme file `themes/NAME.toml`. |
 
 `dark` and `light` use the 256 colours:
@@ -748,7 +748,7 @@ code        = "Solarized (dark)"   # syntax highlighting theme
 | `warning` | `?` waiting for permission, `●` waiting sessions, `⚠` marks. |
 | `diff_add` | Added lines in diffs. |
 | `diff_remove` | Removed lines in diffs. |
-| `code` | The syntax theme for code: `ansi` (on the terminal's 16 colours), `atom-one-dark`, `nord`, `gruvbox-dark` (the syntax colours of the bundled themes of that name), `base16-ocean.dark`, `base16-eighties.dark`, `base16-mocha.dark`, `base16-ocean.light`, `InspiredGitHub`, `Solarized (dark)` or `Solarized (light)`. Without it: `ansi` over `terminal`, `base16-ocean.dark` over `dark`, `InspiredGitHub` over `light`. Another name is an error. |
+| `code` | The syntax theme for code: `ansi` (on the terminal's 16 colours), `atom-one-dark`, `nord`, `gruvbox-dark`, `emacs`, `flexoki-dark`, `flexoki-light`, `material-oceanic`, `monokai`, `nightfox`, `one-light`, `textual-dark`, `tokyo-night` (the syntax colours of the bundled themes of that name), `base16-ocean.dark`, `base16-eighties.dark`, `base16-mocha.dark`, `base16-ocean.light`, `InspiredGitHub`, `Solarized (dark)` or `Solarized (light)`. Without it: `ansi` over `terminal`, `base16-ocean.dark` over `dark`, `InspiredGitHub` over `light`. Another name is an error. |
 
 Colour values: one of the 16 ANSI colour names (`black`, `red`, `green`,
 `yellow`, `blue`, `magenta`, `cyan`, `white`, and `bright_` + each of them),
@@ -783,9 +783,14 @@ editing the configuration.
   accent      = "#81a1c1"
   ```
 
-- **Bundled:** `atom-one-dark`, `nord`, `gruvbox-dark` and `solarized-light` come
-  with `codeagent`, in this format (`themes/` in the source), so one can be copied
-  into the directory and changed.
+- **Bundled:** `atom-one-dark`, `nord`, `gruvbox-dark` and `solarized-light`,
+  then `emacs`, `flexoki-dark`, `flexoki-light`, `material-oceanic`, `monokai`,
+  `nightfox`, `one-light`, `solarized-dark`, `textual-dark` and `tokyo-night`
+  come with `codeagent`, in this order and in this format (`themes/` in the
+  source), so one can be copied into the directory and changed. Each sets every
+  colour key, `background` included, and its `code`; the header comment names
+  the source and licence of its colours. `emacs` is GNU Emacs without a custom
+  theme, its default light faces.
 - **Precedence:** a `[themes.NAME]` table, then a file, then a bundled theme. A
   file `nord.toml` replaces the bundled `nord`, and so does a table. A table and
   a file of the same name are an error. `terminal`, `dark` and `light` cannot be

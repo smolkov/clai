@@ -198,9 +198,10 @@ const fn rgb(hex: u32) -> sh::Color {
     }
 }
 
-/// One Dark of Atom, Nord and Gruvbox (dark): the syntax colours of the
-/// bundled themes of the same name, from their published palettes.
-const OWN_PALETTES: [(&str, Palette); 3] = [
+/// The syntax colours of the bundled themes of the same name, from their
+/// published palettes (see `rfcs/0031-more-bundled-themes.md`, "Syntax
+/// colours"). `solarized-light` and `solarized-dark` use `syntect`'s.
+const OWN_PALETTES: [(&str, Palette); 12] = [
     (
         "atom-one-dark",
         Palette {
@@ -244,6 +245,141 @@ const OWN_PALETTES: [(&str, Palette); 3] = [
             variable: 0x83a598,
             operator: 0xfe8019,
             tag: 0xfb4934,
+        },
+    ),
+    (
+        "emacs",
+        Palette {
+            text: 0x000000,
+            comment: 0xb22222,
+            keyword: 0xa020f0,
+            string: 0x8b2252,
+            number: 0x008b8b,
+            function: 0x0000ff,
+            kind: 0x228b22,
+            variable: 0xa0522d,
+            operator: 0x000000,
+            tag: 0x0000ff,
+        },
+    ),
+    (
+        "flexoki-dark",
+        Palette {
+            text: 0xcecdc3,
+            comment: 0x878580,
+            keyword: 0x879a39,
+            string: 0x3aa99f,
+            number: 0x8b7ec8,
+            function: 0xda702c,
+            kind: 0xd0a215,
+            variable: 0x4385be,
+            operator: 0x878580,
+            tag: 0xd14d41,
+        },
+    ),
+    (
+        "flexoki-light",
+        Palette {
+            text: 0x100f0f,
+            comment: 0x6f6e69,
+            keyword: 0x66800b,
+            string: 0x24837b,
+            number: 0x5e409d,
+            function: 0xbc5215,
+            kind: 0xad8301,
+            variable: 0x205ea6,
+            operator: 0x6f6e69,
+            tag: 0xaf3029,
+        },
+    ),
+    (
+        "material-oceanic",
+        Palette {
+            text: 0xb0bec5,
+            comment: 0x546e7a,
+            keyword: 0xc792ea,
+            string: 0xc3e88d,
+            number: 0xf78c6c,
+            function: 0x82aaff,
+            kind: 0xffcb6b,
+            variable: 0xeeffff,
+            operator: 0x89ddff,
+            tag: 0xf07178,
+        },
+    ),
+    (
+        "monokai",
+        Palette {
+            text: 0xf8f8f2,
+            comment: 0x75715e,
+            keyword: 0xf92672,
+            string: 0xe6db74,
+            number: 0xae81ff,
+            function: 0xa6e22e,
+            kind: 0x66d9ef,
+            variable: 0xfd971f,
+            operator: 0xf92672,
+            tag: 0xf92672,
+        },
+    ),
+    (
+        "nightfox",
+        Palette {
+            text: 0xcdcecf,
+            comment: 0x738091,
+            keyword: 0x9d79d6,
+            string: 0x81b29a,
+            number: 0xf4a261,
+            function: 0x86abdc,
+            kind: 0xdbc074,
+            variable: 0xcdcecf,
+            operator: 0xaeafb0,
+            tag: 0xc94f6d,
+        },
+    ),
+    (
+        "one-light",
+        Palette {
+            text: 0x383a42,
+            comment: 0xa0a1a7,
+            keyword: 0xa626a4,
+            string: 0x50a14f,
+            number: 0x986801,
+            function: 0x4078f2,
+            kind: 0xc18401,
+            variable: 0xe45649,
+            operator: 0x0184bc,
+            tag: 0xe45649,
+        },
+    ),
+    (
+        "textual-dark",
+        Palette {
+            text: 0xd4d4d4,
+            comment: 0x6a9955,
+            keyword: 0x569cd6,
+            string: 0xce9178,
+            number: 0xb5cea8,
+            function: 0xdcdcaa,
+            kind: 0x4ec9b0,
+            variable: 0x9cdcfe,
+            operator: 0xd4d4d4,
+            tag: 0x569cd6,
+        },
+    ),
+    (
+        "tokyo-night",
+        Palette {
+            text: 0xc0caf5,
+            comment: 0x565f89,
+            keyword: 0xbb9af7,
+            string: 0x9ece6a,
+            number: 0xff9e64,
+            function: 0x7aa2f7,
+            kind: 0x2ac3de,
+            variable: 0xe0af68,
+            operator: 0x89ddff,
+            tag: 0xf7768e,
         },
     ),
 ];
@@ -620,9 +756,34 @@ mod tests {
 
     const DEFINED: &str = "struct P { x: i32 }\nfn main() { let s = 1; }\n";
 
+    fn rgb_of(hex: u32) -> Option<Color> {
+        Some(Color::Rgb(
+            ((hex >> 16) & 0xff) as u8,
+            ((hex >> 8) & 0xff) as u8,
+            (hex & 0xff) as u8,
+        ))
+    }
+
+    #[test]
+    fn own_palettes_give_their_text_keyword_string_and_comment_colours() {
+        for (name, palette) in &OWN_PALETTES {
+            let theme = palette_theme(name, palette);
+            assert_eq!(theme.settings.foreground, Some(rgb(palette.text)), "{name}");
+            let c = colours(
+                CodeTheme::Named(name),
+                "fn a() { let s = \"hi\"; } // note\n",
+                &["let", "hi", "note"],
+            );
+            assert_eq!(c[0], rgb_of(palette.keyword), "{name}: keyword");
+            assert_eq!(c[1], rgb_of(palette.string), "{name}: string");
+            assert_eq!(c[2], rgb_of(palette.comment), "{name}: comment");
+        }
+    }
+
     #[test]
     fn own_themes_colour_keywords_alike_and_type_names_as_types() {
-        for name in ["atom-one-dark", "nord", "gruvbox-dark"] {
+        for (name, _) in &OWN_PALETTES {
+            let name = *name;
             let c = colours(
                 CodeTheme::Named(name),
                 DEFINED,
@@ -789,7 +950,8 @@ mod tests {
             Some(Color::Indexed(_))
         ));
         // The syntax themes of the bundled themes.
-        for name in ["atom-one-dark", "nord", "gruvbox-dark"] {
+        for (name, _) in &OWN_PALETTES {
+            let name = *name;
             let own = Syntax {
                 theme: CodeTheme::Named(name),
                 ..syntax

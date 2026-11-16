@@ -1,0 +1,17 @@
+# Flexoki (light), bundled with codeagent. Copy it to ~/.config/codeagent/themes/flexoki-light.toml
+# to change it there; that file then replaces this one.
+# Colours: Flexoki by Steph Ango, https://stephango.com/flexoki (MIT).
+base        = "light"
+background  = "#fffcf0"
+text        = "#100f0f"
+dim         = "#6f6e69"
+user        = "#24837b"
+accent      = "#205ea6"
+border      = "#dad8ce"
+selection   = "#e6e4d9"
+success     = "#66800b"
+error       = "#af3029"
+warning     = "#ad8301"
+diff_add    = "#66800b"
+diff_remove = "#af3029"
+code        = "flexoki-light"
