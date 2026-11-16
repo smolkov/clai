@@ -7,6 +7,8 @@ notes are taken from that section by `ci/notes.sh`.
 
 ## Unreleased
 
+## 0.8.0 - 2026-11-16
+
 - Secrets are hidden from the model (RFC 0030): API keys, tokens,
   passwords and private keys in messages, file contents, command output,
   the prompt and the commit diff become placeholders like `[secret:
