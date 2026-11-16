@@ -14,6 +14,7 @@ pub fn system_prompt(workspace: &Workspace, today: &str) -> String {
     TEMPLATE
         .replace("{workspace}", &workspace.root().display().to_string())
         .replace("{extra_dirs}", &extra_dirs(workspace))
+        .replace("{scratch}", &scratch_line(workspace))
         .replace("{platform}", std::env::consts::OS)
         .replace("{date}", today)
 }
@@ -51,6 +52,19 @@ pub fn with_skills(base: &str, workspace: &Workspace, skills: &[Active]) -> Stri
         ));
     }
     out
+}
+
+/// The line about the scratch directory (RFC 0029), or nothing.
+fn scratch_line(workspace: &Workspace) -> String {
+    match workspace.scratch() {
+        Some(scratch) => format!(
+            "Scratch directory: {} (read and write without asking; also $TMPDIR in commands). \
+             Use it for temporary files instead of the workspace; it may be empty when a turn \
+             starts and is deleted with the session.\n",
+            scratch.path().display()
+        ),
+        None => String::new(),
+    }
 }
 
 /// The extra directories with their access, or `none`.
@@ -162,7 +176,29 @@ mod tests {
         assert!(prompt.contains("do not try to reach its content another way"));
 
         let ws = Workspace::new(tmp.path(), &[], None).unwrap();
-        assert!(system_prompt(&ws, "x").contains("you may use: none"));
+        let plain = system_prompt(&ws, "x");
+        assert!(plain.contains("you may use: none\nPlatform:"), "{plain}");
+        assert!(!plain.contains("Scratch"));
+    }
+
+    #[test]
+    fn the_scratch_directory_has_its_line() {
+        let tmp = tempfile::tempdir().unwrap();
+        let scratch = crate::scratch::Scratch::new(&tmp.path().join("rt"), "s1");
+        let ws = Workspace::new(tmp.path(), &[], None)
+            .unwrap()
+            .with_scratch(scratch.clone());
+        let prompt = system_prompt(&ws, "x");
+        assert!(
+            prompt.contains(&format!(
+                "you may use: none\nScratch directory: {} (read and write without asking; \
+                 also $TMPDIR in commands). Use it for temporary files instead of the \
+                 workspace; it may be empty when a turn starts and is deleted with the \
+                 session.\nPlatform:",
+                scratch.path().display()
+            )),
+            "{prompt}"
+        );
     }
 
     #[test]

@@ -25,6 +25,14 @@ pub struct UserFile {
     pub lsp: Option<Spanned<LspFile>>,
     pub skills: Option<SkillsFile>,
     pub history: Option<HistoryFile>,
+    pub session: Option<SessionFile>,
+}
+
+/// `[session]` (RFC 0029).
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SessionFile {
+    pub scratch: Option<bool>,
 }
 
 /// `[history]` (RFC 0008, RFC 0028).
@@ -53,6 +61,7 @@ pub struct ProjectFile {
     pub lsp: Option<Spanned<toml::Value>>,
     pub skills: Option<Spanned<toml::Value>>,
     pub history: Option<Spanned<toml::Value>>,
+    pub session: Option<Spanned<toml::Value>>,
 }
 
 /// `[skills]` (RFC 0023).

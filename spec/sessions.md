@@ -74,7 +74,8 @@ Statements marked **(assumption)** need a decision from the user.
   same files, so `codeagent new` prints a note on standard error naming the other
   sessions in that workspace.
 - **Working and waiting:** see [Background work](#background-work).
-- **Kill:** ends the session and deletes its saved files. A running turn is
+- **Kill:** ends the session and deletes its saved files and its
+  [scratch directory](#scratch-directory). A running turn is
   cancelled first (same as cancelling in the TUI). Attached clients get
   `ended`; TUIs show "session ended" and offer the session list.
 - **Failure:** if a session's task fails (a bug, a panic), the session
@@ -84,6 +85,41 @@ Statements marked **(assumption)** need a decision from the user.
   limits. The provider and model can be changed at any time from the TUI
   (see `spec/tui.md`, "Model picker"). Allow
   rules granted in one session never apply to another.
+
+## Scratch directory
+
+Each session has a private directory for temporary files, outside the
+workspace (RFC 0029): notes, test inputs, scripts to try something, the
+full output of a long command.
+
+- **Where:** `<runtime dir>/sessions/<key>/tmp/`, with the runtime
+  directory of the [server](#server) (`$XDG_RUNTIME_DIR/codeagent`, else
+  `/tmp/codeagent-$UID`). The key is the name of the session's saved
+  directory, `mem-<server pid>-<id>` for a session that is not saved, and
+  `run-<pid>` for `codeagent run`. The runtime directory is usually in
+  memory and emptied at logout or reboot.
+- **Mode:** every directory on the way has mode `0700`; one that belongs
+  to another user or is a link is an error.
+- **Made** at the start of each turn when it is missing: not before the
+  first turn, and again, empty, when it was removed in between (a reboot,
+  the user). A failure is a `notice`; the turn goes on without it.
+- **Access:** an extra directory with `write` access, and a built-in
+  `allow` rule for the `read` and `edit` groups in it, so the file tools do
+  not ask (see `spec/config.md`, "Built-in rules"). Redirections of
+  `run_command` into it, also as `$TMPDIR/…` and `$CODEAGENT_TMP/…`, do
+  not ask either; the command itself is checked as always. Commands get it
+  as `TMPDIR` and `CODEAGENT_TMP` (see `spec/tools.md`, "run_command"), and
+  the system prompt names it.
+- **Removed** with everything in it, without following links, when the
+  session is killed, and when `codeagent run` ends unless `--keep-tmp` was
+  given. A server stop keeps it, so a resumed session finds its files. At
+  start the server removes the directories of sessions that are not saved
+  any more, except those of `codeagent run` processes that still run.
+- **Shown** as `tmp` in `list` (when it exists) and `codeagent ls --json`,
+  as the `scratch` row of the status view with the size of its files, and
+  in the run report under `scratch`.
+- **Off** with `[session] scratch = false` in the user file: no directory,
+  no variables, no prompt line, no rule.
 
 ## Background work
 
@@ -274,7 +310,8 @@ Sessions are managed with `codeagent`, `codeagent new`, `codeagent attach`, `cod
 ## Persistence
 
 Every session of the server is saved as it goes, so it survives a server
-stop, a crash or a reboot. `codeagent run` sessions are not saved.
+stop, a crash or a reboot. `codeagent run` sessions are not saved. The
+[scratch directory](#scratch-directory) is not part of the saved session.
 
 - **Where:** `$XDG_STATE_HOME/codeagent/sessions/<id>/` (fallback
   `~/.local/state/codeagent/sessions/`), directories with mode `0700`, files with

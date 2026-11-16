@@ -88,6 +88,7 @@ impl Meta {
             queued,
             question,
             usage: self.usage,
+            tmp: None,
         }
     }
 }

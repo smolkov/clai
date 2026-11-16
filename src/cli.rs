@@ -217,6 +217,7 @@ impl Cli {
                 dir: self.top.dir,
                 skills: Vec::new(),
                 report: None,
+                keep_tmp: false,
                 task: self.top.task,
             }),
         }

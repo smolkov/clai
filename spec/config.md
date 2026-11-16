@@ -11,8 +11,8 @@ Statements marked **(assumption)** need a decision from the user.
 
 | File                          | Scope   | May define |
 |-------------------------------|---------|------------|
-| `~/.config/codeagent/config.toml`  | User    | Everything: providers, models, defaults, `[limits]`, `[history]`, `[permissions]`, `[commit]`, `[tui]`, `[themes]`, `[lsp]`, `[skills]`. |
-| `<workspace>/.codeagent/config.toml` | Project | Defaults and limits only: `default_model`, `[limits]` (only lower, see [Limits](#limits)), `[permissions]` (restricted, see [Permissions](#permissions)), `[commit]`, `[lsp]` (restricted, see [LSP](#lsp)). Not providers, models, `[history]`, `[tui]`, `[themes]` or `[skills]`. |
+| `~/.config/codeagent/config.toml`  | User    | Everything: providers, models, defaults, `[limits]`, `[history]`, `[session]`, `[permissions]`, `[commit]`, `[tui]`, `[themes]`, `[lsp]`, `[skills]`. |
+| `<workspace>/.codeagent/config.toml` | Project | Defaults and limits only: `default_model`, `[limits]` (only lower, see [Limits](#limits)), `[permissions]` (restricted, see [Permissions](#permissions)), `[commit]`, `[lsp]` (restricted, see [LSP](#lsp)). Not providers, models, `[history]`, `[session]`, `[tui]`, `[themes]` or `[skills]`. |
 
 `$XDG_CONFIG_HOME` replaces `~/.config` when it is set.
 
@@ -36,7 +36,8 @@ file too; a project file with `[tui]` or `[themes]` is rejected the same way.
 So is a project file with `[skills]`: a path in it would let a repository
 put files from anywhere on the machine into the prompt and make them
 readable for the model (see [Skills](#skills)). `[history]` changes what
-the model sees of its own work, so it is the user's too.
+the model sees of its own work, so it is the user's too, and so is
+`[session]`, which decides where the model may write without asking.
 
 Precedence, later wins: user file, project file, environment variables,
 command-line options.
@@ -382,6 +383,13 @@ builtin_except = ["deploy/certs/*.pem", ".env.test"]
 It lifts only the built-in rules: a `deny` rule of the user or project
 file on the same path still denies.
 
+One built-in `allow` rule comes with the session's scratch directory
+(RFC 0029; see `spec/sessions.md`, "Scratch directory"): the `read` and
+`edit` groups on `<scratch dir>/**`, shown as `built-in`. It is checked
+with the other rules, so the deny rules above, and a `deny` or `ask` rule
+of the user that names the path, still win. Without a scratch directory
+there is no such rule.
+
 ### Extra directories
 
 Each entry of `extra_dirs` is a path or a table:
@@ -394,6 +402,11 @@ Each entry of `extra_dirs` is a path or a table:
 A plain string is the same as `{ path = "...", access = "write" }`. A
 directory that does not exist is skipped with a warning in the log, so one
 configuration can be used on several machines. **(assumption)**
+
+The session's scratch directory is added by `codeagent` as one more
+directory with `write` access, also before it exists. It is not listed
+among "Other directories" in the prompt, which has a line of its own for
+it.
 
 `run_command` always starts in the workspace; `extra_dirs` and `access` do
 not limit what a command may touch once it runs, only its redirections.
@@ -472,6 +485,18 @@ What the keys do: [`agent-loop.md`](agent-loop.md), "Trimmed results".
 `keep_results` is 1–100, `min_chars` 0–30 000, `trim_after`
 1 000–10 000 000. User file only; like `[limits]`, a change applies to
 sessions started after it.
+
+## Session
+
+```toml
+[session]
+scratch = true   # a scratch directory per session; false: none
+```
+
+The scratch directory: `spec/sessions.md`, "Scratch directory". With
+`false` there is no directory, no `TMPDIR` or `CODEAGENT_TMP`, no prompt
+line and no built-in `allow` rule. User file only; a change applies to
+sessions started or resumed after it.
 
 ## LSP
 

@@ -186,6 +186,7 @@ these values filled in:
 |-------|---------|
 | Workspace path | `/home/user/ws/rust/codeagent` |
 | Extra directories and their access, with the directories of active skills | `~/ws/docs (read only)` |
+| The scratch directory, on a line of its own (none with `[session] scratch = false`) | `Scratch directory: /run/user/1000/codeagent/sessions/<key>/tmp (read and write without asking; also $TMPDIR in commands). Use it for temporary files instead of the workspace; it may be empty when a turn starts and is deleted with the session.` |
 | Platform and shell | `linux, commands run with sh -c` |
 | Today's date | `2026-11-01` |
 

@@ -24,6 +24,13 @@ notes are taken from that section by `ci/notes.sh`.
     result.
   - `ci/bench.sh` runs fixed tasks against a model and prints tokens and
     success per run (`bench/`).
+- A scratch directory for each session (RFC 0029), in the runtime
+  directory with mode `0700`: the file tools use it without asking,
+  commands get it as `TMPDIR` and `CODEAGENT_TMP`, and the system prompt
+  names it. It is deleted with the session; `codeagent run` deletes it at
+  the end unless `--keep-tmp` is given. Shown as `scratch` in the status
+  view, as `tmp` in `codeagent ls --json`, and under `scratch` in run
+  reports. `[session] scratch = false` turns it off.
 
 ## 0.5.0 - 2026-11-15
 

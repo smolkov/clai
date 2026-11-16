@@ -407,6 +407,15 @@ impl Agent {
         if let Some(lsp) = &self.env.lsp {
             lsp.new_turn();
         }
+        // Made at the first turn, again when it went missing (RFC 0029).
+        if let Some(scratch) = self.env.workspace.scratch()
+            && let Err(e) = scratch.prepare()
+        {
+            tracing::warn!("scratch directory: {e}");
+            events.emit(SessionEvent::Notice {
+                text: format!("cannot make the scratch directory: {e}"),
+            });
+        }
         let mut budget = Budget::default();
         events.emit(SessionEvent::State {
             state: State::Working,

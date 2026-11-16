@@ -177,7 +177,7 @@ impl Fixture {
     }
 
     fn sessions_dir(&self) -> PathBuf {
-        self.dir.join("sessions")
+        self.dir.join("saved")
     }
 
     async fn client(&self, name: &str, answers: bool) -> Client {
@@ -255,7 +255,7 @@ fn options(
     });
     Options {
         dir: dir.to_path_buf(),
-        sessions_dir: dir.join("sessions"),
+        sessions_dir: dir.join("saved"),
         idle,
         reload_every: Duration::from_millis(50),
         load: LoadOptions {
@@ -1135,7 +1135,7 @@ async fn idle_exit_with_saved_sessions() {
         .unwrap()
         .unwrap()
         .unwrap();
-    assert_eq!(store::list(&fx.dir.join("sessions")).len(), 1);
+    assert_eq!(store::list(&fx.dir.join("saved")).len(), 1);
 }
 
 /// An answer that reports its tokens.
@@ -2124,5 +2124,61 @@ async fn a_restart_keeps_the_time_of_the_last_change() {
     let listed = c.list().await.unwrap();
     assert_eq!(listed[0].state, State::Saved);
     assert_eq!(listed[0].updated, before);
+    fx.stop().await;
+}
+
+#[tokio::test]
+async fn scratch_directories_live_with_their_sessions() {
+    let mut fx = Fixture::start(vec![Script::new(vec![say("hi")])]).await;
+    let mut c = fx.client("tui pts/1", true).await;
+    new_session(&mut c, &fx.ws, Some("a")).await;
+    // Not made before the first turn.
+    assert_eq!(c.list().await.unwrap()[0].tmp, None);
+    attach(&mut c, "a").await;
+    send(&mut c, "a", "hi").await;
+    assert_eq!(turn_end(&mut c).await, EndReason::Done);
+    let tmp = c.list().await.unwrap()[0].tmp.clone().unwrap();
+    assert!(tmp.is_dir());
+    assert!(
+        tmp.starts_with(fx.dir.join("sessions")),
+        "{}",
+        tmp.display()
+    );
+    assert!(tmp.ends_with("tmp"));
+    let key = tmp.parent().unwrap().file_name().unwrap().to_owned();
+    assert!(
+        fx.sessions_dir().join(&key).is_dir(),
+        "named after its saved directory"
+    );
+    fs::write(tmp.join("notes.txt"), "12345").unwrap();
+    let status = match c
+        .request(Request::SessionStatus {
+            session: "a".into(),
+        })
+        .await
+        .unwrap()
+    {
+        Payload::SessionStatus { status } => status,
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(status.scratch, Some(tmp.display().to_string()));
+    assert_eq!(status.scratch_size, Some(5));
+
+    // A restart keeps it and removes those of sessions that are gone.
+    let stale = fx.dir.join("sessions/gone/tmp");
+    fs::create_dir_all(&stale).unwrap();
+    drop(c);
+    fx.restart().await;
+    assert!(tmp.join("notes.txt").is_file());
+    assert!(!stale.parent().unwrap().exists());
+
+    // Killing the session removes it.
+    let mut c = fx.client("cli", false).await;
+    c.request(Request::Kill {
+        session: "a".into(),
+    })
+    .await
+    .unwrap();
+    assert!(!tmp.parent().unwrap().exists());
     fx.stop().await;
 }

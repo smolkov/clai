@@ -348,6 +348,23 @@ the model read one, add it to `builtin_except` in your own config file:
 builtin_except = ["deploy/certs/*.pem"]
 ```
 
+## Scratch directory
+
+Each session gets a private directory for temporary files, outside the
+workspace: `$XDG_RUNTIME_DIR/codeagent/sessions/<session>/tmp` (else
+`/tmp/codeagent-$UID/…`), mode `0700`. The model may read and write there
+without asking, so notes, test inputs and scripts to try something stay
+out of your repository. Commands get it as `TMPDIR` and `CODEAGENT_TMP`,
+and `> $TMPDIR/out.txt` does not ask. Secret files stay denied there too.
+It is made at the first turn and deleted with the session (`codeagent
+kill`); `codeagent run` deletes it at the end unless `--keep-tmp` is
+given. The status view shows it as `scratch`. To turn it off:
+
+```toml
+[session]
+scratch = false
+```
+
 ## Language servers
 
 With a language server the model finds definitions, references, types and

@@ -92,6 +92,7 @@ fn info() -> SessionInfo {
         queued: 0,
         question: None,
         usage: Default::default(),
+        tmp: None,
     }
 }
 
@@ -4211,6 +4212,8 @@ fn status_of(state: State) -> crate::protocol::SessionStatus {
             read_only: false,
             exists: false,
         }],
+        scratch: None,
+        scratch_size: None,
         skills: Vec::new(),
         model: Some(ModelStatus {
             info: ModelInfo {

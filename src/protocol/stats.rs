@@ -345,6 +345,12 @@ pub struct SessionStatus {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub size: Option<u64>,
     pub extra_dirs: Vec<DirInfo>,
+    /// The scratch directory (RFC 0029) and the size of its files in
+    /// bytes, when it exists.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scratch: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scratch_size: Option<u64>,
     /// The active skills (RFC 0023).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub skills: Vec<super::ActiveSkill>,

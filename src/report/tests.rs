@@ -48,6 +48,7 @@ fn run(outcome: Outcome) -> Run<'static> {
     Run {
         workspace: Path::new("/ws/p"),
         model: "test/m",
+        scratch: None,
         outcome,
         duration: 184,
     }
@@ -217,6 +218,7 @@ fn the_json_shape() {
         "findings",
         "follow_ups",
         "changes",
+        "scratch",
         "commands",
         "files_read",
         "tool_calls",
@@ -287,4 +289,46 @@ fn the_frame() {
 fn exit_codes() {
     assert_eq!(exit_code("out\nexit code 0\n"), Some(0));
     assert_eq!(exit_code("killed by signal 9"), None);
+}
+
+#[test]
+fn scratch_files_are_apart_from_the_changes() {
+    let mut c = Collector::default();
+    let done = |id: &str, tool: &str, path: &str| {
+        ended(id, tool, CallState::Done, json!({"path": path}), "ok")
+    };
+    for event in [
+        done("1", "write_file", "/run/ca/sessions/s/tmp/notes.md"),
+        done("2", "edit_file", "src/lib.rs"),
+        done("3", "edit_file", "/run/ca/sessions/s/tmp/notes.md"),
+        done("4", "write_file", "/run/ca/sessions/s/tmpfile"),
+    ] {
+        c.event(&event);
+    }
+    let r = c.report(
+        Run {
+            scratch: Some(Path::new("/run/ca/sessions/s/tmp")),
+            ..run(Outcome::Done)
+        },
+        None,
+        "",
+    );
+    assert_eq!(
+        r.scratch,
+        [Change {
+            path: "/run/ca/sessions/s/tmp/notes.md".into(),
+            kind: ChangeKind::Written,
+        }]
+    );
+    let changed: Vec<&str> = r.changes.iter().map(|c| c.path.as_str()).collect();
+    assert_eq!(changed, ["src/lib.rs", "/run/ca/sessions/s/tmpfile"]);
+    let text = render_text(&r, "~/ws/p", true);
+    assert!(
+        text.contains("\n## Scratch files\n\n- written `/run/ca/sessions/s/tmp/notes.md`\n"),
+        "{text}"
+    );
+    // Without a scratch directory, every file is a change.
+    let r = c.report(run(Outcome::Done), None, "");
+    assert!(r.scratch.is_empty());
+    assert_eq!(r.changes.len(), 3);
 }

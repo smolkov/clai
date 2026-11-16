@@ -128,6 +128,7 @@ mod tests {
             queued: 0,
             question: None,
             usage: Default::default(),
+            tmp: None,
         }
     }
 

@@ -108,6 +108,8 @@ pub struct Report {
     pub findings: Vec<Finding>,
     pub follow_ups: Vec<String>,
     pub changes: Vec<Change>,
+    /// Files edited or written in the scratch directory (RFC 0029).
+    pub scratch: Vec<Change>,
     pub commands: Vec<CommandRun>,
     pub files_read: Vec<String>,
     pub tool_calls: Vec<ToolCall>,
@@ -214,6 +216,7 @@ impl Collector {
                 .map(|p| relative(run.workspace, p))
         };
         let mut changes: Vec<Change> = Vec::new();
+        let mut scratch: Vec<Change> = Vec::new();
         let mut files_read: Vec<String> = Vec::new();
         let mut commands = Vec::new();
         let mut counts = Counts::default();
@@ -232,10 +235,13 @@ impl Collector {
                     } else {
                         ChangeKind::Written
                     };
-                    if let Some(path) = path(seen)
-                        && !changes.iter().any(|c| c.path == path)
-                    {
-                        changes.push(Change { path, kind });
+                    let Some(path) = path(seen) else { continue };
+                    let list = match run.scratch {
+                        Some(dir) if Path::new(&path).starts_with(dir) => &mut scratch,
+                        _ => &mut changes,
+                    };
+                    if !list.iter().any(|c| c.path == path) {
+                        list.push(Change { path, kind });
                     }
                 }
                 "read_file" if done => {
@@ -266,6 +272,7 @@ impl Collector {
             findings,
             follow_ups,
             changes,
+            scratch,
             commands,
             files_read,
             tool_calls: self.calls.iter().map(|s| s.call.clone()).collect(),
@@ -281,6 +288,8 @@ impl Collector {
 pub struct Run<'a> {
     pub workspace: &'a Path,
     pub model: &'a str,
+    /// The scratch directory of the run, if it has one.
+    pub scratch: Option<&'a Path>,
     pub outcome: Outcome,
     /// Seconds.
     pub duration: u64,
@@ -360,6 +369,16 @@ pub fn render_text(report: &Report, place: &str, unicode: bool) -> String {
     if !report.changes.is_empty() {
         out.push_str("\n## Changes\n\n");
         for c in &report.changes {
+            let kind = match c.kind {
+                ChangeKind::Edited => "edited",
+                ChangeKind::Written => "written",
+            };
+            out.push_str(&format!("- {kind} `{}`\n", c.path));
+        }
+    }
+    if !report.scratch.is_empty() {
+        out.push_str("\n## Scratch files\n\n");
+        for c in &report.scratch {
             let kind = match c.kind {
                 ChangeKind::Edited => "edited",
                 ChangeKind::Written => "written",

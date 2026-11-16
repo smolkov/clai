@@ -141,7 +141,7 @@ keeps running on the server.
 
 ```sh
 codeagent run [--model PROVIDER/MODEL] [--yes | --no-ask] [-C DIR] [--skill NAME]...
-         [--report[=text|json]] [TASK...]
+         [--report[=text|json]] [--keep-tmp] [TASK...]
 codeagent TASK...
 ```
 
@@ -213,6 +213,7 @@ Runs one task without the TUI and exits when it is done.
 | `--no-ask` | Do not ask on the terminal; deny tool calls that would ask. |
 | `-C DIR` | Workspace. Default: the current directory. |
 | `--skill NAME` | Turn on skill `NAME` for the task; repeatable, in the order given (see [`skills.md`](skills.md)). Not in the short form `codeagent TASK...`. |
+| `--keep-tmp` | Keep the run's scratch directory (see [`sessions.md`](sessions.md), "Scratch directory") and print `codeagent: scratch directory kept: PATH` on standard error. Without it the directory is removed when the run ends, also after a failure or a signal. Not in the short form. |
 | `--report` | Print a report instead of the last answer, as Markdown; `--report=json` prints it as one JSON object, `--report=text` is the same as `--report`. The value needs the `=`: in `codeagent run --report json`, `json` is a word of the task. Not in the short form. See [Reports](#reports). |
 
 `--yes` and `--no-ask` cannot be combined (exit `2`).
@@ -271,7 +272,8 @@ What the report holds:
 | `summary` | model | What was done and the outcome. Without a report: the last answer, or the error of a failed run. |
 | `findings` | model | `severity` (`critical`, `high`, `medium`, `low`, `info`), `title`, `file`, `line`, `detail`. |
 | `follow_ups` | model | What is left to do. |
-| `changes` | `codeagent` | `edit_file` and `write_file` calls that were done: `path` and `kind` (`edited`, `written`), each path once, in order. |
+| `changes` | `codeagent` | `edit_file` and `write_file` calls that were done: `path` and `kind` (`edited`, `written`), each path once, in order. Files in the scratch directory are not changes. |
+| `scratch` | `codeagent` | The same for files in the scratch directory (RFC 0029), with absolute paths; text heading "Scratch files". |
 | `commands` | `codeagent` | `run_command` calls that ran: `command` and `exit_code` (`null` after a timeout or a signal). |
 | `files_read` | `codeagent` | Paths of `read_file` calls that were done, each once, in order. |
 | `tool_calls` | `codeagent` | Every tool call but `report`, in order: `tool`, `summary`, `state` (`done`, `error`, `denied`, `cancelled`) and `result`, as on the tool line. |
@@ -380,7 +382,7 @@ old     ~/ws/old        local/qwen        saved    3d
 
 | Option | Meaning |
 |--------|---------|
-| `--json` | Print a JSON array instead of the table: per session `name`, `workspace` (absolute), `model`, `state`, `created` (seconds since 1970), `queued` (messages waiting for the turn), `question` (`id`, `kind`, `summary`, or `null`), and `input_tokens` and `output_tokens` (used so far, see [`tui.md`](tui.md), "Token counters"). |
+| `--json` | Print a JSON array instead of the table: per session `name`, `workspace` (absolute), `model`, `state`, `created` (seconds since 1970), `queued` (messages waiting for the turn), `question` (`id`, `kind`, `summary`, or `null`), `input_tokens`, `output_tokens` and `cache_read_tokens` (used so far, see [`tui.md`](tui.md), "Token counters"), and `tmp`, the scratch directory (see [`sessions.md`](sessions.md), "Scratch directory"), or `null` when it does not exist. |
 
 ## codeagent kill
 
@@ -389,7 +391,8 @@ codeagent kill NAME...
 codeagent kill --all
 ```
 
-Ends the named sessions and deletes their saved files; a running turn is
+Ends the named sessions and deletes their saved files and scratch
+directories; a running turn is
 cancelled first. Saved sessions are deleted without resuming them. Unknown
 names are reported on standard error and give exit `1`; the known ones are
 still ended.

@@ -12,6 +12,7 @@ use crate::protocol::{
     DirInfo, ErrorReply, LimitsInfo, ModelInfo, ModelStatus, Notice, Outcome, Payload, Range,
     Request, SessionInfo, SessionStatus, SkillsInfo, Stats, Status,
 };
+use crate::scratch::Scratch;
 use crate::session::global::{self, Part, Summary};
 use crate::session::store::{self, Meta, Store};
 use crate::session::{self, SessionHandle, Spec};
@@ -153,9 +154,12 @@ impl Shared {
     /// the short form; `None` for `default_model`).
     /// `id` is the session's: it names the session among the users of a
     /// language server.
+    /// `store`: where the session is saved, which names its scratch
+    /// directory.
     fn build(
         &self,
         id: u64,
+        store: Option<&Store>,
         workspace: &Path,
         model: Option<&str>,
     ) -> std::result::Result<Built, ErrorReply> {
@@ -169,12 +173,15 @@ impl Shared {
         };
         let provider = (self.providers)(provider_config)
             .map_err(|e| ErrorReply::failed(format!("provider {}: {e}", provider_config.name)))?;
-        let ws = Workspace::new(
+        let mut ws = Workspace::new(
             workspace,
             &config.permissions.extra_dirs,
             self.load.env.home.clone(),
         )
         .map_err(|e| ErrorReply::failed(format!("{}: {e}", workspace.display())))?;
+        if config.scratch {
+            ws = ws.with_scratch(self.scratch(id, store));
+        }
         let place = ws.tilde(ws.root());
         let path = ws.root().to_path_buf();
         let mut agent = Agent::new(Setup {
@@ -206,6 +213,17 @@ impl Shared {
             path,
             model: model_ref.to_string(),
         })
+    }
+
+    /// The scratch directory of session `id`, named after its saved
+    /// directory, or after the server and the id when it is not saved.
+    fn scratch(&self, id: u64, store: Option<&Store>) -> Scratch {
+        let memory = format!("mem-{}-{id}", std::process::id());
+        let key = match store {
+            Some(store) => Scratch::key_of(store.dir(), &memory),
+            None => memory,
+        };
+        Scratch::new(&self.runtime, &key)
     }
 
     /// Starts the session task. When it ends by itself (a failure), the
@@ -293,7 +311,12 @@ impl Shared {
             )));
         }
         let loaded = store.load().map_err(failed)?;
-        let built = match self.build(id, &meta.workspace, Some(model.unwrap_or(&meta.model))) {
+        let built = match self.build(
+            id,
+            Some(&store),
+            &meta.workspace,
+            Some(model.unwrap_or(&meta.model)),
+        ) {
             Ok(built) => built,
             Err(e) if model.is_none() => {
                 return Err(ErrorReply::usage(format!(
@@ -456,6 +479,7 @@ impl Shared {
             max_requests: config.limits.max_requests,
             max_tool_calls: config.limits.max_tool_calls,
         });
+        let scratch = Some(self.scratch(id, store.as_ref())).filter(Scratch::exists);
         Ok(Payload::SessionStatus {
             status: Box::new(SessionStatus {
                 session,
@@ -464,6 +488,8 @@ impl Shared {
                 dir: store.as_ref().map(|s| tilde(s.dir(), home)),
                 size: store.as_ref().map(Store::size),
                 extra_dirs,
+                scratch: scratch.as_ref().map(|s| s.path().display().to_string()),
+                scratch_size: scratch.as_ref().map(Scratch::size),
                 skills,
                 model,
                 limits,
@@ -549,25 +575,26 @@ impl Shared {
     }
 
     async fn list(&self) -> Vec<SessionInfo> {
-        let entries: Vec<(u64, Result<SessionHandle, SessionInfo>)> = lock(&self.sessions)
+        type Listed = (Scratch, Result<SessionHandle, SessionInfo>);
+        let entries: Vec<Listed> = lock(&self.sessions)
             .iter()
             .map(|(id, e)| {
                 let slot = match &e.slot {
                     Slot::Running(handle) => Ok(handle.clone()),
                     Slot::Saved(meta) => Err(meta.info(id, State::Saved, meta.queued.len(), None)),
                 };
-                (id, slot)
+                (self.scratch(id, e.store.as_ref()), slot)
             })
             .collect();
         let mut sessions = Vec::new();
-        for (_, slot) in entries {
-            match slot {
-                Ok(handle) => {
-                    if let Some(info) = handle.info().await {
-                        sessions.push(info);
-                    }
-                }
-                Err(info) => sessions.push(info),
+        for (scratch, slot) in entries {
+            let info = match slot {
+                Ok(handle) => handle.info().await,
+                Err(info) => Some(info),
+            };
+            if let Some(mut info) = info {
+                info.tmp = scratch.exists().then(|| scratch.path());
+                sessions.push(info);
             }
         }
         sessions
@@ -714,11 +741,19 @@ impl Conn {
             }
         }
         let id = shared.next_session.fetch_add(1, Ordering::Relaxed) + 1;
-        let built = shared.build(id, &workspace, model.as_deref())?;
         // A session that cannot be saved still runs, in memory.
         let (store, problem) = match Store::create(&shared.sessions_dir) {
             Ok(store) => (Some(store), None),
             Err(e) => (None, Some(e)),
+        };
+        let built = match shared.build(id, store.as_ref(), &workspace, model.as_deref()) {
+            Ok(built) => built,
+            Err(e) => {
+                if let Some(store) = &store {
+                    let _ = store.remove();
+                }
+                return Err(e);
+            }
         };
         let handle = {
             let mut sessions = lock(&shared.sessions);
@@ -803,7 +838,11 @@ impl Conn {
         }
         let entry = lock(&shared.sessions).remove(id);
         shared.lsp.forget_session(&id.to_string());
-        if let Some(store) = entry.and_then(|e| e.store) {
+        let store = entry.and_then(|e| e.store);
+        if let Err(e) = shared.scratch(id, store.as_ref()).remove() {
+            tracing::warn!("removing the scratch directory of {name}: {e}");
+        }
+        if let Some(store) = store {
             store
                 .remove()
                 .map_err(|e| ErrorReply::failed(format!("{name} ended, but {e}")))?;

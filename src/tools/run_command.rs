@@ -55,6 +55,8 @@ pub struct Op {
     pub command: String,
     cwd: PathBuf,
     timeout_s: u64,
+    /// The session's scratch directory: `TMPDIR` and `CODEAGENT_TMP`.
+    scratch: Option<PathBuf>,
 }
 
 pub(super) fn prepare(env: &Env, args: Result<Args, Failure>) -> Result<Call, Failure> {
@@ -91,6 +93,7 @@ pub(super) fn prepare(env: &Env, args: Result<Args, Failure>) -> Result<Call, Fa
             command: args.command,
             cwd,
             timeout_s,
+            scratch: env.workspace.scratch().map(crate::scratch::Scratch::path),
         }),
     })
 }
@@ -168,6 +171,11 @@ impl Op {
             .arg(&self.command)
             .current_dir(&self.cwd)
             .envs(ENV)
+            .envs(
+                self.scratch
+                    .iter()
+                    .flat_map(|dir| [("TMPDIR", dir), ("CODEAGENT_TMP", dir)]),
+            )
             .stdin(Stdio::null())
             .stdout(writer.try_clone()?)
             .stderr(writer)

@@ -174,6 +174,10 @@ fn session(status: &SessionStatus, options: &Options<'_>) -> Section {
             ));
         }
     }
+    if let Some(dir) = &status.scratch {
+        let size = bytes(status.scratch_size.unwrap_or(0));
+        rows.push(row("scratch", format!("{dir}  ({size})")));
+    }
     for (i, skill) in status.skills.iter().enumerate() {
         let label = if i == 0 { "skills" } else { "" };
         let value = format!(
@@ -628,12 +632,15 @@ pub(crate) mod tests {
                 queued: 0,
                 question: None,
                 usage: TokenTotals::default(),
+                tmp: None,
             },
             stats,
             clients: Vec::new(),
             dir: None,
             size: None,
             extra_dirs: Vec::new(),
+            scratch: None,
+            scratch_size: None,
             skills: Vec::new(),
             model: None,
             limits: None,
@@ -702,5 +709,24 @@ Server         0.4.0 - pid 7 - 1 session, 0 running - 1 client
         assert_eq!(bytes(1_234_567), "1.2 MB");
         assert_eq!(bar(24, false), "[####................]");
         assert_eq!(bar(150, true), "█".repeat(20));
+    }
+
+    #[test]
+    fn the_scratch_row() {
+        let options = Options {
+            unicode: false,
+            offset: 0,
+            me: "codeagent chat",
+        };
+        let mut status = saved();
+        status.scratch = Some("/run/user/1000/codeagent/sessions/x/tmp".into());
+        status.scratch_size = Some(34_000);
+        let text = text(&sections(&status, &options));
+        assert!(
+            text.contains(
+                "  workspace    ~/ws/docs\n  scratch      /run/user/1000/codeagent/sessions/x/tmp  (34 kB)\n"
+            ),
+            "{text}"
+        );
     }
 }

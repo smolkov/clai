@@ -488,6 +488,9 @@ pub struct SessionInfo {
     /// The open question, if the session waits.
     pub question: Option<Question>,
     pub usage: TokenTotals,
+    /// The scratch directory (RFC 0029), when it exists.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tmp: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

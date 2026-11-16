@@ -1421,3 +1421,18 @@ fn provider_cache_key() {
     let config = ok(&user);
     assert!(!config.providers.values().next().unwrap().cache);
 }
+
+#[test]
+fn session_scratch_setting() {
+    assert!(ok(BASE).scratch);
+    assert!(!ok(&with("[session]\nscratch = false\n")).scratch);
+    assert!(ok(&with("[session]\nscratch = true\n")).scratch);
+    let e = errs(BASE, Some("[session]\nscratch = false\n"));
+    assert_eq!(e.len(), 1, "{e:?}");
+    assert!(
+        e[0].starts_with("project.toml:1: session: only allowed in the user file"),
+        "{e:?}"
+    );
+    let e = errs(&with("[session]\nscratch_dir = \"/x\"\n"), None);
+    assert!(e[0].contains("unknown field `scratch_dir`"), "{e:?}");
+}

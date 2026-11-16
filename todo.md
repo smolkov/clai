@@ -383,7 +383,8 @@ Milestones and their order: [`implementation.md`](implementation.md).
       unchanged re-reads, `ci/bench.sh`
 - [ ] Token bench baseline: run `ci/bench.sh` on one Anthropic and one local
       model, write the sums into `bench/readme.md` (needs a key)
-- [ ] Scratch directory per session (RFC 0029, draft)
+- [x] Scratch directory per session (RFC 0029): `TMPDIR`, built-in allow
+      rule, `--keep-tmp`, `[session] scratch`
 - [x] Language server tools: `lsp` tool, `[lsp]`, diagnostics after edits
       (RFC 0019; see its section)
 - [ ] Release (RFC 0020): scripts, pipelines, Debian packages and crate

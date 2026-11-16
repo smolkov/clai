@@ -1,7 +1,7 @@
 # A scratch directory for each session
 
 - RFC: 0029
-- Status: draft
+- Status: done
 - Spec: [`spec/sessions.md`](../spec/sessions.md), "Session lifecycle",
   "Persistence"; [`spec/config.md`](../spec/config.md), "Permissions",
   "Extra directories", "Built-in rules";
@@ -196,7 +196,7 @@ prompt line and no allow rule: today's behaviour. **(proposal)**
 ## Implementation plan
 
 1. **Directory and lifetime**
-   - Status: todo
+   - Status: done
    - Files: `src/paths.rs`, `src/session/mod.rs`, `src/session/store.rs`,
      `src/server/`
    - Result: each session has its directory from its first turn; kill,
@@ -204,7 +204,7 @@ prompt line and no allow rule: today's behaviour. **(proposal)**
    - Tests: path, mode, recreation, cleanup.
 
 2. **Access**
-   - Status: todo
+   - Status: done
    - Files: `src/permissions/workspace.rs`, `src/permissions/check.rs`,
      `src/permissions/tests.rs`
    - Result: file tools and redirections use it without questions; deny
@@ -212,14 +212,14 @@ prompt line and no allow rule: today's behaviour. **(proposal)**
    - Tests: the permission cases above.
 
 3. **Commands and prompt**
-   - Status: todo
+   - Status: done
    - Files: `src/tools/run_command.rs`, `src/agent/prompt.rs`,
      `src/agent/system_prompt.md`
    - Result: `TMPDIR`, `CODEAGENT_TMP`, the prompt line.
    - Tests: environment of a command, prompt text.
 
 4. **`codeagent run`, status and listing**
-   - Status: todo
+   - Status: done
    - Files: `src/command/run.rs`, `src/command/ls.rs`, `src/text/status.rs`,
      `src/report/`, `src/cli.rs`
    - Result: `--keep-tmp`, the `scratch` row, `tmp` in JSON, scratch files
@@ -227,7 +227,7 @@ prompt line and no allow rule: today's behaviour. **(proposal)**
    - Tests: run with and without `--keep-tmp`, JSON field, report.
 
 5. **Setting and spec**
-   - Status: todo
+   - Status: done
    - Files: `src/config/`, spec files above, `readme.md`
    - Result: `[session] scratch`; the spec describes the behaviour.
    - Tests: config parse and project-file rejection; `scratch = false`.
@@ -249,7 +249,43 @@ prompt line and no allow rule: today's behaviour. **(proposal)**
   directory is private, made by `codeagent` and holds nothing of the
   user's; one more question buys nothing.
 
+## Changes while building
+
+- **The key.** The directory is named after the session's saved directory
+  (`~/.local/state/codeagent/sessions/<key>`), not the session id, which
+  a server numbers anew at each start. A session that cannot be saved uses
+  `mem-<server pid>-<id>`, `codeagent run` uses `run-<pid>`.
+- **Server start.** Directories whose key is not a saved session are
+  removed, except `run-<pid>` of a process that still runs, so a server
+  starting during a `codeagent run` leaves its files alone.
+- **`$TMPDIR` in redirections.** The shell parser keeps the name of a
+  variable a word starts with, so `> $TMPDIR/out.txt` and
+  `> "${CODEAGENT_TMP}/x"` are checked as the path in the directory.
+  That holds only when the command line names the variable nowhere else
+  (`TMPDIR=/etc; … > $TMPDIR/x` asks); a path that leaves the directory
+  is checked where it points.
+- **Failure to make it** is a `notice`; the turn goes on without it.
+- **The prompt line** is the only place the model learns the path; the
+  directory is not in the "Other directories" list.
+- **Showing it.** `tmp` and the `scratch` row appear only when the
+  directory exists; the report section is called "Scratch files" and
+  lists absolute paths.
+- **Secrets.** The built-in rules deny reading, as everywhere: a `.env`
+  in the directory is not read, but may be written.
+
 ## Open questions
+
+Answered while building:
+
+1. The runtime directory, as proposed. A session resumed after a reboot
+   finds it empty; the prompt says it may be.
+2. No size limit: commands could not be held to it without a sandbox.
+3. No: `--keep-tmp` is not the default after a failure, so runs in a loop
+   do not fill the runtime directory. Give it when the files matter.
+4. Not built; `[session]` rejects unknown keys, so `scratch_dir` can be
+   added later.
+
+Asked in the draft:
 
 1. Runtime directory (proposed: memory, emptied at reboot) or state
    directory (disk, kept)? A long session that is resumed the next morning

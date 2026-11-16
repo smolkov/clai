@@ -4,7 +4,10 @@
 use std::io;
 use std::path::{Component, Path, PathBuf};
 
-use crate::config::{Access, ExtraDir};
+use crate::config::{Access, Action, ExtraDir, Pattern, Rule, Source, tools_named};
+use crate::scratch::Scratch;
+
+use super::PathPattern;
 
 use super::PathInfo;
 
@@ -15,7 +18,21 @@ pub struct Workspace {
     /// Resolved extra directories that exist.
     extra: Vec<ExtraDir>,
     home: Option<PathBuf>,
+    /// The session's scratch directory (RFC 0029), if it has one.
+    scratch: Option<ScratchDir>,
 }
+
+/// The scratch directory as the checks need it.
+#[derive(Debug, Clone, PartialEq)]
+struct ScratchDir {
+    scratch: Scratch,
+    /// Its path, resolved (it may not exist yet).
+    path: PathBuf,
+    /// The built-in rule that allows the read and edit groups in it.
+    rule: Rule,
+}
+
+impl Eq for ScratchDir {}
 
 /// Where a resolved path lies.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -101,7 +118,46 @@ impl Workspace {
             root,
             extra: dirs,
             home,
+            scratch: None,
         })
+    }
+
+    /// This workspace with the session's scratch directory: writable, and
+    /// the read and edit groups allowed in it by a built-in rule.
+    pub fn with_scratch(mut self, scratch: Scratch) -> Workspace {
+        let path = resolve_path(&scratch.path());
+        let text = format!("{}/**", globset::escape(&path.to_string_lossy()));
+        let mut tools = tools_named("read").unwrap_or_default();
+        tools.extend(tools_named("edit").unwrap_or_default());
+        let patterns = PathPattern::parse(&text, None)
+            .map(Pattern::Path)
+            .into_iter()
+            .collect();
+        let rule = Rule {
+            action: Action::Allow,
+            tools,
+            label: "read, edit".to_owned(),
+            patterns,
+            except: Vec::new(),
+            message: None,
+            source: Source::BuiltIn,
+        };
+        self.scratch = Some(ScratchDir {
+            scratch,
+            path,
+            rule,
+        });
+        self
+    }
+
+    /// The session's scratch directory, if it has one.
+    pub fn scratch(&self) -> Option<&Scratch> {
+        self.scratch.as_ref().map(|s| &s.scratch)
+    }
+
+    /// The built-in rule for the scratch directory, checked with the others.
+    pub fn scratch_rule(&self) -> Option<&Rule> {
+        self.scratch.as_ref().map(|s| &s.rule)
     }
 
     /// This workspace with `dirs` added as read-only extra directories
@@ -178,6 +234,15 @@ impl Workspace {
                     rel: rel.to_path_buf(),
                 };
             }
+        }
+        if let Some(scratch) = &self.scratch
+            && let Ok(rel) = abs.strip_prefix(&scratch.path)
+        {
+            return Area::Extra {
+                dir: scratch.path.clone(),
+                access: Access::Write,
+                rel: rel.to_path_buf(),
+            };
         }
         Area::Outside
     }
@@ -332,6 +397,7 @@ mod tests {
             root: PathBuf::from("/w"),
             extra: Vec::new(),
             home: Some(PathBuf::from("/home/u")),
+            scratch: None,
         };
         assert_eq!(ws.tilde(Path::new("/home/u/ws/docs")), "~/ws/docs");
         assert_eq!(ws.tilde(Path::new("/opt")), "/opt");

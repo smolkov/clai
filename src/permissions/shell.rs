@@ -36,6 +36,9 @@ pub struct Word {
     /// Contains an expansion (`$X`, `$( )`, backticks), so its value is
     /// only known when the shell runs it.
     pub dynamic: bool,
+    /// For a word that is `$NAME` or `${NAME}` followed by plain text
+    /// only: the name. `text` is then the text after it.
+    pub lead_var: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -377,6 +380,7 @@ impl Lexer<'_> {
                         self.list(&mut inner, Some(')'))?;
                         append(script, inner);
                         word.dynamic = true;
+                        word.lead_var = None;
                         continue;
                     }
                     break;
@@ -448,7 +452,22 @@ impl Lexer<'_> {
 
     /// `$…` at the current position.
     fn dollar(&mut self, script: &mut Script, word: &mut Word) -> Result<(), String> {
+        let at_start = word.text.is_empty() && !word.dynamic;
+        if let Some(name) = self.dollar_inner(script, word)? {
+            word.lead_var = name.filter(|_| at_start);
+        }
+        Ok(())
+    }
+
+    /// Reads `$…`: `None` for a plain `$`, else the variable's name for
+    /// `$NAME` and `${NAME}`.
+    fn dollar_inner(
+        &mut self,
+        script: &mut Script,
+        word: &mut Word,
+    ) -> Result<Option<Option<String>>, String> {
         self.bump();
+        let mut name = None;
         match self.peek() {
             Some('(') if self.peek_at(1) == Some('(') => {
                 // Arithmetic: no commands, but its value is unknown.
@@ -465,7 +484,18 @@ impl Lexer<'_> {
             }
             Some('{') => {
                 self.bump();
+                let start = self.pos;
                 self.skip_balanced('{', '}', 1)?;
+                let inner: String = self
+                    .chars
+                    .get(start..self.pos.saturating_sub(1))
+                    .unwrap_or_default()
+                    .iter()
+                    .map(|(_, c)| *c)
+                    .collect();
+                if Self::is_name(&inner) {
+                    name = Some(inner);
+                }
                 word.dynamic = true;
             }
             Some('\'') => {
@@ -485,20 +515,35 @@ impl Lexer<'_> {
             }
             Some(c) if c.is_ascii_alphanumeric() || "_?@*#!$-".contains(c) => {
                 if c.is_ascii_alphabetic() || c == '_' {
-                    while self
+                    let mut text = String::new();
+                    while let Some(c) = self
                         .peek()
-                        .is_some_and(|c| c.is_ascii_alphanumeric() || c == '_')
+                        .filter(|c| c.is_ascii_alphanumeric() || *c == '_')
                     {
+                        text.push(c);
                         self.bump();
                     }
+                    name = Some(text);
                 } else {
                     self.bump();
                 }
                 word.dynamic = true;
             }
-            _ => word.text.push('$'),
+            _ => {
+                word.text.push('$');
+                return Ok(None);
+            }
         }
-        Ok(())
+        Ok(Some(name))
+    }
+
+    /// A shell variable name: `[A-Za-z_][A-Za-z0-9_]*`.
+    fn is_name(text: &str) -> bool {
+        let mut chars = text.chars();
+        chars
+            .next()
+            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+            && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
     }
 
     fn backtick(&mut self, script: &mut Script, word: &mut Word) -> Result<(), String> {
@@ -507,6 +552,7 @@ impl Lexer<'_> {
         self.list(&mut inner, Some('`'))?;
         append(script, inner);
         word.dynamic = true;
+        word.lead_var = None;
         Ok(())
     }
 
@@ -703,7 +749,8 @@ mod tests {
                 write: true,
                 target: Word {
                     text: "~/.bashrc".into(),
-                    dynamic: false
+                    dynamic: false,
+                    lead_var: None,
                 }
             }]
         );
@@ -777,5 +824,30 @@ mod tests {
         for w in ["plain", "a b", "it's", "x|y", ""] {
             assert_eq!(split_words(&quote(w)).unwrap(), [w], "{w}");
         }
+    }
+
+    #[test]
+    fn a_leading_variable_is_kept() {
+        let target = |line: &str| parse(line).unwrap().parts[0].redirects[0].target.clone();
+        let t = target("echo > $TMPDIR/a.txt");
+        assert_eq!(
+            (t.lead_var.as_deref(), t.text.as_str(), t.dynamic),
+            (Some("TMPDIR"), "/a.txt", true)
+        );
+        let t = target("echo > \"${CODEAGENT_TMP}/b c\"");
+        assert_eq!(
+            (t.lead_var.as_deref(), t.text.as_str()),
+            (Some("CODEAGENT_TMP"), "/b c")
+        );
+        assert_eq!(target("echo > $TMPDIR/$X").lead_var, None);
+        assert_eq!(target("echo > $TMPDIR/`x`").lead_var, None);
+        assert_eq!(target("echo > a$TMPDIR").lead_var, None);
+        assert_eq!(target("echo > ${TMPDIR:-/tmp}/x").lead_var, None);
+        // A plain `$` keeps it.
+        let t = target("echo > $TMPDIR/$");
+        assert_eq!(
+            (t.lead_var.as_deref(), t.text.as_str()),
+            (Some("TMPDIR"), "/$")
+        );
     }
 }

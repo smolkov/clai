@@ -61,5 +61,6 @@ fn json_of(s: &SessionInfo) -> Value {
         "input_tokens": s.usage.input_tokens,
         "output_tokens": s.usage.output_tokens,
         "cache_read_tokens": s.usage.cache_read_tokens,
+        "tmp": s.tmp,
     })
 }

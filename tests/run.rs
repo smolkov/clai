@@ -556,3 +556,92 @@ fn old_directories_move_on_first_start() {
     let out = env.run(&["run", "hi"]);
     assert_eq!(stderr(&out), "", "only once");
 }
+
+#[test]
+fn the_scratch_directory_goes_unless_kept() {
+    let command = || {
+        call(
+            "c1",
+            "run_command",
+            json!({"command": "echo \"$TMPDIR\"; echo note > $CODEAGENT_TMP/a.txt"}),
+        )
+    };
+    let server = Server::start(vec![command(), say("Done."), command(), say("Done.")]);
+    let env = Env::new("scratch", &server, "");
+    let runtime = env.root.join("rt");
+    let sessions = runtime.join("codeagent/sessions");
+    let run = |args: &[&str]| env.run(args);
+
+    let out = run(&["run", "--yes", "note it"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let tool = |request: &serde_json::Value| {
+        request["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|m| m["role"] == "tool")
+            .unwrap()["content"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    let result = tool(&server.requests()[1]);
+    let dir = result.lines().next().unwrap().to_owned();
+    assert!(
+        dir.starts_with(&sessions.join("run-").display().to_string()) && dir.ends_with("/tmp"),
+        "{result}"
+    );
+    let system = server.requests()[0]["messages"][0]["content"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(
+        system.contains(&format!("Scratch directory: {dir} ")),
+        "{system}"
+    );
+    assert!(
+        !std::path::Path::new(&dir).exists(),
+        "removed after the run"
+    );
+    assert!(!stderr(&out).contains("kept"), "{}", stderr(&out));
+
+    let out = run(&["run", "--yes", "--keep-tmp", "note it"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let dir = tool(&server.requests()[3])
+        .lines()
+        .next()
+        .unwrap()
+        .to_owned();
+    assert!(
+        stderr(&out).contains(&format!("scratch directory kept: {dir}")),
+        "{}",
+        stderr(&out)
+    );
+    assert_eq!(
+        fs::read_to_string(std::path::Path::new(&dir).join("a.txt")).unwrap(),
+        "note\n"
+    );
+}
+
+#[test]
+fn no_scratch_directory_when_turned_off() {
+    let server = Server::start(vec![
+        call(
+            "c1",
+            "run_command",
+            json!({"command": "echo \"[$CODEAGENT_TMP]\""}),
+        ),
+        say("Done."),
+    ]);
+    let env = Env::new("no-scratch", &server, "[session]\nscratch = false\n");
+    let runtime = env.root.join("rt");
+    let out = env.run(&["run", "--yes", "--keep-tmp", "look"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let requests = server.requests();
+    let system = requests[0]["messages"][0]["content"].as_str().unwrap();
+    assert!(!system.contains("Scratch directory"), "{system}");
+    let second = requests[1].to_string();
+    assert!(second.contains("[]"), "{second}");
+    assert!(!runtime.join("codeagent/sessions").exists());
+    assert!(!stderr(&out).contains("kept"));
+}

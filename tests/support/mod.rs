@@ -169,6 +169,7 @@ context_window = 100000
             .env("HOME", &self.root)
             .env("XDG_CONFIG_HOME", self.root.join("config"))
             .env("XDG_STATE_HOME", self.root.join("state"))
+            .env("XDG_RUNTIME_DIR", self.root.join("rt"))
             .env("LANG", "C.UTF-8")
             .env_remove("LC_ALL")
             .env_remove("LC_CTYPE")

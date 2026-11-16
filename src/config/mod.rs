@@ -30,7 +30,7 @@ use file::{LimitsFile, ModelFile, ProjectFile, ProviderFile, UserFile};
 pub use errors::{ConfigError, ConfigErrors, Origin};
 pub use lsp::{Lsp, LspServer};
 pub use permissions::{
-    Access, Action, ExtraDir, Pattern, Permissions, Rule, Source, Tool, builtin_rules,
+    Access, Action, ExtraDir, Pattern, Permissions, Rule, Source, Tool, builtin_rules, tools_named,
 };
 pub use secret::{ApiKey, KEY_CMD_TIMEOUT, KeySource, KeyStatus};
 pub use themes::ThemeText;
@@ -273,6 +273,8 @@ pub struct Config {
     pub providers: IndexMap<String, Provider>,
     pub limits: Limits,
     pub history: HistorySettings,
+    /// `[session] scratch`: a scratch directory per session (RFC 0029).
+    pub scratch: bool,
     pub permissions: Permissions,
     pub commit: Commit,
     pub tui: Tui,
@@ -662,6 +664,11 @@ fn build(
     if let Some(file) = &user_file.history {
         history.apply(user, file, &mut errors);
     }
+    let scratch = user_file
+        .session
+        .as_ref()
+        .and_then(|s| s.scratch)
+        .unwrap_or(true);
 
     let mut default_given = false;
     let mut default_model = None;
@@ -685,6 +692,7 @@ fn build(
             ("themes", &file.themes),
             ("skills", &file.skills),
             ("history", &file.history),
+            ("session", &file.session),
         ] {
             if let Some(value) = value {
                 errors.push(ctx.error(
@@ -752,6 +760,7 @@ fn build(
             providers,
             limits,
             history,
+            scratch,
             permissions,
             commit,
             tui,

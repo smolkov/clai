@@ -86,6 +86,8 @@ struct UserConfig {
 
 struct Shared {
     sessions_dir: PathBuf,
+    /// The runtime directory, with the sessions' scratch directories.
+    runtime: PathBuf,
     load: LoadOptions,
     providers: ProviderFactory,
     config: Mutex<UserConfig>,
@@ -169,6 +171,7 @@ pub async fn serve(options: Options) -> Result<()> {
 
     let shared = Arc::new(Shared {
         sessions_dir: options.sessions_dir.clone(),
+        runtime: options.dir.clone(),
         load: options.load.clone(),
         providers: options.providers.clone(),
         config: Mutex::new(user),
@@ -182,6 +185,7 @@ pub async fn serve(options: Options) -> Result<()> {
         summaries: Mutex::new(HashMap::new()),
     });
     load_saved(&shared);
+    sweep_scratch(&shared);
     tokio::spawn(idle_watch(shared.clone(), options.idle));
     tokio::spawn(reload_watch(shared.clone(), options.reload_every));
     shared.lsp.apply_config(&initial.lsp).await;
@@ -218,6 +222,25 @@ pub async fn serve(options: Options) -> Result<()> {
     let _ = std::fs::remove_file(&socket);
     tracing::info!("server stopped");
     Ok(())
+}
+
+/// Removes the scratch directories of sessions that no longer exist: not
+/// saved, and not a `codeagent run` that still runs (RFC 0029).
+fn sweep_scratch(shared: &Shared) {
+    let saved: std::collections::HashSet<String> = std::fs::read_dir(&shared.sessions_dir)
+        .map(|entries| {
+            entries
+                .flatten()
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .collect()
+        })
+        .unwrap_or_default();
+    let removed = crate::scratch::sweep(&shared.runtime, |key| {
+        saved.contains(key) || crate::scratch::is_running_run(key)
+    });
+    if !removed.is_empty() {
+        tracing::info!(count = removed.len(), "stale scratch directories removed");
+    }
 }
 
 /// Lists the saved sessions; names taken twice (e.g. by an import) are

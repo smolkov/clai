@@ -22,6 +22,7 @@ use crate::output::write_stdout;
 use crate::permissions::{SessionRules, Workspace};
 use crate::provider;
 use crate::report::{self, Collector, Outcome};
+use crate::scratch::Scratch;
 use crate::sync::lock;
 use crate::text::{LineAsker, Renderer, unicode};
 use crate::tools::Env;
@@ -55,6 +56,10 @@ pub struct Run {
         default_missing_value = "text"
     )]
     pub report: Option<ReportFormat>,
+    /// Keep the scratch directory after the run and print its path on
+    /// standard error.
+    #[arg(long)]
+    pub keep_tmp: bool,
     /// Task; `-` reads it from standard input, as does no task when
     /// standard input is not a terminal.
     #[arg(value_name = "TASK")]
@@ -111,15 +116,34 @@ impl Execute for Run {
             model: prepared.setup.model_name.clone(),
         });
         let asker = asker(answering, prepared.place, prepared.unicode);
+        let scratch = prepared.setup.env.workspace.scratch().cloned();
         let agent = Agent::new(prepared.setup);
         if !prepared.skills.is_empty() {
             agent.skills().set(prepared.skills);
         }
-        one_shot(agent, task.text, asker, prepared.unicode, report)
+        let result = one_shot(agent, task.text, asker, prepared.unicode, report);
+        if let Some(scratch) = scratch {
+            self.end_scratch(&scratch);
+        }
+        result
     }
 }
 
 impl Run {
+    /// Removes the scratch directory, or with `--keep-tmp` says where it is.
+    fn end_scratch(&self, scratch: &Scratch) {
+        if self.keep_tmp {
+            if scratch.exists() {
+                crate::output::note(&format!(
+                    "scratch directory kept: {}",
+                    scratch.path().display()
+                ));
+            }
+        } else if let Err(e) = scratch.remove() {
+            crate::output::note(&format!("cannot remove the scratch directory: {e}"));
+        }
+    }
+
     /// The task: the words, or standard input for `-` or for no words when
     /// it is not a terminal.
     fn task(&self, ctx: &Context) -> Result<Input> {
@@ -192,9 +216,13 @@ impl Run {
                 }
             }
         }
-        let workspace =
+        let mut workspace =
             Workspace::new(&workspace, &config.permissions.extra_dirs, options.env.home)
                 .map_err(Error::io(workspace.display().to_string()))?;
+        if config.scratch {
+            let key = crate::scratch::run_key(std::process::id());
+            workspace = workspace.with_scratch(Scratch::new(&ctx.paths.runtime, &key));
+        }
         let place = workspace.tilde(workspace.root());
         let root = workspace.root().to_path_buf();
         let unicode = unicode(config.tui.symbols, ctx.startup.getenv());
@@ -340,6 +368,7 @@ async fn turn(
         };
         let collector = lock(&collector);
         let reported = agent.report();
+        let scratch_path = agent.env().workspace.scratch().map(Scratch::path);
         let fallback = match outcome {
             Outcome::Done => answer,
             Outcome::Limit => String::new(),
@@ -351,6 +380,7 @@ async fn turn(
         let run = report::Run {
             workspace: &reporting.workspace,
             model: &reporting.model,
+            scratch: scratch_path.as_deref(),
             outcome,
             duration: started.elapsed().as_secs(),
         };

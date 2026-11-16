@@ -999,6 +999,7 @@ mod tests {
             queued: 0,
             question: None,
             usage: TokenTotals::default(),
+            tmp: None,
         }
     }
 

@@ -42,8 +42,9 @@ Statements marked **(assumption)** need a decision from the user.
 - Before anything is read or written, the path is resolved: `.` and `..`
   are removed and symbolic links are followed (for a file that does not
   exist yet, its nearest existing parent directory is resolved).
-- The resolved path must lie inside the workspace or one of the
-  `extra_dirs`; otherwise the call is denied without asking, whatever the
+- The resolved path must lie inside the workspace, one of the
+  `extra_dirs` or the session's scratch directory (see
+  [`sessions.md`](sessions.md), "Scratch directory"); otherwise the call is denied without asking, whatever the
   rules say (see [`config.md`](config.md), "Checking order").
 - Results show paths relative to the workspace when they are inside it,
   otherwise absolute.
@@ -437,7 +438,9 @@ Runs a shell command in the workspace and returns its output.
   gets end of file instead of hanging.
 - The environment is the server's, plus `PAGER=cat`, `GIT_PAGER=cat`,
   `GIT_TERMINAL_PROMPT=0` and `TERM=dumb`, so no pager or password prompt
-  waits for input. **(assumption)**
+  waits for input. **(assumption)** With a scratch directory (RFC 0029),
+  `TMPDIR` and `CODEAGENT_TMP` are its path, so `mktemp`, compilers and
+  test runners put their temporary files there.
 - The command runs in its own process group. On timeout or when the turn is
   cancelled, the group gets `SIGTERM`, and `SIGKILL` 2 s later (see
   [`tui.md`](tui.md), "Cancellation and exit"). Background processes the
@@ -479,7 +482,11 @@ Shown: the command; expanded: command, working directory and output.
 
 Permission: each part of the command line, and the targets of its
 redirections (see [Permissions](#permissions) and [`config.md`](config.md),
-"Commands with several parts").
+"Commands with several parts"). A redirection target `$TMPDIR/…` or
+`$CODEAGENT_TMP/…` (also `${…}`) is the path in the scratch directory, as
+long as the command line names the variable nowhere else (no
+`TMPDIR=…`, no `export`); otherwise it is only known when the command
+runs, and asks.
 
 ## lsp
 

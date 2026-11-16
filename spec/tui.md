@@ -938,6 +938,7 @@ answer; a first answer that fails closes it with the error.
 │   state        working                                                       │
 │   workspace    ~/ws/project                                                  │
 │   extra dirs   ~/ws/shared-lib  ⚠ missing                                    │
+│   scratch      /run/user/1000/codeagent/sessions/…/tmp  (34 kB)              │
 │   created      2026-11-01 01:00  (2h 10m ago)                                │
 │   last active  2h 08m ago                                                    │
 │   clients      2: chat pts/5 (watching), tui pts/3 (this)                    │
@@ -977,7 +978,9 @@ answer; a first answer that fails closes it with the error.
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-- Rows that do not apply are left out: extra dirs when there are none, the
+- Rows that do not apply are left out: extra dirs when there are none,
+  scratch (the session's scratch directory and the size of its files, see
+  [`sessions.md`](sessions.md), "Scratch directory") when it does not exist, the
   clients and "This turn" of a saved session, "queued" without a queue,
   "changes" when the model never changed. "This turn" is shown while a turn
   runs; its counts start again after `continue` on a limit question.

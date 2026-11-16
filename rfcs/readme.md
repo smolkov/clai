@@ -150,4 +150,4 @@ Sections that do not apply may be left out.
 | [0026](0026-startup.md) | Startup: one place for the environment, paths and the command context | done |
 | [0027](0027-run-report.md) | Reports from `codeagent run` | done |
 | [0028](0028-fewer-tokens.md) | Fewer tokens, same answers | done |
-| [0029](0029-session-scratch-directory.md) | A scratch directory for each session | draft |
+| [0029](0029-session-scratch-directory.md) | A scratch directory for each session | done |

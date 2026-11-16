@@ -129,23 +129,33 @@ impl Fixture {
     }
 
     fn with_limits(steps: Vec<Step>, limits: Limits) -> Fixture {
-        Fixture::build(steps, limits, None)
+        Fixture::build(steps, limits, None, false)
     }
 
     /// With language servers (RFC 0019).
     fn with_lsp(steps: Vec<Step>, lsp: crate::tools::lsp::LspEnv) -> Fixture {
-        Fixture::build(steps, Limits::default(), Some(Arc::new(lsp)))
+        Fixture::build(steps, Limits::default(), Some(Arc::new(lsp)), false)
+    }
+
+    /// With a scratch directory (RFC 0029), at `<tmp>/run/sessions/s1/tmp`.
+    fn with_scratch(steps: Vec<Step>) -> Fixture {
+        Fixture::build(steps, Limits::default(), None, true)
     }
 
     fn build(
         steps: Vec<Step>,
         limits: Limits,
         lsp: Option<Arc<crate::tools::lsp::LspEnv>>,
+        scratch: bool,
     ) -> Fixture {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path().join("ws");
         fs::create_dir_all(&root).unwrap();
-        let workspace = Workspace::new(&root, &[], None).unwrap();
+        let mut workspace = Workspace::new(&root, &[], None).unwrap();
+        if scratch {
+            let runtime = tmp.path().canonicalize().unwrap().join("run");
+            workspace = workspace.with_scratch(crate::scratch::Scratch::new(&runtime, "s1"));
+        }
         let root = workspace.root().to_path_buf();
         let script = Arc::new(Script {
             steps: Mutex::new(steps.into()),
@@ -1558,4 +1568,50 @@ async fn old_results_are_trimmed_in_requests_only() {
     // The history keeps every result.
     let kept = results(&f.messages()[2]);
     assert!(kept[0].0.contains("line of text"));
+}
+
+#[tokio::test]
+async fn the_scratch_directory_is_made_and_used_without_questions() {
+    let write = |id: &str, dir: &str| {
+        calls(&[(
+            id,
+            "write_file",
+            json!({"path": format!("{dir}/notes.txt"), "content": "note\n"}),
+        )])
+    };
+    let mut f = Fixture::with_scratch(Vec::new());
+    let scratch = f.agent.env().workspace.scratch().unwrap().clone();
+    let dir = scratch.path().display().to_string();
+    assert!(!scratch.exists(), "made at the first turn, not before");
+    assert!(
+        f.agent
+            .system()
+            .contains(&format!("Scratch directory: {dir} "))
+    );
+    f.script.steps.lock().unwrap().extend([
+        write("w1", &dir),
+        calls(&[(
+            "c1",
+            "run_command",
+            json!({"command": "echo \"$TMPDIR|$CODEAGENT_TMP\"; echo x > $TMPDIR/out.txt"}),
+        )]),
+        say("done"),
+    ]);
+    // `echo` is allowed; the file and the redirection ask nothing either,
+    // though writing asks by default.
+    let asker = no_questions();
+    f.turn("scratch", &asker).await;
+    assert!(asker.asked().is_empty());
+    assert_eq!(
+        fs::read_to_string(scratch.path().join("notes.txt")).unwrap(),
+        "note\n"
+    );
+    assert!(scratch.path().join("out.txt").is_file());
+    let r = last_results(&f);
+    assert_eq!(r[0].0, format!("{dir}|{dir}\nexit code 0"));
+    // Made again, empty, when it went missing.
+    scratch.remove().unwrap();
+    f.script.steps.lock().unwrap().push_back(say("again"));
+    f.turn("again", &no_questions()).await;
+    assert!(scratch.exists());
 }

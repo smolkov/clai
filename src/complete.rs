@@ -141,6 +141,7 @@ mod tests {
             queued: 0,
             question: None,
             usage: Default::default(),
+            tmp: None,
         };
         let sessions = [info("codeagent"), info("codeagent-2"), info("docs")];
         let names: Vec<String> = session_candidates(&sessions, "co")

@@ -187,6 +187,7 @@ impl Checker<'_> {
             .rules
             .iter()
             .chain(&self.permissions.builtin)
+            .chain(self.workspace.scratch_rule())
             .chain(self.session.rules())
     }
 
@@ -247,7 +248,8 @@ impl Checker<'_> {
     pub fn check_command(&self, command: &str) -> CommandDecision {
         let mut parts = Vec::new();
         let mut redirects = Vec::new();
-        self.check_line(command, 0, &mut parts, &mut redirects);
+        let vars = only_expanded(command, &SCRATCH_VARS);
+        self.check_line(command, 0, vars, &mut parts, &mut redirects);
         let decision = parts
             .iter()
             .map(|p: &PartDecision| &p.decision)
@@ -265,10 +267,14 @@ impl Checker<'_> {
         }
     }
 
+    /// `vars`: `$TMPDIR` and `$CODEAGENT_TMP` in redirections may be
+    /// taken as the scratch directory, as nothing in the command line sets
+    /// them.
     fn check_line(
         &self,
         line: &str,
         depth: usize,
+        vars: bool,
         parts: &mut Vec<PartDecision>,
         redirects: &mut Vec<RedirectDecision>,
     ) {
@@ -290,16 +296,16 @@ impl Checker<'_> {
                     None => unsafe_reason("the command for -c is only known when it runs"),
                 });
                 parts.push(part_decision(part, decision));
-                self.check_redirects(part, redirects);
+                self.check_redirects(part, vars, redirects);
                 if let Some(inner) = inner
                     && depth < MAX_SHELLS
                 {
-                    self.check_line(&inner, depth + 1, parts, redirects);
+                    self.check_line(&inner, depth + 1, vars, parts, redirects);
                 }
                 continue;
             }
             parts.push(part_decision(part, self.check_part(part)));
-            self.check_redirects(part, redirects);
+            self.check_redirects(part, vars, redirects);
         }
         self.check_pipelines(&script, &indices, parts);
     }
@@ -312,6 +318,7 @@ impl Checker<'_> {
             .map(|w| Word {
                 text: w.to_owned(),
                 dynamic: false,
+                lead_var: None,
             })
             .collect();
         let part = Part {
@@ -423,10 +430,11 @@ impl Checker<'_> {
         }
     }
 
-    fn check_redirects(&self, part: &Part, out: &mut Vec<RedirectDecision>) {
+    fn check_redirects(&self, part: &Part, vars: bool, out: &mut Vec<RedirectDecision>) {
         for redirect in &part.redirects {
             let target = &redirect.target;
-            if target.dynamic {
+            let in_scratch = self.scratch_target(target, vars);
+            if target.dynamic && in_scratch.is_none() {
                 out.push(RedirectDecision {
                     target: display_word(target),
                     path: String::new(),
@@ -439,20 +447,36 @@ impl Checker<'_> {
             if DEVICES.contains(&target.text.as_str()) {
                 continue;
             }
-            let resolved = self.resolve_shell_path(&target.text);
+            let resolved = match &in_scratch {
+                Some(path) => self.workspace.resolve(path),
+                None => self.resolve_shell_path(&target.text),
+            };
             let tool = if redirect.write {
                 Tool::WriteFile
             } else {
                 Tool::ReadFile
             };
+            let shown = match (&in_scratch, &target.lead_var) {
+                (Some(_), Some(name)) => format!("${name}{}", target.text),
+                _ => target.text.clone(),
+            };
             out.push(RedirectDecision {
-                target: target.text.clone(),
+                target: shown,
                 path: resolved.display(),
                 write: redirect.write,
                 decision: self.check_path(tool, &resolved),
                 resolved: Some(resolved),
             });
         }
+    }
+
+    /// The path of a redirection target `$TMPDIR/…` or `$CODEAGENT_TMP/…`
+    /// (also `${…}`), which `run_command` sets to the scratch directory.
+    fn scratch_target(&self, target: &Word, vars: bool) -> Option<String> {
+        let scratch = self.workspace.scratch()?;
+        let name = target.lead_var.as_deref()?;
+        (vars && SCRATCH_VARS.contains(&name))
+            .then(|| format!("{}{}", scratch.path().display(), target.text))
     }
 
     /// The shell expands `~/` in redirections.
@@ -469,6 +493,20 @@ impl Checker<'_> {
             _ => self.workspace.resolve(text),
         }
     }
+}
+
+/// The variables `run_command` sets to the scratch directory (RFC 0029).
+const SCRATCH_VARS: [&str; 2] = ["TMPDIR", "CODEAGENT_TMP"];
+
+/// Whether each of `names` appears in `line` only as `$NAME` or `${NAME}`:
+/// nothing in it assigns, exports or reads into them.
+fn only_expanded(line: &str, names: &[&str]) -> bool {
+    names.iter().all(|name| {
+        let all = line.matches(name).count();
+        let plain = line.matches(&format!("${name}")).count();
+        let braced = line.matches(&format!("${{{name}}}")).count();
+        all == plain + braced
+    })
 }
 
 fn command_rule_applies(rule: &Rule, matches: impl Fn(&CommandPattern) -> bool) -> bool {

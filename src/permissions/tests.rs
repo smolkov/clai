@@ -501,3 +501,123 @@ fn skill_dirs_are_read_only() {
     // Commands are not changed by it.
     assert_eq!(f.action(&format!("sh {script}")), Action::Ask);
 }
+
+/// The fixture with a scratch directory below its temporary directory.
+fn with_scratch(config: &str) -> (Fixture, std::path::PathBuf) {
+    let mut f = Fixture::with(config);
+    let scratch = crate::scratch::Scratch::new(&f.tmp.join("run"), "s1");
+    scratch.prepare().unwrap();
+    f.workspace = f.workspace.clone().with_scratch(scratch.clone());
+    (f, scratch.path())
+}
+
+#[test]
+fn the_scratch_directory_needs_no_questions() {
+    let (f, dir) = with_scratch(CONFIG);
+    let inside = |name: &str| dir.join(name).to_string_lossy().into_owned();
+    for tool in [
+        Tool::ReadFile,
+        Tool::WriteFile,
+        Tool::EditFile,
+        Tool::ListFiles,
+        Tool::SearchFiles,
+    ] {
+        let d = f.path(tool, &inside("notes/a.txt"));
+        assert_eq!(d.action, Action::Allow, "{tool}: {d:?}");
+        assert!(
+            matches!(&d.reason, Reason::Rule { source, .. } if source == "built-in"),
+            "{d:?}"
+        );
+    }
+    // Secrets stay denied, also there.
+    assert_eq!(f.path(Tool::ReadFile, &inside(".env")).action, Action::Deny);
+    assert_eq!(
+        f.path(Tool::ReadFile, &inside("d/k.pem")).action,
+        Action::Deny
+    );
+    // `..` out of it is checked where it points.
+    let up = format!("{}/../../outside.txt", dir.display());
+    assert!(matches!(
+        f.path(Tool::WriteFile, &up).reason,
+        Reason::Outside { .. }
+    ));
+    // A link out of it is checked as its target.
+    std::os::unix::fs::symlink(f.tmp.join("home"), dir.join("home")).unwrap();
+    assert!(matches!(
+        f.path(Tool::WriteFile, &inside("home/.bashrc")).reason,
+        Reason::Outside { .. }
+    ));
+    // Without a scratch directory, the same path is outside.
+    let plain = Fixture::new();
+    assert!(matches!(
+        plain.path(Tool::WriteFile, &inside("a.txt")).reason,
+        Reason::Outside { .. }
+    ));
+}
+
+#[test]
+fn user_rules_on_the_scratch_directory_win() {
+    let tmp = tempfile::tempdir().unwrap();
+    let rt = tmp.path().canonicalize().unwrap();
+    let dir = crate::scratch::Scratch::new(&rt, "s1").path();
+    let config = format!(
+        "[permissions.deny]\nwrite_file = [\"{0}/locked/**\"]\n\n[permissions.ask]\nread_file = [\"{0}/ask.txt\"]\n",
+        dir.display()
+    );
+    let mut f = Fixture::with(&config);
+    f.workspace = f
+        .workspace
+        .clone()
+        .with_scratch(crate::scratch::Scratch::new(&rt, "s1"));
+    let at = |name: &str| dir.join(name).to_string_lossy().into_owned();
+    assert_eq!(
+        f.path(Tool::WriteFile, &at("locked/x")).action,
+        Action::Deny
+    );
+    assert_eq!(f.path(Tool::ReadFile, &at("ask.txt")).action, Action::Ask);
+    // Not made yet: still inside.
+    assert_eq!(
+        f.path(Tool::WriteFile, &at("free.txt")).action,
+        Action::Allow
+    );
+}
+
+#[test]
+fn redirections_into_the_scratch_directory() {
+    let (f, dir) = with_scratch(CONFIG);
+    assert_eq!(f.action("echo x > $TMPDIR/out.txt"), Action::Allow);
+    assert_eq!(
+        f.action("echo x > \"${CODEAGENT_TMP}/out.txt\""),
+        Action::Allow
+    );
+    assert_eq!(
+        f.action(&format!("echo x > {}/out.txt", dir.display())),
+        Action::Allow
+    );
+    let d = f.command("echo x >> $TMPDIR/log.txt");
+    assert_eq!(d.redirects[0].target, "$TMPDIR/log.txt");
+    assert_eq!(
+        d.redirects[0].path,
+        dir.join("log.txt").display().to_string()
+    );
+    // The command itself is checked as before.
+    assert_eq!(f.action("python3 x.py > $TMPDIR/out.txt"), Action::Ask);
+    // Out of it, or a variable set in the line: as any dynamic target.
+    assert_eq!(f.action("echo x > $TMPDIR/../../x"), Action::Deny);
+    assert_eq!(
+        f.action("TMPDIR=/etc; echo x > $TMPDIR/passwd"),
+        Action::Ask
+    );
+    assert_eq!(
+        f.action("export TMPDIR=/etc && echo > $TMPDIR/p"),
+        Action::Ask
+    );
+    assert_eq!(f.action("echo x > $TMPDIR/$NAME"), Action::Ask);
+    assert_eq!(f.action("echo x > $HOME/x"), Action::Ask);
+    assert_eq!(f.action("cat < $TMPDIR/.env"), Action::Deny);
+    // Without a scratch directory, `$TMPDIR` is unknown.
+    assert_eq!(
+        Fixture::new().action("echo x > $TMPDIR/out.txt"),
+        Action::Ask
+    );
+}
