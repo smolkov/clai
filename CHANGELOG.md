@@ -7,6 +7,8 @@ notes are taken from that section by `ci/notes.sh`.
 
 ## Unreleased
 
+## 0.6.0 - 2026-11-16
+
 - Fewer tokens, same answers (RFC 0028):
   - The requests of a turn start the same (tools and system prompt are
     fixed for the turn; a change of skills applies from the next turn),
