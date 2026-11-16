@@ -151,3 +151,4 @@ Sections that do not apply may be left out.
 | [0027](0027-run-report.md) | Reports from `codeagent run` | done |
 | [0028](0028-fewer-tokens.md) | Fewer tokens, same answers | done |
 | [0029](0029-session-scratch-directory.md) | A scratch directory for each session | done |
+| [0030](0030-hide-secrets-from-the-model.md) | Hide secrets from the model | draft |
