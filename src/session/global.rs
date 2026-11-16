@@ -26,6 +26,8 @@ pub struct Use {
     pub requests: u64,
     pub input_tokens: u64,
     pub output_tokens: u64,
+    /// The part of the input read from the prompt cache.
+    pub cache_read_tokens: u64,
 }
 
 impl Use {
@@ -33,6 +35,9 @@ impl Use {
         self.requests = self.requests.saturating_add(other.requests);
         self.input_tokens = self.input_tokens.saturating_add(other.input_tokens);
         self.output_tokens = self.output_tokens.saturating_add(other.output_tokens);
+        self.cache_read_tokens = self
+            .cache_read_tokens
+            .saturating_add(other.cache_read_tokens);
     }
 
     fn is_empty(&self) -> bool {
@@ -57,6 +62,9 @@ impl Slot {
         for used in self.models.values() {
             tokens.input_tokens = tokens.input_tokens.saturating_add(used.input_tokens);
             tokens.output_tokens = tokens.output_tokens.saturating_add(used.output_tokens);
+            tokens.cache_read_tokens = tokens
+                .cache_read_tokens
+                .saturating_add(used.cache_read_tokens);
         }
         tokens
     }
@@ -168,6 +176,10 @@ impl Summary {
                     .tokens
                     .output_tokens
                     .saturating_sub(before.tokens.output_tokens),
+                cache_read_tokens: after
+                    .tokens
+                    .cache_read_tokens
+                    .saturating_sub(before.tokens.cache_read_tokens),
             };
             if !used.is_empty() {
                 slot.models.entry(user).or_default().add(&used);
@@ -241,6 +253,7 @@ fn add_slot(totals: &mut GlobalTotals, slot: &Slot) {
     let tokens = slot.tokens();
     totals.tokens.input_tokens += tokens.input_tokens;
     totals.tokens.output_tokens += tokens.output_tokens;
+    totals.tokens.cache_read_tokens += tokens.cache_read_tokens;
     totals.requests += slot.models.values().map(|u| u.requests).sum::<u64>();
 }
 
@@ -374,6 +387,8 @@ mod tests {
         SessionEvent::Usage {
             input_tokens: input,
             output_tokens: output,
+            cache_read_tokens: 0,
+            cache_write_tokens: 0,
             context_tokens: input + output,
             model: model.into(),
         }
@@ -397,6 +412,7 @@ mod tests {
             tool_calls: 0,
             input_tokens: 0,
             output_tokens: 0,
+            cache_read_tokens: 0,
         })
     }
 

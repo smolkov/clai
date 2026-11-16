@@ -64,7 +64,10 @@ Statements marked **(assumption)** need a decision from the user.
 
 At most 30 000 characters of a result go to the model. A longer result keeps
 its first 20 000 and last 10 000 characters, with a line
-`… 12 345 characters cut …` in between. The TUI shows the full result, kept
+`… 12 345 characters cut …` in between. For `run_command` the cut applies
+after the output is cleaned (see "run_command"). Results of older answers
+may go to the model as placeholders (see [`agent-loop.md`](agent-loop.md),
+"Trimmed results"). The TUI shows the full result, kept
 up to 1 MiB per call. **(assumption)**
 
 ### Permissions
@@ -229,6 +232,13 @@ arrow:
   `… 1 234 more lines; use offset 2001 to read on`.
 - An empty file gives `(empty file)`; an offset after the last line gives
   `(file has 120 lines)`.
+- A call with the same `path`, `offset` and `limit` (defaults filled in) as
+  an earlier call of the session, whose result is exactly the same and is
+  still sent whole, gives the model `unchanged since your read_file call
+  c1; the content above is current` instead (RFC 0028). Only a result that
+  will stay whole in the next request counts (see
+  [`agent-loop.md`](agent-loop.md), "Trimmed results"). The TUI shows the
+  content.
 
 Errors: file not found (with up to three similar names in the same
 directory: the same name ignoring case, or at most two letters different,
@@ -448,6 +458,18 @@ keeps both the first error and the final summary of a build.
 
 - A non-zero exit code makes the result an error, so the TUI marks it `✗`;
   the output is the same.
+- The model gets the output cleaned (RFC 0028); the TUI shows it as it
+  was:
+  - ANSI escape sequences and control characters other than newline and
+    tab are removed.
+  - A line redrawn with `\r` keeps its last state.
+  - More than three identical lines in a row keep the first and
+    `… same line 57 more times`.
+  - More than 20 lines in a row that start with the same one of
+    `Compiling`, `Checking`, `Documenting`, `Downloading`, `Downloaded`,
+    `Fresh`, `Installing`, `Unpacking` keep the first 3, the last 3 and
+    `… 213 more "Compiling" lines`. A line that mentions `error` or
+    `warning` is never part of such a run.
 - A timeout gives the output so far and `stopped after 120 s (timeout)`,
   as an error.
 - A command ended by a signal gives `killed by signal 9`, as an error.

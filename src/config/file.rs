@@ -24,6 +24,17 @@ pub struct UserFile {
     pub themes: IndexMap<String, Spanned<ThemeFile>>,
     pub lsp: Option<Spanned<LspFile>>,
     pub skills: Option<SkillsFile>,
+    pub history: Option<HistoryFile>,
+}
+
+/// `[history]` (RFC 0008, RFC 0028).
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HistoryFile {
+    pub trim_results: Option<bool>,
+    pub keep_results: Option<Spanned<i64>>,
+    pub min_chars: Option<Spanned<i64>>,
+    pub trim_after: Option<Spanned<i64>>,
 }
 
 /// A project file. Tables only allowed in the user file are accepted here
@@ -41,6 +52,7 @@ pub struct ProjectFile {
     /// Only `enabled = false` and `start = "deny"`; checked by hand.
     pub lsp: Option<Spanned<toml::Value>>,
     pub skills: Option<Spanned<toml::Value>>,
+    pub history: Option<Spanned<toml::Value>>,
 }
 
 /// `[skills]` (RFC 0023).
@@ -61,6 +73,7 @@ pub struct ProviderFile {
     pub api_key_cmd: Option<Spanned<String>>,
     pub timeout_s: Option<Spanned<i64>>,
     pub max_retries: Option<Spanned<i64>>,
+    pub cache: Option<bool>,
     #[serde(default)]
     pub models: IndexMap<String, Spanned<ModelFile>>,
 }

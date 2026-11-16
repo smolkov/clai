@@ -1366,3 +1366,58 @@ fn project_may_not_set_skills() {
         "{e:?}"
     );
 }
+
+#[test]
+fn history_settings() {
+    use crate::config::HistorySettings;
+    assert_eq!(ok(BASE).history, HistorySettings::default());
+    let config = ok(&with(
+        "[history]\ntrim_results = false\nkeep_results = 3\nmin_chars = 0\ntrim_after = 100000\n",
+    ));
+    assert_eq!(
+        config.history,
+        HistorySettings {
+            trim_results: false,
+            keep_results: 3,
+            min_chars: 0,
+            trim_after: 100_000,
+        }
+    );
+    let e = errs(
+        &with("[history]\nkeep_results = 0\nmin_chars = 30001\ntrim_after = 10\n"),
+        None,
+    );
+    assert_eq!(e.len(), 3, "{e:?}");
+    assert!(
+        e[0].contains("history.keep_results: 0 is not in 1–100"),
+        "{e:?}"
+    );
+    assert!(
+        e[1].contains("history.min_chars: 30001 is not in 0–30000"),
+        "{e:?}"
+    );
+    assert!(e[2].contains("history.trim_after: 10 is not in"), "{e:?}");
+}
+
+#[test]
+fn project_may_not_set_history() {
+    let e = errs(BASE, Some("[history]\nkeep_results = 1\n"));
+    assert_eq!(e.len(), 1, "{e:?}");
+    assert!(
+        e[0].starts_with("project.toml:1: history: only allowed in the user file"),
+        "{e:?}"
+    );
+}
+
+#[test]
+fn provider_cache_key() {
+    let config = ok(BASE);
+    assert!(config.providers.values().all(|p| p.cache));
+    let user = BASE;
+    // `cache = false` right after the first provider's table header.
+    let at = user.find("[providers.").unwrap();
+    let end = at + user[at..].find('\n').unwrap() + 1;
+    let user = format!("{}cache = false\n{}", &user[..end], &user[end..]);
+    let config = ok(&user);
+    assert!(!config.providers.values().next().unwrap().cache);
+}

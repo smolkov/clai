@@ -451,6 +451,38 @@ max_tool_calls = 120
 A project file may only lower these values. Details:
 [`spec/agent-loop.md`](spec/agent-loop.md), "Limits".
 
+## Tokens
+
+Each request sends the whole conversation again, so `codeagent` keeps what
+it sends small and cacheable without hiding anything the model needs:
+
+- **Prompt cache.** Requests of a turn start the same, and for
+  `anthropic` they are marked for the prompt cache, which bills cached
+  input at a fraction of the price. `/usage`, `/status` and `/stats` show
+  the cached part: `in 412k (cached 371k)`. Set
+  `cache = false` in a provider's table for a proxy that rejects the marks.
+- **Old tool results** go to the model as one-line placeholders once the
+  results of a session grow large; the model calls the tool again when it
+  needs one. Nothing is deleted: the TUI and the saved session keep every
+  result.
+- **Command output** reaches the model without colour codes, redrawn
+  progress lines and long runs of the same line; the TUI shows it as it
+  was.
+- **Reading an unchanged file again** gives the model a pointer to the
+  earlier result it still has.
+
+```toml
+[history]
+trim_results = true    # false: always send every result whole
+keep_results = 2       # results of the newest 2 answers stay whole
+min_chars    = 500     # results this size or smaller are never trimmed
+trim_after   = 60000   # trim once untrimmed results pass this many characters
+```
+
+User file only. Details: [`spec/agent-loop.md`](spec/agent-loop.md),
+"Trimmed results". [`bench/`](bench/readme.md) measures the effect on fixed
+tasks.
+
 ## Logging
 
 `codeagent` logs to `~/.local/state/codeagent/codeagent.log` (or `$XDG_STATE_HOME/codeagent/codeagent.log`).

@@ -502,6 +502,7 @@ pub fn repair_events(events: &[SessionEvent]) -> Vec<SessionEvent> {
         tool_calls: 0,
         input_tokens: 0,
         output_tokens: 0,
+        cache_read_tokens: 0,
     }));
     repair.push(SessionEvent::State { state: State::Idle });
     repair
@@ -580,6 +581,7 @@ mod tests {
                 tool_calls: 0,
                 input_tokens: 1,
                 output_tokens: 1,
+                cache_read_tokens: 0,
             }),
         ] {
             store.append_event(&e).unwrap();
@@ -690,6 +692,7 @@ mod tests {
             tool_calls: 1,
             input_tokens: 0,
             output_tokens: 0,
+            cache_read_tokens: 0,
         }));
         assert!(repair_events(&done).is_empty());
     }
@@ -740,6 +743,8 @@ mod tests {
                 event: SessionEvent::Usage {
                     input_tokens: 5,
                     output_tokens: 1,
+                    cache_read_tokens: 0,
+                    cache_write_tokens: 0,
                     context_tokens: 6,
                     model: String::new(),
                 },

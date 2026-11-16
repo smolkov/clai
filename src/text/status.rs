@@ -447,7 +447,10 @@ fn totals(status: &SessionStatus, options: &Options<'_>) -> Section {
                 "tokens",
                 format!(
                     "in {}{rule}out {}",
-                    tokens(stats.tokens.input_tokens),
+                    crate::text::input_tokens(
+                        stats.tokens.input_tokens,
+                        stats.tokens.cache_read_tokens
+                    ),
                     tokens(stats.tokens.output_tokens)
                 ),
             ),
@@ -604,6 +607,8 @@ pub(crate) mod tests {
             &crate::agent::SessionEvent::Usage {
                 input_tokens: 1200,
                 output_tokens: 30,
+                cache_read_tokens: 0,
+                cache_write_tokens: 0,
                 context_tokens: 1230,
                 model: String::new(),
             },

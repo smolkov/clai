@@ -92,6 +92,8 @@ pub struct Counts {
 pub struct Usage {
     pub input_tokens: u64,
     pub output_tokens: u64,
+    /// The part of the input read from the prompt cache.
+    pub cache_read_tokens: u64,
     pub requests: u32,
 }
 
@@ -169,6 +171,7 @@ impl Collector {
             SessionEvent::TurnEnd(end) => {
                 self.usage.input_tokens += end.input_tokens;
                 self.usage.output_tokens += end.output_tokens;
+                self.usage.cache_read_tokens += end.cache_read_tokens;
                 self.usage.requests += end.requests;
             }
             SessionEvent::Error { message } => self.error = Some(message.clone()),
@@ -325,7 +328,7 @@ pub fn render_text(report: &Report, place: &str, unicode: bool) -> String {
         "{place} {dot} {} {dot} {} {dot} {} in, {} out\n",
         report.model,
         duration_text(report.duration),
-        tokens(report.usage.input_tokens),
+        crate::text::input_tokens(report.usage.input_tokens, report.usage.cache_read_tokens),
         tokens(report.usage.output_tokens),
     ));
     match report.outcome {

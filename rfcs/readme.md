@@ -129,7 +129,7 @@ Sections that do not apply may be left out.
 | [0005](0005-session-switching.md) | Session switching | done |
 | [0006](0006-tui-settings.md) | TUI settings | done |
 | [0007](0007-status-view.md) | Status view | done |
-| [0008](0008-trim-old-tool-results.md) | Trim old tool results | draft |
+| [0008](0008-trim-old-tool-results.md) | Trim old tool results | done |
 | [0009](0009-command-layer-refactoring.md) | Refactoring the command layer | done |
 | [0010](0010-security-hardening.md) | Security hardening | done |
 | [0011](0011-session-list-delete-and-filter.md) | Session list: delete, marks and filter | done |
@@ -149,3 +149,4 @@ Sections that do not apply may be left out.
 | [0025](0025-continue-the-last-session.md) | Continue the last session of the workspace | done |
 | [0026](0026-startup.md) | Startup: one place for the environment, paths and the command context | done |
 | [0027](0027-run-report.md) | Reports from `codeagent run` | done |
+| [0028](0028-fewer-tokens.md) | Fewer tokens, same answers | done |

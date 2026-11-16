@@ -74,7 +74,7 @@ An answer arrives as a stream of events, in this order:
 | `ToolCallStart`     | `id`, `name` | The model starts a tool call. |
 | `ToolCallArgsDelta` | `id`, `json` | Next part of the call's arguments, as JSON text. |
 | `ToolCallEnd`       | `id`, `arguments` | The call is complete; `arguments` is the parsed JSON object. |
-| `Usage`             | `input_tokens`, `output_tokens` | Token counts of this request. May come more than once; the last one counts. |
+| `Usage`             | `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` | Token counts of this request. `input_tokens` is all input, cached or not; the cache fields are parts of it (0 when the provider says nothing about a cache). May come more than once; the last one counts. |
 | `Done`              | `stop_reason` | Last event of the stream. |
 
 `stop_reason` is one of:
@@ -177,7 +177,7 @@ Default `base_url`: `https://api.anthropic.com`.
 
 | Shared type | Wire format |
 |-------------|-------------|
-| `system` | Top-level `system` field. |
+| `system` | Top-level `system` field: a string, or with `cache` one text block with a cache mark (below). |
 | `Text` | `{"type": "text"}` content block. |
 | `ToolCall` | `{"type": "tool_use", "id", "name", "input"}` block in an assistant message. |
 | `ToolResult` | `{"type": "tool_result", "tool_use_id", "content", "is_error"}` block in a user message. |
@@ -192,10 +192,27 @@ Default `base_url`: `https://api.anthropic.com`.
 | `content_block_start` with `tool_use` | `ToolCallStart` |
 | `content_block_delta` with `input_json_delta` | `ToolCallArgsDelta` |
 | `content_block_stop` of a `tool_use` block | `ToolCallEnd` |
-| `message_start.usage`, `message_delta.usage` | `Usage`; `input_tokens` includes cached input (`cache_creation_input_tokens`, `cache_read_input_tokens`). |
+| `message_start.usage`, `message_delta.usage` | `Usage`; `input_tokens` includes cached input; `cache_read_input_tokens` is `cache_read_tokens`, `cache_creation_input_tokens` is `cache_write_tokens`. |
 | `message_delta.stop_reason`, then `message_stop` | `Done`: `end_turn` → `EndTurn`, `tool_use` → `ToolUse`, `max_tokens` → `MaxTokens`, else `Other` |
 | `error` event | `ProviderError` (`overloaded_error` → `Overloaded`, …) |
 | `ping`, `thinking` blocks and their deltas | ignored |
+
+**Prompt cache** (RFC 0028). With the provider's `cache` key (default
+`true`, see [`config.md`](config.md), "Provider keys"), the adapter marks
+three breakpoints with `"cache_control": {"type": "ephemeral"}`:
+
+| Breakpoint | On |
+|------------|----|
+| 1 | The last tool spec. |
+| 2 | The system prompt, sent as one text block. |
+| 3 | The last block of the last message, after neighbours are merged. |
+
+The API caches the request up to each mark for five minutes; the next
+request of a turn starts with the same tools, prompt and messages (see
+[`agent-loop.md`](agent-loop.md), "Requests") and reads all but its newest
+messages from the cache. The adapter decides this alone: the shared
+`Request` has no cache field. `cache = false` sends no marks, for a proxy
+that rejects the field.
 
 ### openai-compatible
 
@@ -218,7 +235,7 @@ Ollama, vLLM, llama.cpp and similar servers. `base_url` is required.
 | `choices[0].delta.content` | `TextDelta` |
 | `choices[0].delta.tool_calls[i]` | collected per `index` (by position when there is no `index`) |
 | `data: [DONE]`, or the end of the body after a `finish_reason` | for each collected call in index order: `ToolCallStart`, one `ToolCallArgsDelta` with all arguments (if any), `ToolCallEnd`; then `Done` |
-| `usage` (last chunk) | `Usage` |
+| `usage` (last chunk) | `Usage`; `usage.prompt_tokens_details.cached_tokens`, when sent, is `cache_read_tokens`. The API caches a prefix that stays the same by itself; nothing is marked. |
 | `finish_reason` | `stop_reason` of `Done`: `ToolUse` if the answer has tool calls, else `stop` → `EndTurn`, `length` → `MaxTokens`, else `Other` |
 | chunk with `error` | `ProviderError` (`Overloaded`, or `ContextTooLong` if the message says so) |
 
@@ -266,5 +283,6 @@ it or return `Unsupported`.
    in the first version?
 3. Should retries live in the adapter, as proposed, or in the agent loop, so
    that a stream that broke halfway can also be repeated?
-4. Should prompt caching (Anthropic `cache_control`) be used, and is it
-   decided by the adapter alone?
+4. ~~Should prompt caching (Anthropic `cache_control`) be used, and is it
+   decided by the adapter alone?~~ Yes, by the adapter, with the
+   provider's `cache` key to turn it off (RFC 0028).

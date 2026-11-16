@@ -435,6 +435,8 @@ fn model_rename_and_usage_update_the_session() {
     app.update(live(SessionEvent::Usage {
         input_tokens: 1,
         output_tokens: 2,
+        cache_read_tokens: 0,
+        cache_write_tokens: 0,
         context_tokens: 3,
         model: String::new(),
     }));
@@ -1615,6 +1617,8 @@ fn idle_session() -> App {
         SessionEvent::Usage {
             input_tokens: 12_000,
             output_tokens: 300,
+            cache_read_tokens: 0,
+            cache_write_tokens: 0,
             context_tokens: 12_300,
             model: String::new(),
         },
@@ -1624,6 +1628,7 @@ fn idle_session() -> App {
             tool_calls: 1,
             input_tokens: 12_000,
             output_tokens: 300,
+            cache_read_tokens: 0,
         }),
     ]);
     app.place = app.place.map(|mut place| {
@@ -1813,6 +1818,8 @@ fn usage(input_tokens: u64, output_tokens: u64, context_tokens: u64) -> SessionE
     SessionEvent::Usage {
         input_tokens,
         output_tokens,
+        cache_read_tokens: 0,
+        cache_write_tokens: 0,
         context_tokens,
         model: String::new(),
     }
@@ -1822,6 +1829,7 @@ fn totals(input_tokens: u64, output_tokens: u64) -> Option<TokenTotals> {
     Some(TokenTotals {
         input_tokens,
         output_tokens,
+        cache_read_tokens: 0,
     })
 }
 
@@ -3225,6 +3233,7 @@ fn various() -> Vec<SessionInfo> {
             usage: TokenTotals {
                 input_tokens: 200_000,
                 output_tokens: 10_000,
+                cache_read_tokens: 0,
             },
             state: State::Saved,
             workspace: "~/ws/old".into(),
@@ -4118,6 +4127,8 @@ fn status_of(state: State) -> crate::protocol::SessionStatus {
             SessionEvent::Usage {
                 input_tokens: 2_100_000,
                 output_tokens: 84_300,
+                cache_read_tokens: 0,
+                cache_write_tokens: 0,
                 context_tokens: 170_000,
                 model: String::new(),
             },
@@ -4151,6 +4162,7 @@ fn status_of(state: State) -> crate::protocol::SessionStatus {
                 tool_calls: 3,
                 input_tokens: 0,
                 output_tokens: 0,
+                cache_read_tokens: 0,
             }),
         ),
         (t + 60_000, SessionEvent::State { state: State::Idle }),
@@ -4315,6 +4327,8 @@ fn the_status_box_refreshes_while_the_session_works() {
     app.update(live(SessionEvent::Usage {
         input_tokens: 1,
         output_tokens: 1,
+        cache_read_tokens: 0,
+        cache_write_tokens: 0,
         context_tokens: 2,
         model: String::new(),
     }));
@@ -4654,6 +4668,8 @@ fn thinking() -> App {
     app.update(live(SessionEvent::Usage {
         input_tokens: 4000,
         output_tokens: 1200,
+        cache_read_tokens: 0,
+        cache_write_tokens: 0,
         context_tokens: 5200,
         model: String::new(),
     }));

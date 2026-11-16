@@ -94,10 +94,15 @@ pub enum Event {
         id: String,
         arguments: Value,
     },
-    /// Token counts of this request; the last one counts.
+    /// Token counts of this request; the last one counts. `input_tokens`
+    /// is all input, cached or not; the cache fields are parts of it.
     Usage {
         input_tokens: u64,
         output_tokens: u64,
+        /// Input read from the provider's prompt cache.
+        cache_read_tokens: u64,
+        /// Input written to the prompt cache.
+        cache_write_tokens: u64,
     },
     /// The request failed and is tried again, before anything was sent;
     /// `attempt` counts from 1.

@@ -275,6 +275,8 @@ mod tests {
         SessionEvent::Usage {
             input_tokens: 10,
             output_tokens,
+            cache_read_tokens: 0,
+            cache_write_tokens: 0,
             context_tokens: 10 + output_tokens,
             model: String::new(),
         }

@@ -97,6 +97,14 @@ pub struct TurnEnd {
     pub tool_calls: u32,
     pub input_tokens: u64,
     pub output_tokens: u64,
+    /// The part of `input_tokens` read from the prompt cache; missing in a
+    /// log of an older `codeagent`.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub cache_read_tokens: u64,
+}
+
+fn is_zero(n: &u64) -> bool {
+    *n == 0
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -126,8 +134,16 @@ pub enum SessionEvent {
         text: String,
     },
     Usage {
+        /// All input of the request, cached or not.
         input_tokens: u64,
         output_tokens: u64,
+        /// The part of the input read from the prompt cache; missing in a
+        /// log of an older `codeagent`.
+        #[serde(default, skip_serializing_if = "is_zero")]
+        cache_read_tokens: u64,
+        /// The part of the input written to the prompt cache.
+        #[serde(default, skip_serializing_if = "is_zero")]
+        cache_write_tokens: u64,
         /// Input plus output tokens of the last request.
         context_tokens: u64,
         /// The `provider/model` of the request; empty in a log of an older

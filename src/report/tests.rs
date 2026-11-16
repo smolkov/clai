@@ -40,6 +40,7 @@ fn turn_end(input: u64, output: u64, requests: u32) -> SessionEvent {
         tool_calls: 0,
         input_tokens: input,
         output_tokens: output,
+        cache_read_tokens: 0,
     })
 }
 
@@ -188,6 +189,7 @@ fn facts_from_the_events() {
         Usage {
             input_tokens: 150,
             output_tokens: 25,
+            cache_read_tokens: 0,
             requests: 4
         }
     );

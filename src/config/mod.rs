@@ -96,6 +96,9 @@ pub struct Provider {
     pub key: KeySource,
     pub timeout: Duration,
     pub max_retries: u32,
+    /// Mark requests for the provider's prompt cache (`anthropic`; the
+    /// openai-compatible API caches without marks). Default `true`.
+    pub cache: bool,
     /// In config order.
     pub models: IndexMap<String, Model>,
 }
@@ -169,6 +172,67 @@ impl Limits {
     }
 }
 
+/// `[history]`: which old tool results go to the model as placeholders
+/// (RFC 0008, trimmed in steps by RFC 0028).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HistorySettings {
+    /// Replace old tool results with placeholders at all.
+    pub trim_results: bool,
+    /// Results of the newest this many answers with tool calls stay whole.
+    pub keep_results: usize,
+    /// Results of at most this many characters are never trimmed.
+    pub min_chars: usize,
+    /// Trim only when the results not yet trimmed have more characters.
+    pub trim_after: usize,
+}
+
+impl Default for HistorySettings {
+    fn default() -> HistorySettings {
+        HistorySettings {
+            trim_results: true,
+            keep_results: 2,
+            min_chars: 500,
+            trim_after: 60_000,
+        }
+    }
+}
+
+impl HistorySettings {
+    fn apply(&mut self, ctx: FileCtx<'_>, file: &file::HistoryFile, errors: &mut Vec<ConfigError>) {
+        if let Some(on) = file.trim_results {
+            self.trim_results = on;
+        }
+        for (key, value, slot, range) in [
+            (
+                "history.keep_results",
+                &file.keep_results,
+                &mut self.keep_results,
+                1..=100,
+            ),
+            (
+                "history.min_chars",
+                &file.min_chars,
+                &mut self.min_chars,
+                0..=30_000,
+            ),
+            (
+                "history.trim_after",
+                &file.trim_after,
+                &mut self.trim_after,
+                1_000..=10_000_000,
+            ),
+        ] {
+            let default = i64::try_from(*slot).unwrap_or(0);
+            let n = int_key(ctx, value, key.to_owned(), range.clone(), default, errors);
+            if range.contains(&n)
+                && let Ok(n) = usize::try_from(n)
+            {
+                *slot = n;
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Commit {
     pub model: Option<ModelRef>,
@@ -208,6 +272,7 @@ pub struct Config {
     /// In config order.
     pub providers: IndexMap<String, Provider>,
     pub limits: Limits,
+    pub history: HistorySettings,
     pub permissions: Permissions,
     pub commit: Commit,
     pub tui: Tui,
@@ -593,6 +658,10 @@ fn build(
     if let Some(file) = &user_file.limits {
         limits.apply(user, file, false, &mut errors);
     }
+    let mut history = HistorySettings::default();
+    if let Some(file) = &user_file.history {
+        history.apply(user, file, &mut errors);
+    }
 
     let mut default_given = false;
     let mut default_model = None;
@@ -615,6 +684,7 @@ fn build(
             ("tui", &file.tui),
             ("themes", &file.themes),
             ("skills", &file.skills),
+            ("history", &file.history),
         ] {
             if let Some(value) = value {
                 errors.push(ctx.error(
@@ -681,6 +751,7 @@ fn build(
             default_from,
             providers,
             limits,
+            history,
             permissions,
             commit,
             tui,
@@ -848,6 +919,7 @@ fn build_providers(
                     key: key_source,
                     timeout: Duration::from_secs(u64::try_from(timeout).unwrap_or(300)),
                     max_retries: u32::try_from(max_retries).unwrap_or(3),
+                    cache: file.cache.unwrap_or(true),
                     models,
                 },
             );

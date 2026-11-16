@@ -107,6 +107,35 @@ expect "no environment reads outside startup" "" sh ci/env-check.sh "$tmp/src"
 printf '// std::env::var("HOME") in a comment\nfn f() { let _ = std::env::current_dir(); }\n' >"$tmp/src/a/bad.rs"
 refuse "an environment read outside startup" "bad.rs:2:" sh ci/env-check.sh "$tmp/src"
 
+# The bench, with a stub for codeagent: it does task "fix" and leaves "skip".
+mkdir -p "$tmp/bench/fix/repo" "$tmp/bench/skip/repo"
+for t in fix skip; do
+    printf 'x\n' >"$tmp/bench/$t/repo/file"
+    printf 'do it\n' >"$tmp/bench/$t/task.md"
+    printf 'test -f DONE\n' >"$tmp/bench/$t/check.sh"
+done
+cat >"$tmp/stub" <<'STUB'
+#!/bin/sh
+ws=""
+while [ $# -gt 0 ]; do [ "$1" = -C ] && ws=$2; shift; done
+case $ws in */fix-*) touch "$ws/DONE" ;; esac
+printf '{"version":1,"summary":"\\"input_tokens\\":9",\n "usage":{"input_tokens":1200,"output_tokens":30,"cache_read_tokens":900,"requests":3}}\n'
+STUB
+chmod +x "$tmp/stub"
+tab=$(printf '\t')
+bench() {
+    CODEAGENT=$tmp/stub CODEAGENT_BENCH_TASKS=$tmp/bench sh ci/bench.sh "$@"
+}
+expect "bench output" "task${tab}run${tab}ok${tab}requests${tab}input${tab}cached${tab}output
+fix${tab}1${tab}yes${tab}3${tab}1200${tab}900${tab}30
+fix${tab}2${tab}yes${tab}3${tab}1200${tab}900${tab}30
+skip${tab}1${tab}no${tab}3${tab}1200${tab}900${tab}30
+skip${tab}2${tab}no${tab}3${tab}1200${tab}900${tab}30" bench --runs 2
+expect "bench of named tasks" "task${tab}run${tab}ok${tab}requests${tab}input${tab}cached${tab}output
+skip${tab}1${tab}no${tab}3${tab}1200${tab}900${tab}30" bench skip
+refuse "bench of an unknown task" "no task nope" bench nope
+refuse "bench with a bad run count" "--runs must be a number" bench --runs 0
+
 if [ "$failures" -gt 0 ]; then
     echo "$failures ci script tests failed" >&2
     exit 1

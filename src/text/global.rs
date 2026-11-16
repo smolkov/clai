@@ -97,7 +97,7 @@ pub fn totals(stats: &GlobalStats, options: &Options<'_>) -> Section {
             "tokens",
             format!(
                 "in {}{rule}out {}",
-                tokens(t.tokens.input_tokens),
+                crate::text::input_tokens(t.tokens.input_tokens, t.tokens.cache_read_tokens),
                 tokens(t.tokens.output_tokens)
             ),
         ),
@@ -328,6 +328,7 @@ pub(crate) mod tests {
                 tokens: TokenTotals {
                     input_tokens: input,
                     output_tokens: output,
+                    cache_read_tokens: 0,
                 },
                 working_ms: 24_000_000,
                 unknown_stretches: 0,

@@ -15,7 +15,8 @@ pub struct Streamed {
     pub blocks: Vec<Block>,
     pub stop: Option<StopReason>,
     /// The last `Usage` of the request.
-    pub usage: Option<(u64, u64)>,
+    /// Input, output, cache read and cache write tokens.
+    pub usage: Option<(u64, u64, u64, u64)>,
     pub end: StreamEnd,
     /// A tool call was started but did not end; it is left out.
     pub cut_call: bool,
@@ -118,7 +119,16 @@ pub async fn collect(
                 Event::Usage {
                     input_tokens,
                     output_tokens,
-                } => out.usage = Some((input_tokens, output_tokens)),
+                    cache_read_tokens,
+                    cache_write_tokens,
+                } => {
+                    out.usage = Some((
+                        input_tokens,
+                        output_tokens,
+                        cache_read_tokens,
+                        cache_write_tokens,
+                    ))
+                }
                 Event::Retry {
                     attempt,
                     max,

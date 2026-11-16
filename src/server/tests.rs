@@ -81,6 +81,8 @@ impl Provider for Script {
                 Ok(Event::Usage {
                     input_tokens,
                     output_tokens,
+                    cache_read_tokens: 0,
+                    cache_write_tokens: 0,
                 }),
                 Ok(Event::TextDelta { text: "x".into() }),
             ])
@@ -1143,6 +1145,8 @@ fn say_counted(text: &str, input_tokens: u64, output_tokens: u64) -> Step {
         Ok(Event::Usage {
             input_tokens,
             output_tokens,
+            cache_read_tokens: 0,
+            cache_write_tokens: 0,
         }),
         Ok(Event::Done {
             stop_reason: StopReason::EndTurn,
@@ -1154,6 +1158,7 @@ fn totals(input_tokens: u64, output_tokens: u64) -> TokenTotals {
     TokenTotals {
         input_tokens,
         output_tokens,
+        cache_read_tokens: 0,
     }
 }
 

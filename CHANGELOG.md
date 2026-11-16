@@ -7,6 +7,24 @@ notes are taken from that section by `ci/notes.sh`.
 
 ## Unreleased
 
+- Fewer tokens, same answers (RFC 0028):
+  - The requests of a turn start the same (tools and system prompt are
+    fixed for the turn; a change of skills applies from the next turn),
+    and `anthropic` requests are marked for the prompt cache. Turn it off
+    with `cache = false` in a provider's table.
+  - Cached input is counted on its own: `/usage`, `/status`, `/stats`,
+    `codeagent ls --json` (`cache_read_tokens`) and run reports show it.
+  - Old tool results go to the model as one-line placeholders, in steps
+    so the cache keeps working (RFC 0008); `[history]` sets
+    `trim_results`, `keep_results`, `min_chars` and `trim_after`. The TUI
+    and the saved session keep every result.
+  - Command output reaches the model without colour codes, redrawn
+    progress lines and long runs of the same line.
+  - A repeated `read_file` of an unchanged file points to the earlier
+    result.
+  - `ci/bench.sh` runs fixed tasks against a model and prints tokens and
+    success per run (`bench/`).
+
 ## 0.5.0 - 2026-11-15
 
 - `clai` is now `codeagent`: the command, the crate, the Debian package and

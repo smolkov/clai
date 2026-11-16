@@ -51,7 +51,9 @@ fn with_retry_base(
     let env = Arc::new(env.clone());
     Ok(match provider.api {
         Api::Anthropic => Arc::new(remote::Remote::new(
-            anthropic::Anthropic,
+            anthropic::Anthropic {
+                cache: provider.cache,
+            },
             provider,
             env,
             base,

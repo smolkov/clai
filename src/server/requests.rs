@@ -182,6 +182,7 @@ impl Shared {
             model: model_config.clone(),
             model_name: model_ref.to_string(),
             limits: config.limits,
+            history: config.history,
             system: system_prompt(&ws, &today()),
             can_ask: true,
             env: Env {

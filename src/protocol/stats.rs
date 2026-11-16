@@ -517,6 +517,8 @@ mod tests {
         SessionEvent::Usage {
             input_tokens: input,
             output_tokens: output,
+            cache_read_tokens: 0,
+            cache_write_tokens: 0,
             context_tokens: input + output,
             model: String::new(),
         }
@@ -529,6 +531,7 @@ mod tests {
             tool_calls: 0,
             input_tokens: 0,
             output_tokens: 0,
+            cache_read_tokens: 0,
         })
     }
 
@@ -589,7 +592,8 @@ mod tests {
             stats.tokens,
             TokenTotals {
                 input_tokens: 300,
-                output_tokens: 30
+                output_tokens: 30,
+                cache_read_tokens: 0
             }
         );
         assert_eq!(stats.context_tokens, 220);
@@ -647,6 +651,7 @@ mod tests {
                 tool_calls: 0,
                 input_tokens: 0,
                 output_tokens: 0,
+                cache_read_tokens: 0,
             }),
             None,
         );

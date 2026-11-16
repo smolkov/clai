@@ -164,6 +164,7 @@ impl Fixture {
             },
             model_name: "test/m".into(),
             limits,
+            history: crate::config::HistorySettings::default(),
             env: Env {
                 permissions: Arc::new(parse_for_test(CONFIG, None)),
                 session: Arc::new(SessionRules::default()),
@@ -288,6 +289,8 @@ fn done(stop_reason: StopReason) -> Vec<Result<Event, ProviderError>> {
         Ok(Event::Usage {
             input_tokens: 100,
             output_tokens: 10,
+            cache_read_tokens: 0,
+            cache_write_tokens: 0,
         }),
         Ok(Event::Done { stop_reason }),
     ]
@@ -381,6 +384,8 @@ async fn plain_answer() {
             SessionEvent::Usage {
                 input_tokens: 100,
                 output_tokens: 10,
+                cache_read_tokens: 0,
+                cache_write_tokens: 0,
                 context_tokens: 110,
                 model: "test/m".into(),
             },
@@ -1082,11 +1087,12 @@ async fn full_output_is_kept() {
         calls(&[(
             "c1",
             "run_command",
-            json!({"command": "echo start; sleep 0; yes x | head -c 40000; echo; echo end"}),
+            json!({"command": "echo start; sleep 0; seq 100000 106000; echo end"}),
         )]),
         say("ok"),
     ]);
-    // `yes` and `head` are not allowed by the config; allow them.
+    // Distinct lines: the cleaner collapses runs of the same line.
+    // `seq` is not allowed by the config; allow it.
     let asker = TestAsker::answers(vec![Answer::Allow]);
     f.turn("run", &asker).await;
     let r = last_results(&f);
@@ -1435,4 +1441,121 @@ mod lsp {
             [("(no errors or warnings)".to_owned(), false)]
         );
     }
+}
+
+#[tokio::test]
+async fn requests_of_a_turn_share_their_prefix() {
+    // RFC 0028: tools and system prompt fixed for the turn, the history
+    // only appended to, so each request starts with the one before.
+    let mut f = Fixture::new(vec![
+        read_call("c1"),
+        read_call("c2"),
+        read_call("c3"),
+        say("done"),
+    ]);
+    let (end, _) = f.turn("look around", &no_questions()).await;
+    assert_eq!(end.requests, 4);
+    let requests = f.requests();
+    for pair in requests.windows(2) {
+        let (before, after) = (&pair[0], &pair[1]);
+        assert_eq!(before.system, after.system);
+        assert_eq!(before.tools, after.tools);
+        assert!(after.messages.len() > before.messages.len());
+        assert_eq!(after.messages[..before.messages.len()], before.messages[..]);
+    }
+}
+
+#[tokio::test]
+async fn command_output_is_cleaned_for_the_model() {
+    let mut f = Fixture::new(vec![
+        calls(&[(
+            "c1",
+            "run_command",
+            json!({"command": "printf '\\033[31mred\\033[0m\\n'; yes same | head -n 50"}),
+        )]),
+        say("ok"),
+    ]);
+    let asker = TestAsker::answers(vec![Answer::Allow]);
+    f.turn("run", &asker).await;
+    let r = last_results(&f);
+    assert_eq!(r[0].0, "red\nsame\n… same line 49 more times\nexit code 0");
+    // The full output keeps everything, for the TUI and the saved session.
+    let full = f.agent.history().full_output("c1").unwrap();
+    assert!(full.starts_with("\u{1b}[31mred"), "{full}");
+    assert_eq!(full.matches("same\n").count(), 50);
+}
+
+#[tokio::test]
+async fn repeated_read_of_an_unchanged_file_points_back() {
+    let read = |id: &str| calls(&[(id, "read_file", json!({"path": "a.txt"}))]);
+    let mut f = Fixture::new(vec![read("c1"), read("c2"), say("same")]);
+    f.write("a.txt", "hello\n");
+    f.turn("read twice", &no_questions()).await;
+    let messages = f.messages();
+    assert_eq!(
+        results(&messages[4]),
+        [(
+            "unchanged since your read_file call c1; the content above is current".to_owned(),
+            false
+        )]
+    );
+    // The TUI and the saved session keep the content.
+    assert!(
+        f.agent
+            .history()
+            .full_output("c2")
+            .unwrap()
+            .contains("hello")
+    );
+
+    // A file changed between the reads is read in full.
+    let edit = calls(&[(
+        "e1",
+        "edit_file",
+        json!({"path": "a.txt", "old_text": "hello", "new_text": "bye"}),
+    )]);
+    let mut f = Fixture::new(vec![read("c1"), edit, read("c2"), say("changed")]);
+    f.write("a.txt", "hello\n");
+    let asker = TestAsker::answers(vec![Answer::Allow]);
+    f.turn("edit", &asker).await;
+    let messages = f.messages();
+    let second = results(&messages[6]);
+    assert!(second[0].0.contains("bye"), "{second:?}");
+}
+
+#[tokio::test]
+async fn old_results_are_trimmed_in_requests_only() {
+    let list = |id: &str| calls(&[(id, "read_file", json!({"path": "big.txt"}))]);
+    let mut f = Fixture::new(vec![list("c1"), list("c2"), list("c3"), say("done")]);
+    f.write("big.txt", &"line of text\n".repeat(400));
+    f.agent
+        .set_history_settings(crate::config::HistorySettings {
+            trim_results: true,
+            keep_results: 1,
+            min_chars: 100,
+            trim_after: 6_000,
+        });
+    f.turn("read", &no_questions()).await;
+    let requests = f.requests();
+    let last = requests.last().unwrap();
+    let sent: Vec<String> = last
+        .messages
+        .iter()
+        .flat_map(|m| &m.content)
+        .filter_map(|b| match b {
+            Block::ToolResult { content, .. } => Some(content.clone()),
+            _ => None,
+        })
+        .collect();
+    // Each result is above trim_after, so each step trims all but the
+    // newest. No read points back: the earlier result would be trimmed in
+    // the very next request.
+    assert_eq!(sent.len(), 3);
+    for old in &sent[..2] {
+        assert!(old.starts_with("[trimmed read_file big.txt: "), "{sent:?}");
+    }
+    assert!(sent[2].contains("line of text"), "{sent:?}");
+    // The history keeps every result.
+    let kept = results(&f.messages()[2]);
+    assert!(kept[0].0.contains("line of text"));
 }

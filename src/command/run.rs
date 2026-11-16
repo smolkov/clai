@@ -205,6 +205,7 @@ impl Run {
                 model: model.clone(),
                 model_name: model_ref.to_string(),
                 limits: config.limits,
+                history: config.history,
                 system: system_prompt(&workspace, &today()),
                 can_ask,
                 env: Env {

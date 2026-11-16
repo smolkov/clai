@@ -20,7 +20,7 @@ use std::sync::{Arc, Mutex};
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
-use crate::config::{Action, Limits, Model, Rule};
+use crate::config::{Action, HistorySettings, Limits, Model, Rule};
 use crate::provider::{Block, ErrorKind, Provider, ProviderError, Request, Role, StopReason};
 use crate::tools::report::{self, Reported};
 use crate::tools::{self, Env, Prepared, PreparedCall, ToolOutput, ask_user};
@@ -53,6 +53,8 @@ pub struct Setup {
     /// `provider/model`, for the `usage` events; empty when not known.
     pub model_name: String,
     pub limits: Limits,
+    /// Which old tool results go to the model as placeholders.
+    pub history: HistorySettings,
     /// Permissions, session rules and workspace.
     pub env: Env,
     /// The system prompt; see [`system_prompt`].
@@ -154,6 +156,7 @@ pub struct Agent {
     cancel_reason: CancelReason,
     model: ModelHandle,
     limits: Limits,
+    history_settings: HistorySettings,
     env: Env,
     system: String,
     /// The prompt and the workspace without skills.
@@ -183,6 +186,7 @@ struct Budget {
     total_tool_calls: u32,
     input_tokens: u64,
     output_tokens: u64,
+    cache_read_tokens: u64,
 }
 
 /// What stops a turn before its model answers without tool calls.
@@ -236,6 +240,7 @@ impl Agent {
             cancel_reason: CancelReason::default(),
             model: ModelHandle::new(setup.provider, setup.model, setup.model_name),
             limits: setup.limits,
+            history_settings: setup.history,
             base_workspace: setup.env.workspace.clone(),
             env: setup.env,
             base_system: system.clone(),
@@ -375,6 +380,11 @@ impl Agent {
         self.report.as_ref()
     }
 
+    #[cfg(test)]
+    pub(crate) fn set_history_settings(&mut self, settings: HistorySettings) {
+        self.history_settings = settings;
+    }
+
     pub fn history(&self) -> &History {
         &self.history
     }
@@ -420,6 +430,7 @@ impl Agent {
             tool_calls: budget.total_tool_calls,
             input_tokens: budget.input_tokens,
             output_tokens: budget.output_tokens,
+            cache_read_tokens: budget.cache_read_tokens,
         };
         events.emit(SessionEvent::TurnEnd(end));
         events.emit(SessionEvent::State { state: State::Idle });
@@ -433,6 +444,11 @@ impl Agent {
         asker: &dyn Asker,
         cancel: &CancellationToken,
     ) -> EndReason {
+        // Tools and system prompt are fixed for the turn, so its requests
+        // share their start and the provider can cache it (RFC 0028).
+        self.apply_skills();
+        let system = self.system.clone();
+        let tools = self.tool_specs();
         loop {
             if cancel.is_cancelled() {
                 return EndReason::Cancelled;
@@ -446,23 +462,25 @@ impl Agent {
             budget.total_requests += 1;
 
             let (provider, model, model_name) = self.model.get_named();
-            self.apply_skills();
             let request = Request {
                 model: model.id.clone(),
-                system: self.system.clone(),
-                messages: self.history.messages().to_vec(),
-                tools: self.tool_specs(),
+                system: system.clone(),
+                messages: self.history.for_request(&self.history_settings),
+                tools: tools.clone(),
                 max_output_tokens: model.max_output_tokens,
                 temperature: model.temperature,
             };
             let stream = provider.stream(request, cancel.child_token());
             let answer = stream::collect(stream, events, cancel).await;
-            if let Some((input, output)) = answer.usage {
+            if let Some((input, output, cache_read, cache_write)) = answer.usage {
                 budget.input_tokens += input;
                 budget.output_tokens += output;
+                budget.cache_read_tokens += cache_read;
                 events.emit(SessionEvent::Usage {
                     input_tokens: input,
                     output_tokens: output,
+                    cache_read_tokens: cache_read,
+                    cache_write_tokens: cache_write,
                     context_tokens: input + output,
                     model: model_name,
                 });
@@ -556,6 +574,19 @@ impl Agent {
                     is_error: output.is_error,
                 }),
             }));
+            // A repeated read of an unchanged file points to the earlier
+            // result the model still has (RFC 0028).
+            let mut output = output;
+            if call.name == "read_file"
+                && !output.is_error
+                && let Some(earlier) = self.history.unchanged_read(
+                    &call.arguments,
+                    &output.text,
+                    &self.history_settings,
+                )
+            {
+                output.text = history::unchanged_result(&earlier);
+            }
             if self
                 .history
                 .keep_full(&call.id, &output.text, output.full.clone())

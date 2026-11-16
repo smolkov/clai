@@ -11,8 +11,8 @@ Statements marked **(assumption)** need a decision from the user.
 
 | File                          | Scope   | May define |
 |-------------------------------|---------|------------|
-| `~/.config/codeagent/config.toml`  | User    | Everything: providers, models, defaults, `[limits]`, `[permissions]`, `[commit]`, `[tui]`, `[themes]`, `[lsp]`, `[skills]`. |
-| `<workspace>/.codeagent/config.toml` | Project | Defaults and limits only: `default_model`, `[limits]` (only lower, see [Limits](#limits)), `[permissions]` (restricted, see [Permissions](#permissions)), `[commit]`, `[lsp]` (restricted, see [LSP](#lsp)). Not providers, models, `[tui]`, `[themes]` or `[skills]`. |
+| `~/.config/codeagent/config.toml`  | User    | Everything: providers, models, defaults, `[limits]`, `[history]`, `[permissions]`, `[commit]`, `[tui]`, `[themes]`, `[lsp]`, `[skills]`. |
+| `<workspace>/.codeagent/config.toml` | Project | Defaults and limits only: `default_model`, `[limits]` (only lower, see [Limits](#limits)), `[permissions]` (restricted, see [Permissions](#permissions)), `[commit]`, `[lsp]` (restricted, see [LSP](#lsp)). Not providers, models, `[history]`, `[tui]`, `[themes]` or `[skills]`. |
 
 `$XDG_CONFIG_HOME` replaces `~/.config` when it is set.
 
@@ -35,7 +35,8 @@ TUI settings and themes are personal, so they are only allowed in the user
 file too; a project file with `[tui]` or `[themes]` is rejected the same way.
 So is a project file with `[skills]`: a path in it would let a repository
 put files from anywhere on the machine into the prompt and make them
-readable for the model (see [Skills](#skills)).
+readable for the model (see [Skills](#skills)). `[history]` changes what
+the model sees of its own work, so it is the user's too.
 
 Precedence, later wins: user file, project file, environment variables,
 command-line options.
@@ -457,6 +458,21 @@ lower of the user and the project value is used. What they count and what
 happens at the limit: [`agent-loop.md`](agent-loop.md), "Limits".
 **(assumption)**
 
+## History
+
+```toml
+[history]
+trim_results = true    # replace old tool results with placeholders
+keep_results = 2       # results of the newest 2 answers stay whole
+min_chars    = 500     # results this size or smaller are never trimmed
+trim_after   = 60000   # trim once untrimmed results have more characters
+```
+
+What the keys do: [`agent-loop.md`](agent-loop.md), "Trimmed results".
+`keep_results` is 1–100, `min_chars` 0–30 000, `trim_after`
+1 000–10 000 000. User file only; like `[limits]`, a change applies to
+sessions started after it.
+
 ## LSP
 
 Language servers for the `lsp` tool (see [`tools.md`](tools.md), "lsp").
@@ -799,6 +815,7 @@ context_window = 32768
 | `api_key_cmd`  | no       | Command whose output is the API key, e.g. `pass show anthropic`. Run with `sh -c` once when the provider is first used; it must finish within 30 s. The trailing newline is removed. Empty output or a non-zero exit is an error that shows the command's standard error. **(assumption)** |
 | `timeout_s`    | no       | Request timeout in seconds. Default 300. |
 | `max_retries`  | no       | Retries for network errors and rate limits. Default 3. |
+| `cache`        | no       | `true` or `false`: mark requests for the provider's prompt cache (`anthropic`; see [`providers.md`](providers.md), "anthropic"). Default `true`. The openai-compatible API caches without marks and ignores it. |
 
 At most one of `api_key`, `api_key_env` and `api_key_cmd` is set. With none,
 requests are sent without a key. Providers, and so `api_key`, are only allowed

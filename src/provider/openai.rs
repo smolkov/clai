@@ -305,9 +305,16 @@ impl Decode for Decoder {
         }
         if let Some(usage) = data.get("usage").filter(|u| u.is_object()) {
             let n = |name| usage.get(name).and_then(Value::as_u64).unwrap_or(0);
+            let cached = usage
+                .get("prompt_tokens_details")
+                .and_then(|d| d.get("cached_tokens"))
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
             events.push(Event::Usage {
                 input_tokens: n("prompt_tokens"),
                 output_tokens: n("completion_tokens"),
+                cache_read_tokens: cached,
+                cache_write_tokens: 0,
             });
         }
         Ok(events)
@@ -360,6 +367,23 @@ mod tests {
     }
 
     #[test]
+    fn cached_tokens_are_read() {
+        let fixture = concat!(
+            "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\n",
+            "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":2000,\"completion_tokens\":5,",
+            "\"prompt_tokens_details\":{\"cached_tokens\":1536}}}\n\n",
+            "data: [DONE]\n\n",
+        );
+        let events = decode(fixture).unwrap();
+        assert!(events.contains(&Event::Usage {
+            input_tokens: 2000,
+            output_tokens: 5,
+            cache_read_tokens: 1536,
+            cache_write_tokens: 0,
+        }));
+    }
+
+    #[test]
     fn text_answer() {
         let events = decode(include_str!("../../tests/fixtures/openai/text.sse")).unwrap();
         assert_eq!(
@@ -369,7 +393,9 @@ mod tests {
                 Event::TextDelta { text: "lo!".into() },
                 Event::Usage {
                     input_tokens: 12,
-                    output_tokens: 3
+                    output_tokens: 3,
+                    cache_read_tokens: 0,
+                    cache_write_tokens: 0
                 },
                 Event::Done {
                     stop_reason: StopReason::EndTurn

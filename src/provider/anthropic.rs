@@ -15,7 +15,10 @@ const VERSION: &str = "2023-06-01";
 /// `max_tokens` is required by the API.
 const DEFAULT_MAX_TOKENS: u64 = 8192;
 
-pub(crate) struct Anthropic;
+pub(crate) struct Anthropic {
+    /// Mark the request for the prompt cache (`cache` of the provider).
+    pub cache: bool,
+}
 
 impl Codec for Anthropic {
     fn url(&self, base_url: &str) -> String {
@@ -31,7 +34,7 @@ impl Codec for Anthropic {
     }
 
     fn encode(&self, request: &Request) -> Value {
-        encode(request)
+        encode(request, self.cache)
     }
 
     fn status_error(&self, error: StatusError) -> ProviderError {
@@ -80,7 +83,24 @@ fn error_kind(api_type: &str, message: &str) -> ErrorKind {
     }
 }
 
-pub(crate) fn encode(request: &Request) -> Value {
+/// The mark of a prompt-cache breakpoint: the provider caches the request
+/// up to and including the block that carries it.
+fn cache_mark() -> Value {
+    json!({"type": "ephemeral"})
+}
+
+/// Puts a cache breakpoint on the last of `items`, if there is one.
+fn mark_last(items: &mut [Value]) {
+    if let Some(Value::Object(last)) = items.last_mut() {
+        last.insert("cache_control".into(), cache_mark());
+    }
+}
+
+/// The request body. With `cache`, three breakpoints (see
+/// `spec/providers.md`, "anthropic"): the last tool, the system prompt and
+/// the last block of the last message, so the next request of a turn reads
+/// all but its newest messages from the cache.
+pub(crate) fn encode(request: &Request, cache: bool) -> Value {
     let mut body = Map::new();
     body.insert("model".into(), json!(request.model));
     body.insert(
@@ -89,7 +109,12 @@ pub(crate) fn encode(request: &Request) -> Value {
     );
     body.insert("stream".into(), json!(true));
     if !request.system.is_empty() {
-        body.insert("system".into(), json!(request.system));
+        let system = if cache {
+            json!([{"type": "text", "text": request.system, "cache_control": cache_mark()}])
+        } else {
+            json!(request.system)
+        };
+        body.insert("system".into(), system);
     }
     if let Some(t) = request.temperature {
         body.insert("temperature".into(), json!(t));
@@ -107,6 +132,9 @@ pub(crate) fn encode(request: &Request) -> Value {
             _ => messages.push((message.role, blocks)),
         }
     }
+    if cache && let Some((_, last)) = messages.last_mut() {
+        mark_last(last);
+    }
     let messages: Vec<Value> = messages
         .into_iter()
         .map(|(role, content)| {
@@ -120,11 +148,14 @@ pub(crate) fn encode(request: &Request) -> Value {
     body.insert("messages".into(), Value::Array(messages));
 
     if !request.tools.is_empty() {
-        let tools: Vec<Value> = request
+        let mut tools: Vec<Value> = request
             .tools
             .iter()
             .map(|t| json!({"name": t.name, "description": t.description, "input_schema": t.input_schema}))
             .collect();
+        if cache {
+            mark_last(&mut tools);
+        }
         body.insert("tools".into(), Value::Array(tools));
     }
     Value::Object(body)
@@ -170,6 +201,8 @@ pub(crate) struct Decoder {
     blocks: HashMap<u64, Open>,
     input_tokens: u64,
     output_tokens: u64,
+    cache_read_tokens: u64,
+    cache_write_tokens: u64,
     stop: Option<StopReason>,
     done: bool,
 }
@@ -201,6 +234,8 @@ impl Decoder {
         Event::Usage {
             input_tokens: self.input_tokens,
             output_tokens: self.output_tokens,
+            cache_read_tokens: self.cache_read_tokens,
+            cache_write_tokens: self.cache_write_tokens,
         }
     }
 }
@@ -220,9 +255,11 @@ impl Decode for Decoder {
             "message_start" => {
                 if let Some(usage) = data.get("message").and_then(|m| m.get("usage")) {
                     // Cached input counts towards the context as well.
+                    self.cache_write_tokens = tokens(usage, "cache_creation_input_tokens");
+                    self.cache_read_tokens = tokens(usage, "cache_read_input_tokens");
                     self.input_tokens = tokens(usage, "input_tokens")
-                        + tokens(usage, "cache_creation_input_tokens")
-                        + tokens(usage, "cache_read_input_tokens");
+                        + self.cache_write_tokens
+                        + self.cache_read_tokens;
                     self.output_tokens = tokens(usage, "output_tokens");
                     events.push(self.usage());
                 }
@@ -381,7 +418,9 @@ mod tests {
             [
                 Event::Usage {
                     input_tokens: 25,
-                    output_tokens: 1
+                    output_tokens: 1,
+                    cache_read_tokens: 0,
+                    cache_write_tokens: 0
                 },
                 Event::TextDelta {
                     text: "Hello".into()
@@ -391,7 +430,9 @@ mod tests {
                 },
                 Event::Usage {
                     input_tokens: 25,
-                    output_tokens: 15
+                    output_tokens: 15,
+                    cache_read_tokens: 0,
+                    cache_write_tokens: 0
                 },
                 Event::Done {
                     stop_reason: StopReason::EndTurn
@@ -443,10 +484,12 @@ mod tests {
                 },
             ]
         );
-        // Cached input is counted.
+        // Cached input is counted, and on its own.
         assert!(events.contains(&Event::Usage {
             input_tokens: 1500,
-            output_tokens: 3
+            output_tokens: 3,
+            cache_read_tokens: 1000,
+            cache_write_tokens: 0
         }));
     }
 
@@ -559,7 +602,7 @@ mod tests {
             temperature: Some(0.2),
         };
         assert_eq!(
-            encode(&request),
+            encode(&request, false),
             json!({
                 "model": "claude-sonnet-5-5",
                 "max_tokens": 8192,
@@ -591,9 +634,69 @@ mod tests {
     }
 
     #[test]
+    fn cache_breakpoints() {
+        let tool = |name: &str| ToolSpec {
+            name: name.into(),
+            description: "d".into(),
+            input_schema: json!({"type": "object"}),
+        };
+        let request = Request {
+            model: "m".into(),
+            system: "Be brief.".into(),
+            messages: vec![
+                Message::user("fix it"),
+                Message::assistant("Looking."),
+                Message {
+                    role: Role::User,
+                    content: vec![
+                        Block::Text { text: "a".into() },
+                        Block::Text { text: "b".into() },
+                    ],
+                },
+            ],
+            tools: vec![tool("read_file"), tool("list_files")],
+            max_output_tokens: None,
+            temperature: None,
+        };
+        let body = encode(&request, true);
+        let mark = json!({"type": "ephemeral"});
+        assert_eq!(
+            body["system"],
+            json!([{"type": "text", "text": "Be brief.", "cache_control": mark}])
+        );
+        assert_eq!(body["tools"][0].get("cache_control"), None);
+        assert_eq!(body["tools"][1]["cache_control"], mark);
+        assert_eq!(body["messages"][0]["content"][0].get("cache_control"), None);
+        assert_eq!(body["messages"][1]["content"][0].get("cache_control"), None);
+        assert_eq!(body["messages"][2]["content"][0].get("cache_control"), None);
+        assert_eq!(body["messages"][2]["content"][1]["cache_control"], mark);
+        // At most four breakpoints are allowed; three are used.
+        assert_eq!(body.to_string().matches("cache_control").count(), 3);
+
+        // Without cache, nothing is marked.
+        let plain = encode(&request, false);
+        assert!(!plain.to_string().contains("cache_control"));
+        assert_eq!(plain["system"], json!("Be brief."));
+
+        // No system prompt and no tools: only the last message.
+        let bare = Request {
+            system: String::new(),
+            tools: Vec::new(),
+            ..request
+        };
+        assert_eq!(
+            encode(&bare, true)
+                .to_string()
+                .matches("cache_control")
+                .count(),
+            1
+        );
+    }
+
+    #[test]
     fn status_errors() {
         let err = |status, body: &str| {
-            Anthropic.status_error(StatusError {
+            Anthropic { cache: true }.status_error(StatusError {
                 status,
                 retry_after: None,
                 body: body.into(),

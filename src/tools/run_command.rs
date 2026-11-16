@@ -19,7 +19,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::permissions::command_proposals;
 
-use super::output::{FULL_BYTES, ToolOutput, group};
+use super::clean;
+use super::output::{FULL_BYTES, ToolOutput, cut_for_model, group};
 use super::question::Details;
 use super::{Call, Env, Failure, Op as AnyOp, Progress, cancelled, in_range};
 
@@ -145,7 +146,12 @@ impl Op {
             sender.flush();
         }
         match output {
-            Ok(output) => output,
+            // The model gets the output cleaned, then cut (RFC 0028); the
+            // TUI keeps it as it was.
+            Ok(mut output) => {
+                output.text = cut_for_model(&clean::clean(&output.full));
+                output
+            }
             Err(e) => ToolOutput::error(format!("cannot run the command: {e}")),
         }
     }

@@ -196,6 +196,7 @@ fn events_round_trip() {
             tool_calls: 0,
             input_tokens: 10,
             output_tokens: 2,
+            cache_read_tokens: 0,
         }),
         SessionEvent::ModelChanged {
             from: "anthropic/sonnet".into(),
@@ -370,6 +371,8 @@ fn totals_sum_only_usage_events() {
     let usage = |input_tokens, output_tokens| SessionEvent::Usage {
         input_tokens,
         output_tokens,
+        cache_read_tokens: 0,
+        cache_write_tokens: 0,
         context_tokens: 999,
         model: String::new(),
     };
@@ -382,7 +385,8 @@ fn totals_sum_only_usage_events() {
         TokenTotals::of_log(&log),
         TokenTotals {
             input_tokens: 30,
-            output_tokens: 3
+            output_tokens: 3,
+            cache_read_tokens: 0
         }
     );
     // A provider's nonsense does not overflow.
@@ -447,4 +451,32 @@ fn lsp_requests_and_answers() {
     assert_eq!(indexing.state_text(), "indexing 42 %");
     let wire = serde_json::to_value(&indexing).unwrap();
     assert!(wire.get("reason").is_none(), "{wire}");
+}
+
+#[test]
+fn totals_count_cached_input_and_read_old_logs() {
+    // A log of an older codeagent has no cache fields.
+    let old: SessionEvent = serde_json::from_str(
+        r#"{"event":"usage","input_tokens":10,"output_tokens":1,"context_tokens":11}"#,
+    )
+    .unwrap();
+    let new = SessionEvent::Usage {
+        input_tokens: 100,
+        output_tokens: 2,
+        cache_read_tokens: 90,
+        cache_write_tokens: 5,
+        context_tokens: 102,
+        model: String::new(),
+    };
+    let line = serde_json::to_string(&new).unwrap();
+    assert!(line.contains(r#""cache_read_tokens":90"#), "{line}");
+    let totals = TokenTotals::of_log(&[old, new]);
+    assert_eq!(
+        totals,
+        TokenTotals {
+            input_tokens: 110,
+            output_tokens: 3,
+            cache_read_tokens: 90,
+        }
+    );
 }

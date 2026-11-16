@@ -376,8 +376,13 @@ Milestones and their order: [`implementation.md`](implementation.md).
       for session state changes, a new protocol version, in place of polling
       `list`)
 - [ ] Commit: the TUI `/commit` dialog (`codeagent commit` is built, RFC 0013)
-- [ ] Context management (history trimming of old tool results: RFC 0008,
-      draft; the rest needs `spec/context.md`)
+- [ ] Context management: trimming of old tool results is built (RFC 0008,
+      in steps by RFC 0028); the rest needs `spec/context.md`
+- [x] Fewer tokens (RFC 0028): cached input counted, stable prefix and
+      Anthropic prompt cache, trimming in steps, clean command output,
+      unchanged re-reads, `ci/bench.sh`
+- [ ] Token bench baseline: run `ci/bench.sh` on one Anthropic and one local
+      model, write the sums into `bench/readme.md` (needs a key)
 - [x] Language server tools: `lsp` tool, `[lsp]`, diagnostics after edits
       (RFC 0019; see its section)
 - [ ] Release (RFC 0020): scripts, pipelines, Debian packages and crate
@@ -385,5 +390,5 @@ Milestones and their order: [`implementation.md`](implementation.md).
   - [ ] First push: `ci.yml` and `.gitlab-ci.yml` green.
   - [ ] Pre-release tag `v0.1.0-rc.1`: release on both forges, aarch64 and
         macOS files tried on real machines; then delete it.
-  - [ ] First crates.io publish by hand, then trusted publishing and the
+  - [x] First crates.io publish by hand, then trusted publishing and the
         `crates-io` environment.

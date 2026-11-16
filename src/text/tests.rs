@@ -45,6 +45,7 @@ fn end(reason: EndReason) -> SessionEvent {
         tool_calls: 0,
         input_tokens: 0,
         output_tokens: 0,
+        cache_read_tokens: 0,
     })
 }
 
@@ -554,10 +555,19 @@ fn the_usage_line() {
     let usage = TokenTotals {
         input_tokens: 45_100,
         output_tokens: 3_200,
+        cache_read_tokens: 0,
     };
     assert_eq!(
         usage_line(usage, 12_300),
         "tokens: in 45.1k, out 3.2k; context 12.3k"
+    );
+    let cached = TokenTotals {
+        cache_read_tokens: 40_000,
+        ..usage
+    };
+    assert_eq!(
+        usage_line(cached, 12_300),
+        "tokens: in 45.1k (cached 40k), out 3.2k; context 12.3k"
     );
 }
 

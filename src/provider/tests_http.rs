@@ -167,6 +167,7 @@ fn provider_config(api: Api, url: &str, key: KeySource) -> config::Provider {
         key,
         timeout: Duration::from_millis(500),
         max_retries: 2,
+        cache: true,
         models: IndexMap::new(),
     }
 }
@@ -232,7 +233,11 @@ async fn anthropic_stream() {
     assert_eq!(seen.header("anthropic-version"), Some("2023-06-01"));
     assert_eq!(seen.header("content-type"), Some("application/json"));
     assert_eq!(seen.body["model"], json!("m-1"));
-    assert_eq!(seen.body["system"], json!("sys"));
+    // `cache` is on by default: the prompt goes as a marked block.
+    assert_eq!(
+        seen.body["system"],
+        json!([{"type": "text", "text": "sys", "cache_control": {"type": "ephemeral"}}])
+    );
 }
 
 #[tokio::test]

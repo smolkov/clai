@@ -74,11 +74,21 @@ pub fn short_tokens(n: u64) -> String {
     }
 }
 
+/// Input tokens, with the part read from the prompt cache when there is
+/// one: `412k (cached 371k)`.
+pub fn input_tokens(input: u64, cached: u64) -> String {
+    if cached == 0 {
+        tokens(input)
+    } else {
+        format!("{} (cached {})", tokens(input), tokens(cached))
+    }
+}
+
 /// What `/usage` in `codeagent chat` prints.
 pub fn usage_line(usage: TokenTotals, context: u64) -> String {
     format!(
         "tokens: in {}, out {}; context {}",
-        tokens(usage.input_tokens),
+        input_tokens(usage.input_tokens, usage.cache_read_tokens),
         tokens(usage.output_tokens),
         tokens(context)
     )

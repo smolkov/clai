@@ -6,6 +6,7 @@
 //! [`PreparedCall::run`]. Nothing here knows sessions or clients.
 
 pub mod ask_user;
+mod clean;
 mod edit_file;
 mod list_files;
 pub mod lsp;

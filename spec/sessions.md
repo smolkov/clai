@@ -291,7 +291,10 @@ stop, a crash or a reboot. `codeagent run` sessions are not saved.
   Token totals are written after each model request. On resume they are summed
   from the log, which is the truth: this covers a session of an older `codeagent` (it
   lists zero until it is first resumed) and a crash between writing the event
-  and writing `session.json`. A missing `usage` means zero, so the format stays
+  and writing `session.json`. The totals count cached input
+  (`cache_read_tokens`) as a part of the input, shown as
+  `in 412k (cached 371k)`; a `usage` event of an older `codeagent` has
+  none, which counts as zero. A missing `usage` means zero, so the format stays
   `1`. A resume that changes the model logs `model_changed`.
 
   The session's active skills are rebuilt from the `skills_changed` events of

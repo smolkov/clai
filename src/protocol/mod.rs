@@ -433,6 +433,9 @@ pub struct ModelInfo {
 pub struct TokenTotals {
     pub input_tokens: u64,
     pub output_tokens: u64,
+    /// The part of the input read from the prompt cache.
+    #[serde(default)]
+    pub cache_read_tokens: u64,
 }
 
 impl TokenTotals {
@@ -441,11 +444,13 @@ impl TokenTotals {
         if let SessionEvent::Usage {
             input_tokens,
             output_tokens,
+            cache_read_tokens,
             ..
         } = event
         {
             self.input_tokens = self.input_tokens.saturating_add(*input_tokens);
             self.output_tokens = self.output_tokens.saturating_add(*output_tokens);
+            self.cache_read_tokens = self.cache_read_tokens.saturating_add(*cache_read_tokens);
         }
     }
 

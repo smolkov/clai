@@ -1,12 +1,24 @@
 # Trim old tool results
 
 - RFC: 0008
-- Status: draft
+- Status: done (built by RFC 0028, with trimming in steps)
 - Milestone: Context management, the history part
 - Spec: [`spec/agent-loop.md`](../spec/agent-loop.md), "Requests", "Errors";
   [`spec/tools.md`](../spec/tools.md), "Result size";
   [`spec/config.md`](../spec/config.md), "Files", "Limits";
   [`spec/readme.md`](../spec/readme.md), open question 3
+
+## Changes while building
+
+Built together with [RFC 0028](0028-fewer-tokens.md), which changed the
+design before it was built: results are trimmed **in steps**, when the
+untrimmed results pass `trim_after` (default 60 000 characters), not in
+every request, so the start of a request stays the same for the prompt
+cache. `[history]` gets `trim_after`; it applies to sessions started after
+a change, like `[limits]`. The placeholder names the tool, its main
+argument and the others as `key value`, each cut to 80 characters. The
+open questions took the proposals. What is built is in
+[`spec/agent-loop.md`](../spec/agent-loop.md), "Trimmed results".
 
 ## Summary
 
@@ -175,7 +187,7 @@ they are; `spec/context.md` may add a real answer later.
 Each step leaves a working, tested state.
 
 1. **Trim when building a request**
-   - Status: todo
+   - Status: done
    - Files: `src/agent/history.rs`, `src/agent/mod.rs`, `src/agent/tests.rs`
    - Result: `History` offers the messages for a request; the agent loop
      builds requests with placeholders, with the default settings
@@ -184,7 +196,7 @@ Each step leaves a working, tested state.
      placeholders and full results at the right places.
 
 2. **Settings**
-   - Status: todo
+   - Status: done
    - Files: `src/config/`, `src/agent/mod.rs`, `src/config/tests.rs` (where
      the config tests live)
    - Result: `[history]` is parsed, validated and read by the loop; a
@@ -192,7 +204,7 @@ Each step leaves a working, tested state.
    - Tests: config parse, ranges, project-file rejection, reload.
 
 3. **System prompt and spec**
-   - Status: todo
+   - Status: done
    - Files: `src/agent/system_prompt.md`, `spec/agent-loop.md`,
      `spec/tools.md`, `spec/config.md`, `readme.md`, `implementation.md`
    - Result: the model is told about placeholders; the spec describes the

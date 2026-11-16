@@ -51,6 +51,7 @@ fn provider(api: Api, base_url: String, key: KeySource) -> Arc<dyn Provider> {
             key,
             timeout: Duration::from_secs(120),
             max_retries: 2,
+            cache: true,
             models: IndexMap::new(),
         },
         &codeagent::startup::Startup::from_process(),
