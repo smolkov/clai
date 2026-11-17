@@ -153,4 +153,7 @@ Sections that do not apply may be left out.
 | [0029](0029-session-scratch-directory.md) | A scratch directory for each session | done |
 | [0030](0030-hide-secrets-from-the-model.md) | Hide secrets from the model | done |
 | [0031](0031-more-bundled-themes.md) | More bundled themes | done |
+| [0032](0032-gemini-provider.md) | Gemini provider | draft |
+| [0033](0033-copilot-provider.md) | GitHub Copilot provider | draft |
 | [0034](0034-images-in-the-input.md) | Images in the input | done |
+| [0035](0035-security-review-two.md) | Second security review: threat model, terminal output, imports, child environment | draft |
