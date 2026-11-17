@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.svg" width="128" height="128" alt="codeagent logo: a terminal prompt with a spark">
+</p>
+
 # codeagent
 
 `codeagent` is an AI coding agent for the terminal, written in Rust. You describe
@@ -20,7 +24,7 @@ Linux binaries (x86_64, aarch64), macOS binaries, Debian packages, and
 shell completions in `completions/`.
 
 ```sh
-v=0.3.1 t=x86_64-unknown-linux-musl
+v=0.8.0 t=x86_64-unknown-linux-musl
 curl -LO https://github.com/smolkov/codeagent/releases/download/v$v/codeagent-$v-$t.tar.gz
 curl -LO https://github.com/smolkov/codeagent/releases/download/v$v/SHA256SUMS
 sha256sum -c --ignore-missing SHA256SUMS
@@ -35,7 +39,7 @@ On Debian and Ubuntu (the package needs no other package and installs the
 shell completions):
 
 ```sh
-sudo apt install ./codeagent_0.3.1-1_amd64.deb
+sudo apt install ./codeagent_0.8.0-1_amd64.deb
 ```
 
 From crates.io, built from source (needs Rust 1.88 or newer and a C
@@ -117,7 +121,7 @@ result.
 | `Ctrl-C` twice, `Ctrl-D` on empty input | Detach. |
 | `PgUp` / `PgDn`, mouse wheel | Scroll. `Ctrl-Home` / `Ctrl-End`: start / end, and follow again. |
 | `Ctrl-O` | Choose the model: type to filter, `Up` / `Down` select, `Enter` changes it, `Esc` closes. |
-| `Ctrl-S` | Session list: `Enter` attach, `n` new (workspace, name, then the model), `r` rename, `k` kill, `Esc` close. |
+| `Ctrl-S` | Session list: `Enter` attach, `n` new (workspace, name, then the model), `r` rename, `Space` mark, `d` delete (the marked ones, or the selected one), `/` filter, `Esc` close. |
 | `Ctrl-N` / `Ctrl-P` | Attach to the next / previous session. |
 | `Tab` | Switch to the conversation: `Up` / `Down` select, `Enter` expands a tool call, `o` opens it in a view with all of it (`/` search, `y` copy, `w` wrap), `y` copies the entry, `Y` its code block, `?` shows help. |
 | `Ctrl-Y` / `Ctrl-T` | Copy the last answer / show or hide the tool calls of the last turn. |
@@ -565,5 +569,5 @@ crates.io, once:
 
 ## Specification
 
-The behaviour is specified in [`spec/`](spec/readme.md); the build order is in
-[`implementation.md`](implementation.md).
+The behaviour is specified in [`spec/`](spec/readme.md); changes are proposed
+and decided in [`rfcs/`](rfcs/readme.md) before they are built.
