@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="assets/logo.svg" width="128" height="128" alt="codeagent logo: a terminal prompt with a spark">
-</p>
-
 # codeagent
 
 `codeagent` is an AI coding agent for the terminal, written in Rust. You describe
