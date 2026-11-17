@@ -7,6 +7,9 @@
 # architecture) uses `cargo zigbuild`; set CODEAGENT_BUILDER=cargo or zigbuild to
 # choose. The C parts of the crypto library (aws-lc-sys) need a C compiler
 # for the target: musl-gcc (Debian/Ubuntu: musl-tools) or zig.
+# With cargo-auditable installed, the binary carries its dependency list
+# (RFC 0037), for `cargo audit bin`; CODEAGENT_REQUIRE_AUDITABLE=1 makes it
+# required, as the release pipelines do.
 # Prints the path of the binary on standard output.
 
 . "$(dirname -- "$0")/common.sh"
@@ -44,15 +47,33 @@ case "$builder:$target" in
         ;;
 esac
 
-say "building $target with $builder (${CODEAGENT_BUILD_COMMIT:-no commit})"
+# `cargo auditable ARGS` runs `cargo ARGS` with itself as the compiler
+# wrapper, so it works for `zigbuild` too.
+auditable=
+if command -v cargo-auditable >/dev/null 2>&1; then
+    auditable=auditable
+elif [ "${CODEAGENT_REQUIRE_AUDITABLE:-}" = 1 ]; then
+    fail "cargo-auditable is not installed: cargo install --locked cargo-auditable@$CARGO_AUDITABLE_VERSION"
+fi
+
+say "building $target with $builder${auditable:+ (auditable)} (${CODEAGENT_BUILD_COMMIT:-no commit})"
 case "$builder" in
-    cargo) cargo build --release --locked --target "$target" >&2 ;;
-    zigbuild) cargo zigbuild --release --locked --target "$target" >&2 ;;
+    cargo) cargo $auditable build --release --locked --target "$target" >&2 ;;
+    zigbuild) cargo $auditable zigbuild --release --locked --target "$target" >&2 ;;
     *) fail "CODEAGENT_BUILDER must be cargo or zigbuild, not $builder" ;;
 esac
 
 bin="target/$target/release/codeagent"
 [ -x "$bin" ] || fail "$bin was not built"
+
+if [ -n "$auditable" ] && command -v readelf >/dev/null 2>&1; then
+    case "$target" in
+        *-linux-*)
+            readelf -S "$bin" | grep -q 'dep-v0' || fail "$bin has no dependency list (.dep-v0)"
+            say "dependency list: .dep-v0"
+            ;;
+    esac
+fi
 
 case "$target" in
     *-linux-*)

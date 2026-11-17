@@ -41,7 +41,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: sh ci/check.sh
       - run: sh ci/version.sh toolchain
+      - run: sh ci/version.sh tools
       - run: sh ci/crate.sh
+
+  # Nothing is built while a dependency has a known advisory (RFC 0037).
+  audit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: cargo install --locked cargo-deny@0.20.2
+      - run: sh ci/audit.sh
 
   test:
     strategy:
@@ -54,7 +63,7 @@ jobs:
       - run: sh ci/test.sh
 
   build:
-    needs: [version, check, test]
+    needs: [version, check, test, audit]
     strategy:
       fail-fast: false
       matrix:
@@ -81,7 +90,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends musl-tools lintian
-      - run: sh ci/build.sh "${{ matrix.target }}"
+      - run: cargo install --locked cargo-auditable@0.7.7
+      - run: CODEAGENT_REQUIRE_AUDITABLE=1 sh ci/build.sh "${{ matrix.target }}"
       - run: sh ci/package.sh "${{ matrix.target }}" "$VERSION"
       - if: matrix.deb
         run: |

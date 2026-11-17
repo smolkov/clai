@@ -409,6 +409,19 @@ Then a command can write only in the workspace, the scratch directory and
 unprotected. The threat model, what is guarded and what is not:
 [`spec/security.md`](spec/security.md).
 
+Release binaries carry the list of their dependencies, so you can check
+your installed `codeagent` against advisories published since its release:
+
+```sh
+cargo install cargo-audit
+cargo audit bin "$(command -v codeagent)"
+```
+
+The dependencies are checked against the RustSec database on every push,
+daily, and before every release; how a finding is handled is in
+`spec/security.md`, "Dependency advisories". `ci/audit.sh` runs the same
+check locally.
+
 ## Secrets
 
 Before anything goes to the model, `codeagent` replaces API keys, tokens,
@@ -600,7 +613,9 @@ A tag `vX.Y.Z` releases; the pipelines do the rest (RFC 0020):
    `Cargo.lock`), and commit.
 3. `git tag -a vX.Y.Z -m vX.Y.Z`, then push the commit and the tag, to
    GitHub and to the GitLab mirror.
-4. GitHub checks, builds all targets, packs, tests the Debian packages,
+4. GitHub audits the dependencies (nothing is built while an advisory
+   is open, `ci/audit.sh`), checks, builds all targets (with `cargo
+   auditable`), packs, tests the Debian packages,
    and publishes the release with the notes, `SHA256SUMS` and provenance;
    then `cargo publish`, once crates.io is set up (below). GitLab builds the Linux files, uploads them to its
    package registry and creates its release.

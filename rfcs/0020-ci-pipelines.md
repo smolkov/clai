@@ -162,7 +162,7 @@ manual
 | `check` | Every push, merge request, tag | `ci/check.sh` |
 | `test` | Every push, merge request, tag | `ci/test.sh` |
 | `build` | Push: `x86_64-unknown-linux-musl`; tag: all targets | `ci/build.sh` |
-| `audit` | Weekly, and when `Cargo.lock` changes | `cargo deny check advisories bans licenses sources` |
+| `audit` | Weekly, and when `Cargo.lock` changes (RFC 0037: every push, daily, and before every release, through `ci/audit.sh`) | `cargo deny check advisories bans licenses sources` |
 | `crate` | Every push, merge request, tag | `ci/crate.sh` |
 | `deb` | Tag `v*`; and manual on a branch | `ci/deb.sh` for both Linux targets |
 | `deb-test` | After `deb` | `ci/deb-test.sh` in `debian:stable-slim` and `ubuntu:24.04`, on amd64 (arm64 where an arm runner is) |
@@ -598,4 +598,6 @@ address, as they chose.
   v7.0.2, download-artifact v8.0.2, rust-cache v2.9.3,
   attest-build-provenance v4.2.2 and crates-io-auth-action v1.0.6.
 - `dist/` is in `.gitignore`.
-
+- RFC 0037 changed the audit: `ci/audit.sh` with review dates for ignored
+  advisories, run on every push, daily and as a gate of each release;
+  release binaries are built with `cargo auditable`.

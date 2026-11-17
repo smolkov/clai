@@ -16,6 +16,7 @@ variables:
   CARGO_ZIGBUILD_VERSION: "0.24.1"
   CARGO_DEB_VERSION: "3.8.0"
   CARGO_DENY_VERSION: "0.20.2"
+  CARGO_AUDITABLE_VERSION: "0.7.7"
   CARGO_HOME: "$CI_PROJECT_DIR/.cargo-home"
   CARGO_TERM_COLOR: always
   PACKAGES: "$CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/codeagent"
@@ -57,6 +58,14 @@ default:
   - apt-get update -qq
   - apt-get install -y -qq --no-install-recommends musl-tools file
 
+# A release binary carries its dependency list (RFC 0037).
+.auditable_on_tags: &auditable_on_tags
+  - |
+    if [ -n "${CI_COMMIT_TAG:-}" ]; then
+      cargo install --locked "cargo-auditable@$CARGO_AUDITABLE_VERSION"
+      export CODEAGENT_REQUIRE_AUDITABLE=1
+    fi
+
 version:
   stage: check
   <<: *on_tags
@@ -87,14 +96,17 @@ crate:
   script:
     - sh ci/crate.sh
 
+# Run the pipeline's schedule daily, so a new advisory is seen within a day;
+# every tag waits for it before anything is uploaded (RFC 0037).
 audit:
   stage: test
   rules:
     - if: $CI_PIPELINE_SOURCE == "schedule" || $CI_PIPELINE_SOURCE == "web"
+    - if: $CI_COMMIT_TAG =~ /^v/
     - changes: [Cargo.lock, deny.toml]
   script:
     - cargo install --locked "cargo-deny@$CARGO_DENY_VERSION"
-    - cargo deny --locked check advisories bans licenses sources
+    - sh ci/audit.sh
 
 stable:
   stage: test
@@ -108,6 +120,7 @@ build:x86_64:
   stage: build
   script:
     - *musl_tools
+    - *auditable_on_tags
     - sh ci/build.sh x86_64-unknown-linux-musl
     - sh ci/package.sh x86_64-unknown-linux-musl "${VERSION:-}"
   artifacts:
@@ -127,6 +140,7 @@ build:aarch64:
     - mkdir -p /opt/zig && tar -xJf zig.tar.xz -C /opt/zig --strip-components=1
     - export PATH="/opt/zig:$PATH"
     - cargo install --locked "cargo-zigbuild@$CARGO_ZIGBUILD_VERSION"
+    - *auditable_on_tags
     - sh ci/build.sh aarch64-unknown-linux-musl
     - sh ci/package.sh aarch64-unknown-linux-musl "$VERSION"
   artifacts:
@@ -186,7 +200,7 @@ deb-test:ubuntu:
 upload:
   stage: release
   <<: *on_tags
-  needs: [version, build:x86_64, build:aarch64, deb, deb-test:debian, deb-test:ubuntu]
+  needs: [version, audit, build:x86_64, build:aarch64, deb, deb-test:debian, deb-test:ubuntu]
   cache: []
   script:
     - sh ci/checksums.sh dist

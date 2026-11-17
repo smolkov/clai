@@ -40,6 +40,10 @@ cargo test
 `ci/check.sh` (format check and `clippy`) and `ci/test.sh` (tests, also of
 the `ci/` scripts) run the same as the pipelines do.
 
+When `Cargo.lock` or `deny.toml` changes, also run `ci/audit.sh` (known
+advisories of the dependencies, licences, sources; needs `cargo-deny`). A
+finding is handled as `spec/security.md`, "Dependency advisories", says.
+
 ## Commits
 
 - Commit or push only when asked.

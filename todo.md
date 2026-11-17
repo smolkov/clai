@@ -419,3 +419,14 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [ ] A `ci/check.sh` check that plain output goes through
       `text::safe::terminal` (RFC 0035 testing; left out, see the RFC).
 - [ ] Sandbox for language servers (out of RFC 0035).
+
+## Dependency advisories (RFC 0037)
+
+- [x] `spec/security.md`: the supply chain and how an advisory is handled.
+- [x] `ci/audit.sh` with review dates; `AGENTS.md`.
+- [x] Audit on every push, daily, and as a release gate (GitHub, GitLab).
+- [x] Release binaries built with `cargo auditable`.
+- [ ] Set the GitLab pipeline schedule to daily (project settings).
+- [ ] Once, on a fork: a tag with an open advisory stops before `build`;
+      a release binary passes `cargo audit bin`.
+- [ ] Review `RUSTSEC-2025-0141` (bincode via syntect) by 2027-02-15.

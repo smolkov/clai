@@ -7,6 +7,12 @@ notes are taken from that section by `ci/notes.sh`.
 
 ## Unreleased
 
+- Dependency advisories (RFC 0037): the RustSec audit runs on every push,
+  daily, and before every release, which now waits for it; `ci/audit.sh`
+  runs it locally and fails on ignored advisories past their review date.
+  Release binaries carry their dependency list, so `cargo audit bin` can
+  check an installed `codeagent`.
+
 - Security (RFC 0035), from a second review; the threat model is
   `spec/security.md`:
   - Plain output (`run`, `chat`) removes escape sequences from model and

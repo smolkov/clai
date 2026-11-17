@@ -1,8 +1,9 @@
 # Security
 
 What `codeagent` protects, from whom, and how. One place for the threat
-model, so that a new feature can be checked against it. Decided in RFC 0010
-and RFC 0035; RFC 0030 (secrets) and RFC 0023 (skills) add guards.
+model, so that a new feature can be checked against it. Decided in RFC 0010,
+RFC 0035 and RFC 0037 (dependencies); RFC 0030 (secrets) and RFC 0023
+(skills) add guards.
 
 ## Assets
 
@@ -13,6 +14,7 @@ and RFC 0035; RFC 0030 (secrets) and RFC 0023 (skills) add guards.
 | The user's code and the conversation | May be confidential; reach the provider by design, nobody else. |
 | The workspace and the user's tools | `codeagent` must not leave the repository, git, the shell or the editor in a state that runs code later without the user's consent. |
 | The user's terminal and clipboard | Escape sequences can write to the clipboard, change the title, or hide what is shown. |
+| What users install | Binaries, Debian packages and the crate must hold only the code and the dependency versions they claim. |
 | API spend | A looping model costs money. |
 
 ## Attackers
@@ -24,6 +26,7 @@ and RFC 0035; RFC 0030 (secrets) and RFC 0023 (skills) add guards.
 | A file the user is given | An exported session, a theme file, an image. |
 | The network | Between `codeagent` and the provider; a provider that redirects. |
 | Other local users | The same machine, other accounts. |
+| A dependency | A crate with a vulnerability, or one changed by a malicious update or a taken-over account; also the build tools of the pipelines. Its code runs at run time and at build time (`build.rs`, procedural macros). |
 
 Not in the model: the provider itself (it sees what it is sent, by design),
 root on the machine, and a user who allows everything (`allow
@@ -44,6 +47,9 @@ run_command(*)`, `--yes` in an untrusted repository).
 | Clients | Yes, same user | Socket directory mode `0700`, owned by the user, not a link; the server never listens on the network. |
 | A later web UI | Only through a bridge the user starts and authenticates | Same protocol and same answer checks as any client (see [`sessions.md`](sessions.md), "Clients"). |
 | Provider APIs | For their answers only | HTTPS (or a local address the user configured); keys only to the provider they belong to; redirects are not followed ([`providers.md`](providers.md), "Adapters"). |
+| Crates (at run time and at build time) | Partly: reviewed when added (an RFC for each new crate), not per update | `cargo deny` against the RustSec database on every push and pull request, daily, and before every release ([Dependency advisories](#dependency-advisories)); crates.io only; `--locked` everywhere. |
+| Toolchain and CI tools | Partly | Pinned versions: the toolchain in `rust-toolchain.toml`, cargo tools in `ci/common.sh` and the pipelines (`ci/version.sh` checks they agree), installed `--locked`; Zig by checksum; actions pinned by commit. |
+| Released files | — | Build attestations; the dependency list in each binary (`cargo auditable`), so `cargo audit bin` checks an installed `codeagent` against today's advisories. |
 
 Answers are checked by the server, not by the client: a client can only pick
 one of the choices of the open question, and an `always` rule must match the
@@ -58,7 +64,42 @@ call. A buggy client can therefore not allow more than the user chose.
 | Commands that run code by their nature (`make`, `npm run`, interpreters, `awk` with `system`, `sed` with `e`) do whatever the code says. | A rule that allows them allows that; the built-in asks cover only options whose purpose is to run another command. |
 | Joined short options (`tar -xIzstd`) and globs (`cat .e*`) are not matched by the built-in rules. | Only plain words are matched; the sandbox is the full answer. |
 | `--yes` answers every `ask`, the built-in ones too. | That is what `--yes` means; `deny` rules and the workspace boundary still hold. |
+| A crate update is not read line by line, and its build-time code runs on the build machine and in CI with their rights. | Vetting every update (`cargo vet`) is more than a one-maintainer project can do; the audit, `--locked` builds and the RFC for each new crate bound it. |
+| A vulnerability is only seen once RustSec publishes it. | The database is the source; the audit runs daily. |
 | An active skill's or agent's instructions are trusted as the user's. | The user turns them on; the boxes show where they come from. |
+
+## Dependency advisories
+
+`ci/audit.sh` runs `cargo deny --locked check advisories bans licenses
+sources` with the policy in `deny.toml`: every RustSec advisory fails,
+also unmaintained and yanked crates, unknown licences and sources other
+than crates.io. It runs:
+
+- on every push and pull request, and daily (GitHub; GitLab on its
+  schedule, set to daily, on tags and when `Cargo.lock` or `deny.toml`
+  change);
+- before every release: the release pipelines build and upload nothing
+  while it fails;
+- locally, before committing a change of `Cargo.lock` or `deny.toml`
+  (`AGENTS.md`).
+
+When it finds an advisory:
+
+1. If it affects `codeagent` (the vulnerable code is reachable, or that is
+   unclear), update the crate (`cargo update -p NAME`) and release a patch
+   version; for `high` and `critical`, within 7 days. The CHANGELOG entry
+   names the advisory.
+2. If there is no fix, or the code is not reachable, add an `ignore` entry
+   to `deny.toml` whose reason says why and ends in `review YYYY-MM-DD`, at
+   most 90 days ahead, and add a row to the findings below. `ci/audit.sh`
+   fails once the date has passed: then check the reason, and move the
+   date or remove the entry.
+3. An unmaintained crate gets a task in `todo.md` to replace it.
+
+Release binaries are built with `cargo auditable`: a section `.dep-v0` of
+a few kilobytes lists the crates and their versions. A user checks an
+installed binary with `cargo audit bin $(command -v codeagent)` (or Trivy,
+Grype), also against advisories published after the release.
 
 ## Checklist for a new feature
 
@@ -92,6 +133,13 @@ Reviews of the code against this model. Each finding names its place.
 | 0035 | 7 | low | Bidirectional and zero-width characters could hide part of a question. | closed: shown visibly |
 | 0035 | 8 | low | `api_key` in a file others can read gave no warning. | closed: warning |
 | 0035 | 9 | open | Commands were not limited once they ran. | addressed: opt-in sandbox (Linux) |
+| 0037 | 1 | medium | A release did not wait for the dependency audit. | closed: audit gates the release |
+| 0037 | 2 | medium | On GitHub, a push to `main` was audited only on the next Monday. | closed: every push, and daily |
+| 0037 | 3 | low | No local audit command. | closed: `ci/audit.sh`, `AGENTS.md` |
+| 0037 | 4 | low | Released binaries did not say which crate versions they hold. | closed: `cargo auditable` |
+| 0037 | 5 | low | Ignored advisories had no review date. | closed: dates enforced by `ci/audit.sh` |
+| 0037 | 6 | open | The spec named no dependency as an attacker. | closed: this file |
+| 0037 | — | accepted | `RUSTSEC-2025-0141`: bincode 1.3.3 unmaintained, via syntect; no known vulnerability. | ignored, review 2027-02-15 |
 
 Checked and sound in RFC 0035: the socket directory, the scratch directory,
 the project file's limits, language servers, image names in bundles, the

@@ -10,6 +10,7 @@ on:
   pull_request:
   schedule:
     - cron: "17 4 * * 1" # Mondays: newest stable, MSRV, audit
+    - cron: "23 5 * * *" # daily: the dependency audit only (RFC 0037)
   workflow_dispatch:
     inputs:
       live:
@@ -29,14 +30,17 @@ env:
 
 jobs:
   check:
+    if: github.event.schedule != '23 5 * * *'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - run: sh ci/check.sh
       - run: sh ci/version.sh toolchain
+      - run: sh ci/version.sh tools
 
   test:
+    if: github.event.schedule != '23 5 * * *'
     strategy:
       fail-fast: false
       matrix:
@@ -48,6 +52,7 @@ jobs:
       - run: sh ci/test.sh
 
   crate:
+    if: github.event.schedule != '23 5 * * *'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -55,6 +60,7 @@ jobs:
       - run: sh ci/crate.sh
 
   build:
+    if: github.event.schedule != '23 5 * * *'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -69,7 +75,7 @@ jobs:
           retention-days: 7
 
   stable:
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    if: github.event.schedule == '17 4 * * 1' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -77,7 +83,7 @@ jobs:
       - run: cargo +stable test --locked
 
   msrv:
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    if: github.event.schedule == '17 4 * * 1' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -87,15 +93,14 @@ jobs:
           rustup toolchain install "$msrv" --profile minimal
           cargo "+$msrv" check --locked --all-targets
 
+  # Every push, pull request and schedule (daily), so a new advisory or a
+  # changed Cargo.lock is seen within a day (RFC 0037).
   audit:
-    if: >-
-      github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: cargo install --locked cargo-deny@0.20.2
-      - run: cargo deny --locked check advisories bans licenses sources
+      - run: sh ci/audit.sh
 
   live:
     if: github.event_name == 'workflow_dispatch' && inputs.live

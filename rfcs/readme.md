@@ -158,3 +158,4 @@ Sections that do not apply may be left out.
 | [0034](0034-images-in-the-input.md) | Images in the input | done |
 | [0035](0035-security-review-two.md) | Second security review: threat model, terminal output, imports, child environment | done |
 | [0036](0036-agents.md) | Agents | draft |
+| [0037](0037-dependency-advisories.md) | Dependency advisories | done |

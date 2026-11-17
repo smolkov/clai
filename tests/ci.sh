@@ -136,6 +136,37 @@ skip${tab}1${tab}no${tab}3${tab}1200${tab}900${tab}30" bench skip
 refuse "bench of an unknown task" "no task nope" bench nope
 refuse "bench with a bad run count" "--runs must be a number" bench --runs 0
 
+# Review dates of ignored advisories (RFC 0037).
+deny() {
+    printf '[graph]\ntargets = []\n\n[advisories]\nignore = [\n  %s\n]\n\n[bans]\n' "$1" >"$tmp/deny.toml"
+}
+deny '{ id = "RUSTSEC-2025-0001", reason = "not reachable; review 2027-01-31" },'
+expect "a review date ahead" "" env CODEAGENT_TODAY=2026-11-17 sh ci/audit.sh dates "$tmp/deny.toml"
+refuse "a review date passed" "RUSTSEC-2025-0001: review date 2027-01-31 has passed" \
+    env CODEAGENT_TODAY=2027-02-01 sh ci/audit.sh dates "$tmp/deny.toml"
+deny '{ id = "RUSTSEC-2025-0002", reason = "not reachable" },'
+refuse "an ignore without a review date" "RUSTSEC-2025-0002: the reason has no review date" \
+    sh ci/audit.sh dates "$tmp/deny.toml"
+expect "the repository's review dates" "" sh ci/audit.sh dates
+
+# Without cargo-deny, the audit says how to install it.
+mkdir -p "$tmp/bin"
+for tool in dirname awk date cat; do
+    ln -sf "$(command -v "$tool")" "$tmp/bin/$tool"
+done
+refuse "audit without cargo-deny" "cargo install --locked cargo-deny@" \
+    env PATH="$tmp/bin" "$(command -v sh)" ci/audit.sh
+
+# The pipelines install the tools at the versions of ci/common.sh.
+expect "the repository's tool versions" "" sh ci/version.sh tools
+sed 's/^\( *CARGO_DENY_VERSION: \)".*"/\1"0.0.1"/' .gitlab-ci.yml >"$tmp/gitlab.yml"
+refuse "GitLab with another cargo-deny" "ci/common.sh pins cargo-deny" \
+    env CODEAGENT_GITLAB_CI="$tmp/gitlab.yml" sh ci/version.sh tools
+mkdir -p "$tmp/workflows"
+sed 's/cargo-deny@[0-9.]*/cargo-deny@0.0.1/' .github/workflows/ci.yml >"$tmp/workflows/ci.yml"
+refuse "a workflow with another cargo-deny" "uses cargo-deny@0.0.1" \
+    env CODEAGENT_WORKFLOWS="$tmp/workflows" sh ci/version.sh tools
+
 if [ "$failures" -gt 0 ]; then
     echo "$failures ci script tests failed" >&2
     exit 1

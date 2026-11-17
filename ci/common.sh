@@ -66,3 +66,8 @@ sha256() {
         shasum -a 256 "$@"
     fi
 }
+
+# Pinned versions of the cargo tools the pipelines install (RFC 0037);
+# `ci/version.sh tools` checks that the pipelines use the same.
+CARGO_DENY_VERSION=0.20.2
+CARGO_AUDITABLE_VERSION=0.7.7
