@@ -430,6 +430,7 @@ model, not an error of the turn.
 | Provider error during the stream | As for cancellation while streaming: the text so far is kept, the tool calls of the broken answer are left out; then `error` and `failed`. Not retried. **(assumption, see `providers.md` open question 3)** |
 | `ContextTooLong` | `error` with `the conversation is too long for <model> (<window> tokens); start a new session`, and `failed`. Until `context.md` adds truncation. |
 | `Auth` | `error` with the provider's message, and `failed`. The next turn tries again. |
+| The model refuses images | An `InvalidRequest` or `Unsupported` error whose message contains `image`, for a request that carried images (RFC 0034). The error gets a second line, `<provider>/<model> refused the image; this session sends images to it as notes from now on. If the model does not read images, set `images = false` in [providers.<provider>.models.<model>].`, and `failed`. From then on the session sends this model the text note in place of each image (see [`providers.md`](providers.md), "Message"), so the image in the history does not make every later turn fail; a new message with images gets the notice `<model> refused images earlier in this session; they are sent as notes`. Kept in memory only: a resumed session, or another model, sends images again. |
 | A tool task that panics or fails to join | The call gets the error result `the tool failed: …`; the turn goes on. |
 
 After a failed turn the session is `idle` again. The user message and

@@ -278,6 +278,11 @@ first image of a session shows a one-time note in the conversation:
 
 ## Changes while building
 
+- After the build: a model configured with `images = true` that refuses
+  images (Mistral's `zai-glm-5-3`: `HTTP 400 … Image input is not enabled
+  for this model`) made every later turn fail, because the image stays in
+  the history. The loop now names the `images` key in the error and sends
+  that model notes in place of images for the rest of the session.
 - Per message at most 11 MiB of images, not 12: in base64 12 MiB is the
   protocol's whole 16 MiB.
 - No token estimate for images: the context gauge shows the tokens the

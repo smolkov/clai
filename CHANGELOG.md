@@ -12,6 +12,9 @@ notes are taken from that section by `ci/notes.sh`.
   and `/image PATH` add one too; text goes around them. Models with the new
   model key `images` (default on for `anthropic`) see them. Sessions keep
   the images in `images/`; export and import carry them. Protocol version 10.
+  A model that refuses an image (`HTTP 400 … Image input is not enabled`)
+  no longer breaks the session: the error says to set `images = false`,
+  and later turns send the image as a text note.
 
 - Ten more bundled themes, each with matching syntax colours (RFC 0031):
   `emacs`, `flexoki-dark`, `flexoki-light`, `material-oceanic`, `monokai`,

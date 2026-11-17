@@ -882,7 +882,7 @@ or shown in the TUI.
 | `context_window`    | yes      | Maximum context size in tokens; used for the header gauge and history truncation. |
 | `max_output_tokens` | no       | Maximum tokens per answer. Default: provider default. |
 | `temperature`       | no       | Sampling temperature. Default: provider default. |
-| `images`            | no       | `true` or `false`: the model reads images in messages (RFC 0034, [`tui.md`](tui.md), "Images"). Default `true` for `anthropic`, `false` for `openai-compatible`, where many local models read only text. A message with images to a model without is refused. |
+| `images`            | no       | `true` or `false`: the model reads images in messages (RFC 0034, [`tui.md`](tui.md), "Images"). Default `true` for `anthropic`, `false` for `openai-compatible`, where many local models read only text. A message with images to a model without is refused. A model set to `true` that refuses an image gets text notes instead for the rest of the session ([`agent-loop.md`](agent-loop.md), "Errors"). |
 
 ### Model references
 

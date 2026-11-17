@@ -311,7 +311,7 @@ enum Wake {
     Msg(Option<Msg>),
     Ask(Option<AskMsg>),
     Event(SessionEvent),
-    TurnDone(Result<Agent, JoinError>),
+    TurnDone(Box<Result<Agent, JoinError>>),
 }
 
 enum Flow {
@@ -410,7 +410,7 @@ impl Actor {
                 msg = self.rx.recv() => Wake::Msg(msg),
                 msg = self.ask_rx.recv() => Wake::Ask(msg),
                 Some(event) = self.events.recv() => Wake::Event(event),
-                done = join(&mut self.turn) => Wake::TurnDone(done),
+                done = join(&mut self.turn) => Wake::TurnDone(Box::new(done)),
             };
             let flow = match wake {
                 Wake::Msg(Some(msg)) => self.handle(msg).await,
@@ -430,7 +430,7 @@ impl Actor {
                 }
                 Wake::TurnDone(done) => {
                     self.turn = None;
-                    self.turn_done(done)
+                    self.turn_done(*done)
                 }
             };
             if let Flow::Stop = flow {

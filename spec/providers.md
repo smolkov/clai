@@ -59,7 +59,9 @@ A message has a `role`, `user` or `assistant`, and a list of blocks.
   without it, or when the bytes are missing (the file went), an adapter
   sends the text `[image omitted: this model does not read images]` or
   `[image omitted: the file of this PNG image is missing]` instead, so the
-  history stays valid after a change of model.
+  history stays valid after a change of model. The agent loop also sends
+  the request without `images` after the model refused an image in the
+  session (see [`agent-loop.md`](agent-loop.md), "Errors").
 
 ### ToolSpec
 

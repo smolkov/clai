@@ -15,6 +15,7 @@ mod stream;
 #[cfg(test)]
 mod tests;
 
+use std::collections::BTreeSet;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -214,6 +215,9 @@ pub struct Agent {
     /// The last valid `report` call.
     report: Option<Reported>,
     secrets: Option<Arc<Redactor>>,
+    /// Models (`provider/model`) that refused an image in this session; they
+    /// get the text note in place of images from then on.
+    refused_images: BTreeSet<String>,
 }
 
 /// Requests and tool calls: in the current budget, and in the whole turn.
@@ -298,6 +302,7 @@ impl Agent {
             offers_report: false,
             report: None,
             secrets: setup.secrets,
+            refused_images: BTreeSet::new(),
         }
     }
 
@@ -477,16 +482,17 @@ impl Agent {
             text: self.hide_in_message(text, events),
             images,
         };
-        let had_images = self
-            .history
-            .messages()
-            .iter()
-            .any(|m| m.content.iter().any(|b| matches!(b, Block::Image(_))));
+        let had_images = has_images(self.history.messages());
         events.emit(SessionEvent::UserMessage {
             text: input.text.clone(),
             images: input.images.clone(),
         });
-        if !input.images.is_empty() && !had_images {
+        let (_, _, model_name) = self.model.get_named();
+        if !input.images.is_empty() && self.refused_images.contains(&model_name) {
+            events.notice(format!(
+                "{model_name} refused images earlier in this session; they are sent as notes"
+            ));
+        } else if !input.images.is_empty() && !had_images {
             // Secret hiding works on text only; said once per session.
             events.notice("images are sent as they are; secrets in them are not hidden");
         }
@@ -538,14 +544,17 @@ impl Agent {
             budget.total_requests += 1;
 
             let (provider, model, model_name) = self.model.get_named();
+            let images = model.images && !self.refused_images.contains(&model_name);
+            let messages = self.history.for_request(&self.history_settings);
+            let sent_images = images && has_images(&messages);
             let request = Request {
                 model: model.id.clone(),
                 system: system.clone(),
-                messages: self.history.for_request(&self.history_settings),
+                messages,
                 tools: tools.clone(),
                 max_output_tokens: model.max_output_tokens,
                 temperature: model.temperature,
-                images: model.images,
+                images,
             };
             let stream = provider.stream(request, cancel.child_token());
             let answer = stream::collect(stream, events, cancel).await;
@@ -559,7 +568,7 @@ impl Agent {
                     cache_read_tokens: cache_read,
                     cache_write_tokens: cache_write,
                     context_tokens: input + output,
-                    model: model_name,
+                    model: model_name.clone(),
                 });
             }
             match &answer.end {
@@ -570,9 +579,12 @@ impl Agent {
                 }
                 StreamEnd::Failed(e) => {
                     self.push(Role::Assistant, answer.text_only());
-                    events.emit(SessionEvent::Error {
-                        message: error_message(&model, e),
-                    });
+                    let mut message = error_message(&model, e);
+                    if sent_images && refuses_images(e) {
+                        message.push_str(&refused_images_hint(&model_name));
+                        self.refused_images.insert(model_name);
+                    }
+                    events.emit(SessionEvent::Error { message });
                     return EndReason::Failed;
                 }
             }
@@ -1238,6 +1250,32 @@ impl Agent {
             kind,
         }
     }
+}
+
+/// Whether any of `messages` holds an image.
+fn has_images(messages: &[crate::provider::Message]) -> bool {
+    messages
+        .iter()
+        .any(|m| m.content.iter().any(|b| matches!(b, Block::Image(_))))
+}
+
+/// Whether `e` is the API refusing the images of a request: a rejected
+/// request whose message speaks of images (RFC 0034).
+fn refuses_images(e: &ProviderError) -> bool {
+    matches!(e.kind, ErrorKind::InvalidRequest | ErrorKind::Unsupported)
+        && e.message.to_lowercase().contains("image")
+}
+
+/// What follows the error of a model that refused an image.
+fn refused_images_hint(model_name: &str) -> String {
+    let table = match model_name.split_once('/') {
+        Some((provider, model)) => format!("[providers.{provider}.models.{model}]"),
+        None => "its model table".to_owned(),
+    };
+    format!(
+        "\n{model_name} refused the image; this session sends images to it as notes from now \
+         on. If the model does not read images, set `images = false` in {table}."
+    )
 }
 
 fn error_message(model: &Model, e: &ProviderError) -> String {

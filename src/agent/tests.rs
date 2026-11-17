@@ -215,11 +215,18 @@ impl Fixture {
         asker: &dyn Asker,
         cancel: CancellationToken,
     ) -> (TurnEnd, Vec<SessionEvent>) {
+        self.turn_input(UserInput::from(message), asker, cancel)
+            .await
+    }
+
+    async fn turn_input(
+        &mut self,
+        input: UserInput,
+        asker: &dyn Asker,
+        cancel: CancellationToken,
+    ) -> (TurnEnd, Vec<SessionEvent>) {
         let (sink, mut rx) = EventSink::channel();
-        let end = self
-            .agent
-            .run_turn(UserInput::from(message), &sink, asker, cancel)
-            .await;
+        let end = self.agent.run_turn(input, &sink, asker, cancel).await;
         let mut events = Vec::new();
         while let Ok(event) = rx.try_recv() {
             events.push(event);
@@ -1738,4 +1745,120 @@ async fn an_unknown_placeholder_in_old_text_fails() {
         r[0].0.contains("whose value is not known in this session") && r[0].1,
         "{r:?}"
     );
+}
+
+mod refused_images {
+    use super::*;
+    use crate::image::{Image, Numbered, fixtures};
+
+    fn with_image(text: &str) -> UserInput {
+        UserInput {
+            text: format!("{text} [Image #1]"),
+            images: vec![Numbered {
+                number: 1,
+                image: Image::from_bytes(fixtures::png(4, 3)).unwrap(),
+            }],
+        }
+    }
+
+    fn refusal() -> Step {
+        Step::Events(vec![Err(ProviderError::new(
+            ErrorKind::InvalidRequest,
+            "HTTP 400: {\"object\":\"error\",\"message\":\"Image input is not enabled \
+             for this model\",\"code\":\"3051\"}",
+        ))])
+    }
+
+    fn errors(events: &[SessionEvent]) -> Vec<String> {
+        events
+            .iter()
+            .filter_map(|e| match e {
+                SessionEvent::Error { message } => Some(message.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn a_refused_image_becomes_a_note_from_then_on() {
+        let mut f = Fixture::new(vec![refusal(), say("ok"), say("ok")]);
+        let (end, events) = f
+            .turn_input(
+                with_image("look"),
+                &no_questions(),
+                CancellationToken::new(),
+            )
+            .await;
+        assert_eq!(end.reason, EndReason::Failed);
+        let errors = errors(&events);
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].starts_with("HTTP 400: "), "{}", errors[0]);
+        assert!(
+            errors[0].ends_with(
+                "\ntest/m refused the image; this session sends images to it as notes from \
+                 now on. If the model does not read images, set `images = false` in \
+                 [providers.test.models.m]."
+            ),
+            "{}",
+            errors[0]
+        );
+        assert!(f.requests()[0].images);
+
+        // The image stays in the history, but the next turn works.
+        let (end, _) = f.turn("again", &no_questions()).await;
+        assert_eq!(end.reason, EndReason::Done);
+        assert!(!f.requests()[1].images);
+
+        // A new image is said to go as a note.
+        let (end, events) = f
+            .turn_input(
+                with_image("this one"),
+                &no_questions(),
+                CancellationToken::new(),
+            )
+            .await;
+        assert_eq!(end.reason, EndReason::Done);
+        assert!(!f.requests()[2].images);
+        assert!(notices(&events).contains(
+            &"test/m refused images earlier in this session; they are sent as notes".into()
+        ));
+    }
+
+    #[tokio::test]
+    async fn another_rejection_keeps_the_images() {
+        let other = ProviderError::new(ErrorKind::InvalidRequest, "HTTP 400: bad temperature");
+        let mut f = Fixture::new(vec![Step::Events(vec![Err(other)]), say("ok")]);
+        let (_, events) = f
+            .turn_input(
+                with_image("look"),
+                &no_questions(),
+                CancellationToken::new(),
+            )
+            .await;
+        assert_eq!(
+            errors(&events),
+            vec!["HTTP 400: bad temperature".to_owned()]
+        );
+        f.turn("again", &no_questions()).await;
+        assert!(f.requests()[1].images);
+    }
+
+    #[tokio::test]
+    async fn a_rejection_without_images_gets_no_hint() {
+        let mut f = Fixture::new(vec![refusal(), say("ok")]);
+        let (_, events) = f.turn("hi", &no_questions()).await;
+        assert!(!errors(&events)[0].contains("refused the image"));
+        let (_, events) = f
+            .turn_input(
+                with_image("look"),
+                &no_questions(),
+                CancellationToken::new(),
+            )
+            .await;
+        assert!(f.requests()[1].images);
+        assert!(
+            notices(&events)
+                .contains(&"images are sent as they are; secrets in them are not hidden".into())
+        );
+    }
 }
