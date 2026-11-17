@@ -1655,7 +1655,7 @@ context_window = 1048576
 
 #[test]
 fn run_command_and_sandbox() {
-    let config = ok(&with(
+    let text = with(
         r#"
 [run_command]
 keep_env = ["OPENAI_API_KEY"]
@@ -1665,12 +1665,30 @@ enabled = true
 network = false
 hide = ["/srv/kube", "/opt/secrets"]
 "#,
+    );
+    if cfg!(target_os = "linux") {
+        let config = ok(&text);
+        assert_eq!(config.keep_env, ["OPENAI_API_KEY"]);
+        assert!(config.sandbox.enabled);
+        assert!(!config.sandbox.network);
+        assert_eq!(config.sandbox.hide.len(), 2);
+        assert_eq!(config.sandbox.hide[1], Path::new("/opt/secrets"));
+    } else {
+        // The sandbox needs bwrap: elsewhere turning it on is an error.
+        let e = errs(&text, None);
+        assert_eq!(e.len(), 1, "{e:?}");
+        assert!(
+            e[0].contains("sandbox.enabled: the sandbox needs Linux (bwrap)"),
+            "{e:?}"
+        );
+    }
+    // Without `enabled`, the other keys load everywhere.
+    let config = ok(&with(
+        "[run_command]\nkeep_env = [\"OPENAI_API_KEY\"]\n\n[sandbox]\nnetwork = false\n",
     ));
     assert_eq!(config.keep_env, ["OPENAI_API_KEY"]);
-    assert!(config.sandbox.enabled);
+    assert!(!config.sandbox.enabled);
     assert!(!config.sandbox.network);
-    assert_eq!(config.sandbox.hide.len(), 2);
-    assert_eq!(config.sandbox.hide[1], Path::new("/opt/secrets"));
 
     let e = errs(&with("[run_command]\nkeep_env = [\"NOT-A-NAME\"]\n"), None);
     assert!(
