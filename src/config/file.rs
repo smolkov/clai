@@ -109,6 +109,8 @@ pub struct ModelFile {
     pub context_window: Option<Spanned<i64>>,
     pub max_output_tokens: Option<Spanned<i64>>,
     pub temperature: Option<Spanned<f64>>,
+    /// Whether the model reads images (RFC 0034).
+    pub images: Option<bool>,
 }
 
 #[derive(Debug, Default, Deserialize)]

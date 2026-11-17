@@ -18,6 +18,7 @@ o                open a tool call in the details view (conversation)
 y / Y            copy the entry / its code block (conversation)
 Ctrl-Y           copy the last answer
 Ctrl-T           show or hide the tool calls of the last turn
+Ctrl-V / Alt-V   paste an image (a screenshot) or text from the clipboard
 drag             select and copy; click a tool call to expand it;
                  Shift-drag uses the terminal's own selection
 /                list the commands; type to search, Esc closes the list

@@ -146,7 +146,7 @@ pub struct Collector {
 impl Collector {
     pub fn event(&mut self, event: &SessionEvent) {
         match event {
-            SessionEvent::UserMessage { text } => {
+            SessionEvent::UserMessage { text, .. } => {
                 self.secrets_hidden += crate::secrets::count(text);
             }
             SessionEvent::ToolCall(call) => {

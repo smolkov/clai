@@ -9,6 +9,7 @@ pub mod complete;
 pub mod config;
 pub mod error;
 pub mod files;
+pub mod image;
 pub mod log;
 pub mod lsp;
 pub mod output;

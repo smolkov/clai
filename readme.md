@@ -121,6 +121,7 @@ result.
 | `Ctrl-N` / `Ctrl-P` | Attach to the next / previous session. |
 | `Tab` | Switch to the conversation: `Up` / `Down` select, `Enter` expands a tool call, `o` opens it in a view with all of it (`/` search, `y` copy, `w` wrap), `y` copies the entry, `Y` its code block, `?` shows help. |
 | `Ctrl-Y` / `Ctrl-T` | Copy the last answer / show or hide the tool calls of the last turn. |
+| `Ctrl-V` / `Alt-V` | Paste a screenshot from the clipboard as `[Image #1]` (or its text); `/image PATH` and dropped image files work too. Models read them when their table has `images = true` (default for `anthropic`). |
 | Mouse | Drag to select and copy (wrapped lines joined, markers left out), double click a word, triple click a line; click a tool call for a short look, double click it for the whole result. `Shift`-drag uses the terminal's selection. |
 
 A tool call that needs permission opens a prompt: `y` yes, `a` always (`Tab`

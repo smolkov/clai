@@ -339,6 +339,7 @@ fn hidden_secrets_are_counted() {
     let mut c = Collector::default();
     c.event(&SessionEvent::UserMessage {
         text: "key [secret: env K #0a0a]".into(),
+        images: Vec::new(),
     });
     c.event(&ended(
         "1",

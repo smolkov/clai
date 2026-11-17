@@ -325,6 +325,7 @@ also queued messages; the values stay in the server's memory only.
   |------|---------|---------|
   | `session.json` | Format version, `codeagent` version, name, workspace, `provider/model`, created and updated time, number of turns, queued messages, tokens used (`usage`). | Replaced atomically (temporary file, then rename) on every change. |
   | `history.jsonl` | What the model sees: each message (text, tool calls, tool results), full tool outputs that were cut for the model, and allow rules added by `always` answers (as text). | Appended as the agent adds them. |
+  | `images/` | The images of the messages (RFC 0034), one file `<sha256>.<ext>` per image, mode `0600`; `history.jsonl`, `events.jsonl` and the queue name them by hash. A file that went missing makes the image a note for the model. | Written before the line that names it, once per hash. |
   | `events.jsonl` | What clients see: the event log. Streamed text is kept as whole blocks (`text_done`), a command's live output only as the call's final result; `ended` is not kept. Each line has `at`, the time it was logged in milliseconds since 1970. | Appended as events happen. |
 
   Token totals are written after each model request. On resume they are summed
@@ -399,8 +400,10 @@ also queued messages; the values stay in the server's memory only.
   change. A session that could not be created on disk lives in memory only
   and says so.
 - **Export and import:** `codeagent export NAME FILE` writes a running or saved
-  session to one JSON file (mode `0600`); `codeagent import FILE` adds it as a
-  saved session, under its name made unique or a given one. Use them to
+  session to one JSON file (mode `0600`), with its images in base64;
+  `codeagent import FILE` adds it as a saved session, under its name made
+  unique or a given one. Image names in the file must be `<sha256>.<ext>`
+  and match their bytes. Use them to
   archive a session or move it to another machine.
 
 ## Open questions

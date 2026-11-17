@@ -685,7 +685,7 @@ activity          = "playful"   # playful | plain | off: the line while the sess
 | `tool_output_lines` | Maximum lines of a tool's output shown in an expanded entry or a preview before it is cut. The full text is shown with `Enter` on the call, and in the details view (`o`). |
 | `tool_preview` | What finished tool calls show below their summary ([`tui.md`](tui.md), "Conversation entries"): `changes` the diff of edits and writes, the last lines of commands and the error of failed calls; `all` every call expanded; `none` one line each. Calls waiting for permission are always expanded. |
 | `expand_tool_calls` | Deprecated: `true` reads as `tool_preview = "all"`; `tool_preview` wins when both are set. |
-| `clipboard` | How copied text reaches the clipboard ([`tui.md`](tui.md), "Copy"): `auto` the terminal's OSC 52 sequence and, when the session is local, `wl-copy`, `xclip`, `xsel` or `pbcopy`; `osc52` only the sequence; `command` only the command; `off` nothing. |
+| `clipboard` | How copied text reaches the clipboard ([`tui.md`](tui.md), "Copy"): `auto` the terminal's OSC 52 sequence and, when the session is local, `wl-copy`, `xclip`, `xsel` or `pbcopy`; `osc52` only the sequence; `command` only the command; `off` nothing. Also whether `Ctrl-V` may read images from it ([`tui.md`](tui.md), "Images"): `auto` when local, `command` always, `osc52` and `off` never. |
 | `syntax_highlight` | Colour code by its language ([`tui.md`](tui.md), "Syntax highlighting"); `false` for slow terminals or plain output. |
 | `timestamps` | Prefix entries with `HH:MM`. |
 | `scroll_lines` | Mouse-wheel scroll step. |
@@ -882,6 +882,7 @@ or shown in the TUI.
 | `context_window`    | yes      | Maximum context size in tokens; used for the header gauge and history truncation. |
 | `max_output_tokens` | no       | Maximum tokens per answer. Default: provider default. |
 | `temperature`       | no       | Sampling temperature. Default: provider default. |
+| `images`            | no       | `true` or `false`: the model reads images in messages (RFC 0034, [`tui.md`](tui.md), "Images"). Default `true` for `anthropic`, `false` for `openai-compatible`, where many local models read only text. A message with images to a model without is refused. |
 
 ### Model references
 

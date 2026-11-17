@@ -256,7 +256,7 @@ impl<'a> Calls<'a> {
                                 && unchanged_target(content).is_none();
                         }
                     }
-                    Block::Text { .. } => {}
+                    Block::Text { .. } | Block::Image(_) => {}
                 }
             }
             if has_calls {

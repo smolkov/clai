@@ -8,7 +8,7 @@ use super::error::{ErrorKind, ProviderError};
 use super::http::{StatusError, status_kind, status_message};
 use super::remote::{Codec, Decode};
 use super::sse::SseEvent;
-use super::types::{Block, Event, Request, Role, StopReason, parse_arguments};
+use super::types::{Block, Event, Request, Role, StopReason, image_note, parse_arguments};
 use crate::config::ApiKey;
 
 const VERSION: &str = "2023-06-01";
@@ -123,7 +123,11 @@ pub(crate) fn encode(request: &Request, cache: bool) -> Value {
     // The API wants user and assistant to alternate: merge neighbours.
     let mut messages: Vec<(Role, Vec<Value>)> = Vec::new();
     for message in &request.messages {
-        let blocks: Vec<Value> = message.content.iter().map(encode_block).collect();
+        let blocks: Vec<Value> = message
+            .content
+            .iter()
+            .map(|b| encode_block(b, request.images))
+            .collect();
         if blocks.is_empty() {
             continue;
         }
@@ -161,8 +165,17 @@ pub(crate) fn encode(request: &Request, cache: bool) -> Value {
     Value::Object(body)
 }
 
-fn encode_block(block: &Block) -> Value {
+fn encode_block(block: &Block, images: bool) -> Value {
     match block {
+        Block::Image(image) if images && image.loaded() => json!({
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": image.media_type.media_type(),
+                "data": image.base64(),
+            },
+        }),
+        Block::Image(image) => json!({"type": "text", "text": image_note(image, images)}),
         Block::Text { text } => json!({"type": "text", "text": text}),
         Block::ToolCall {
             id,
@@ -600,6 +613,7 @@ mod tests {
             }],
             max_output_tokens: None,
             temperature: Some(0.2),
+            images: true,
         };
         assert_eq!(
             encode(&request, false),
@@ -657,6 +671,7 @@ mod tests {
             tools: vec![tool("read_file"), tool("list_files")],
             max_output_tokens: None,
             temperature: None,
+            images: true,
         };
         let body = encode(&request, true);
         let mark = json!({"type": "ephemeral"});
@@ -717,6 +732,45 @@ mod tests {
         assert_eq!(
             err(502, "<html>bad gateway</html>").message,
             "HTTP 502: <html>bad gateway</html>"
+        );
+    }
+
+    #[test]
+    fn images() {
+        let image = crate::image::Image::from_bytes(crate::image::fixtures::png(2, 2)).unwrap();
+        let mut missing = image.clone();
+        missing.data = std::sync::Arc::from(Vec::new());
+        let request = |images| Request {
+            model: "m".into(),
+            system: String::new(),
+            messages: vec![Message {
+                role: Role::User,
+                content: vec![
+                    Block::Text {
+                        text: "look [Image #1]".into(),
+                    },
+                    Block::Image(image.clone()),
+                    Block::Image(missing.clone()),
+                ],
+            }],
+            tools: Vec::new(),
+            max_output_tokens: None,
+            temperature: None,
+            images,
+        };
+        let body = encode(&request(true), false);
+        assert_eq!(
+            body["messages"][0]["content"][1],
+            json!({"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": image.base64()}})
+        );
+        assert_eq!(
+            body["messages"][0]["content"][2]["text"],
+            "[image omitted: the file of this PNG image is missing]"
+        );
+        let body = encode(&request(false), false);
+        assert_eq!(
+            body["messages"][0]["content"][1],
+            json!({"type": "text", "text": "[image omitted: this model does not read images]"})
         );
     }
 }

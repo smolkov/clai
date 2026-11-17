@@ -2,6 +2,7 @@
 //! per session with `session.json` (replaced atomically), and
 //! `history.jsonl` and `events.jsonl` (appended, one JSON value per line).
 
+use std::collections::BTreeMap;
 use std::fs::{self, DirBuilder, OpenOptions};
 use std::io::{self, Write};
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
@@ -13,9 +14,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::agent::{
     CallResult, CallState, Closed, EndReason, INTERRUPTED, Question, Record, SessionEvent, State,
-    ToolCallEvent, TurnEnd, now_ms,
+    ToolCallEvent, TurnEnd, UserInput, now_ms,
 };
+use crate::image::{Image, Kind};
 use crate::protocol::{SessionInfo, Stats, TokenTotals};
+use crate::provider::Block;
 
 /// The version of the files; a later `codeagent` reads older ones, never newer.
 pub const FORMAT: u32 = 1;
@@ -23,6 +26,8 @@ pub const FORMAT: u32 = 1;
 const META: &str = "session.json";
 const HISTORY: &str = "history.jsonl";
 const EVENTS: &str = "events.jsonl";
+/// The images of the session's messages, one file per hash (RFC 0034).
+const IMAGES: &str = "images";
 
 /// What `session.json` holds: everything but the history and the log.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -41,9 +46,9 @@ pub struct Meta {
     pub updated: u64,
     /// Turns started so far.
     pub turns: u64,
-    /// Messages waiting for a turn.
+    /// Messages waiting for a turn; text alone from an older `codeagent`.
     #[serde(default)]
-    pub queued: Vec<String>,
+    pub queued: Vec<UserInput>,
     /// Tokens used so far. A file of an older `codeagent` has none; the log is
     /// summed when the session resumes.
     #[serde(default)]
@@ -131,6 +136,9 @@ pub struct Bundle {
     pub meta: Meta,
     pub history: Vec<Record>,
     pub events: Vec<Stamped>,
+    /// The image files, by name, in base64 (RFC 0034).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub images: BTreeMap<String, String>,
 }
 
 /// A loaded session.
@@ -217,8 +225,87 @@ impl Store {
         Ok(meta)
     }
 
+    /// Appends a record; the images of a message are saved first.
     pub fn append_record(&self, record: &Record) -> Result<(), String> {
+        if let Record::Message(message) = record {
+            for block in &message.content {
+                if let Block::Image(image) = block {
+                    self.save_image(image)?;
+                }
+            }
+        }
         append(&self.dir.join(HISTORY), record)
+    }
+
+    /// Writes an image to `images/<hash>.<ext>`, unless it is there or its
+    /// bytes are not loaded.
+    pub fn save_image(&self, image: &Image) -> Result<(), String> {
+        if !image.loaded() {
+            return Ok(());
+        }
+        let dir = self.dir.join(IMAGES);
+        let path = dir.join(image.file_name());
+        if path.is_file() {
+            return Ok(());
+        }
+        write_private(&dir, &path, &image.data)
+    }
+
+    /// The bytes of a saved image, if its file is there and matches.
+    fn load_image(&self, image: &mut Image) {
+        if image.loaded() {
+            return;
+        }
+        let path = self.dir.join(IMAGES).join(image.file_name());
+        match fs::read(&path) {
+            Ok(bytes) => {
+                if !image.load(bytes) {
+                    tracing::warn!(file = %path.display(), "image does not match its name");
+                }
+            }
+            Err(e) => tracing::warn!(file = %path.display(), "image missing: {e}"),
+        }
+    }
+
+    /// Reads the bytes of every image of the history and the queue.
+    fn load_images(&self, history: &mut [Record], queued: &mut [UserInput]) {
+        for record in history {
+            if let Record::Message(message) = record {
+                for block in &mut message.content {
+                    if let Block::Image(image) = block {
+                        self.load_image(image);
+                    }
+                }
+            }
+        }
+        for input in queued {
+            for numbered in &mut input.images {
+                self.load_image(&mut numbered.image);
+            }
+        }
+    }
+
+    /// The image files, by name, in base64.
+    fn image_files(&self) -> Result<BTreeMap<String, String>, String> {
+        let dir = self.dir.join(IMAGES);
+        let entries = match fs::read_dir(&dir) {
+            Ok(entries) => entries,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(BTreeMap::new()),
+            Err(e) => return Err(io_err(&dir, &e)),
+        };
+        let mut files = BTreeMap::new();
+        for entry in entries.flatten() {
+            let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+                continue;
+            };
+            if !image_file_name(&name) {
+                continue;
+            }
+            let path = entry.path();
+            let bytes = fs::read(&path).map_err(|e| io_err(&path, &e))?;
+            files.insert(name, crate::image::base64(&bytes));
+        }
+        Ok(files)
     }
 
     /// Appends an event to the log with the time now, if it is one that
@@ -244,8 +331,9 @@ impl Store {
     /// last event, so that the time the server was away does not count as
     /// work.
     pub fn load(&self) -> Result<Loaded, String> {
-        let meta = self.read_meta()?;
-        let history: Vec<Record> = read_lines(&self.dir.join(HISTORY))?;
+        let mut meta = self.read_meta()?;
+        let mut history: Vec<Record> = read_lines(&self.dir.join(HISTORY))?;
+        self.load_images(&mut history, &mut meta.queued);
         let mut stamped: Vec<Stamped> = read_lines(&self.dir.join(EVENTS))?;
         let events: Vec<SessionEvent> = stamped.iter().map(|s| s.event.clone()).collect();
         let last = stamped.iter().filter_map(|s| s.at).max();
@@ -286,11 +374,21 @@ impl Store {
 
     /// The size of the session's files in bytes.
     pub fn size(&self) -> u64 {
-        [META, HISTORY, EVENTS]
+        let files: u64 = [META, HISTORY, EVENTS]
             .iter()
             .filter_map(|name| fs::metadata(self.dir.join(name)).ok())
             .map(|m| m.len())
-            .sum()
+            .sum();
+        let images: u64 = fs::read_dir(self.dir.join(IMAGES))
+            .map(|entries| {
+                entries
+                    .flatten()
+                    .filter_map(|e| e.metadata().ok())
+                    .map(|m| m.len())
+                    .sum()
+            })
+            .unwrap_or(0);
+        files + images
     }
 
     pub fn remove(&self) -> Result<(), String> {
@@ -308,12 +406,21 @@ impl Store {
             meta: self.read_meta()?,
             history: read_lines(&self.dir.join(HISTORY))?,
             events: read_lines(&self.dir.join(EVENTS))?,
+            images: self.image_files()?,
         })
     }
 
     /// Writes a bundle into this (new) directory, with `meta` in place of
     /// the bundle's.
     pub fn write_bundle(&self, bundle: &Bundle, meta: &Meta) -> Result<(), String> {
+        let dir = self.dir.join(IMAGES);
+        for (name, data) in &bundle.images {
+            // Only names of the form `<hash>.<ext>`, whose bytes match.
+            let bytes = crate::image::base64_decode(data)
+                .filter(|bytes| image_file_name(name) && matches_name(name, bytes))
+                .ok_or_else(|| format!("image {name}: broken in the file"))?;
+            write_private(&dir, &dir.join(name), &bytes)?;
+        }
         for record in &bundle.history {
             self.append_record(record)?;
         }
@@ -322,6 +429,46 @@ impl Store {
         }
         self.write_meta(meta)
     }
+}
+
+/// Whether `name` is the name of an image file: 64 hex digits and a known
+/// extension. Names from a bundle never reach outside `images/`.
+fn image_file_name(name: &str) -> bool {
+    let Some((hash, extension)) = name.split_once('.') else {
+        return false;
+    };
+    hash.len() == 64
+        && hash.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f'))
+        && [Kind::Png, Kind::Jpeg, Kind::Gif, Kind::Webp]
+            .iter()
+            .any(|k| k.extension() == extension)
+}
+
+fn matches_name(name: &str, bytes: &[u8]) -> bool {
+    name.split_once('.')
+        .is_some_and(|(hash, _)| crate::image::hex(&crate::image::sha256(bytes)) == hash)
+}
+
+/// Writes a file of mode `0600` through a temporary file, in `dir` (made
+/// with mode `0700` when missing).
+fn write_private(dir: &Path, path: &Path, bytes: &[u8]) -> Result<(), String> {
+    DirBuilder::new()
+        .mode(0o700)
+        .recursive(true)
+        .create(dir)
+        .map_err(|e| io_err(dir, &e))?;
+    let temp = path.with_extension("tmp");
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(&temp)
+        .map_err(|e| io_err(&temp, &e))?;
+    file.write_all(bytes)
+        .and_then(|()| file.sync_all())
+        .map_err(|e| io_err(&temp, &e))?;
+    fs::rename(&temp, path).map_err(|e| io_err(path, &e))
 }
 
 /// Reads a bundle file written by `codeagent export`.
@@ -572,7 +719,10 @@ mod tests {
             store.append_record(r).unwrap();
         }
         for e in [
-            SessionEvent::UserMessage { text: "hi".into() },
+            SessionEvent::UserMessage {
+                text: "hi".into(),
+                images: Vec::new(),
+            },
             SessionEvent::TextDelta { text: "o".into() },
             SessionEvent::TextDelta { text: "k".into() },
             SessionEvent::TextDone { text: "ok".into() },
@@ -594,7 +744,10 @@ mod tests {
         assert_eq!(
             loaded.events[..3],
             [
-                SessionEvent::UserMessage { text: "hi".into() },
+                SessionEvent::UserMessage {
+                    text: "hi".into(),
+                    images: Vec::new()
+                },
                 SessionEvent::TextDelta { text: "ok".into() },
                 SessionEvent::TextDone { text: "ok".into() },
             ]
@@ -663,7 +816,10 @@ mod tests {
             SessionEvent::State {
                 state: State::Working,
             },
-            SessionEvent::UserMessage { text: "go".into() },
+            SessionEvent::UserMessage {
+                text: "go".into(),
+                images: Vec::new(),
+            },
             call(CallState::Waiting),
         ];
         let repair = repair_events(&events);
@@ -735,7 +891,10 @@ mod tests {
         store
             .append_stamped(&Stamped {
                 at: Some(1_000),
-                event: SessionEvent::UserMessage { text: "hi".into() },
+                event: SessionEvent::UserMessage {
+                    text: "hi".into(),
+                    images: Vec::new(),
+                },
             })
             .unwrap();
         store
@@ -762,7 +921,10 @@ mod tests {
         let loaded = store.load().unwrap();
         assert_eq!(
             loaded.events[1],
-            SessionEvent::UserMessage { text: "hi".into() }
+            SessionEvent::UserMessage {
+                text: "hi".into(),
+                images: Vec::new()
+            }
         );
         assert_eq!(loaded.stats.requests, 1);
         assert_eq!(loaded.stats.turns.cancelled, 1);
@@ -784,5 +946,92 @@ mod tests {
         let text = serde_json::to_string(&bundle).unwrap();
         let back: Bundle = serde_json::from_str(&text).unwrap();
         assert_eq!(back, bundle);
+    }
+
+    #[test]
+    fn images_are_saved_once_and_read_back() {
+        use crate::image::{Image, Numbered, fixtures};
+        let tmp = tempfile::tempdir().unwrap();
+        let store = Store::create(tmp.path()).unwrap();
+        let image = Image::from_bytes(fixtures::png(4, 3)).unwrap();
+        let message = Record::Message(Message {
+            role: Role::User,
+            content: vec![
+                Block::Text {
+                    text: "[Image #1]".into(),
+                },
+                Block::Image(image.clone()),
+            ],
+        });
+        store.append_record(&message).unwrap();
+        store.append_record(&message).unwrap();
+        let mut m = meta();
+        m.queued = vec![
+            UserInput::from("plain"),
+            UserInput {
+                text: "[Image #1]".into(),
+                images: vec![Numbered {
+                    number: 1,
+                    image: image.clone(),
+                }],
+            },
+        ];
+        store.write_meta(&m).unwrap();
+        let file = store.dir().join("images").join(image.file_name());
+        assert_eq!(mode(&file), 0o600);
+        assert_eq!(mode(&store.dir().join("images")), 0o700);
+        assert_eq!(fs::read_dir(store.dir().join("images")).unwrap().count(), 1);
+        assert!(store.size() > fixtures::png(4, 3).len() as u64);
+
+        let loaded = store.load().unwrap();
+        let Record::Message(back) = &loaded.history[0] else {
+            panic!("not a message");
+        };
+        assert!(matches!(&back.content[1], Block::Image(i) if i.loaded()));
+        assert_eq!(loaded.meta.queued[0], UserInput::from("plain"));
+        assert!(loaded.meta.queued[1].images[0].image.loaded());
+
+        // A file that went missing leaves the image without bytes.
+        fs::remove_file(&file).unwrap();
+        let loaded = store.load().unwrap();
+        let Record::Message(back) = &loaded.history[0] else {
+            panic!("not a message");
+        };
+        assert!(matches!(&back.content[1], Block::Image(i) if !i.loaded()));
+    }
+
+    #[test]
+    fn bundles_carry_images_and_refuse_strange_names() {
+        use crate::image::{Image, fixtures};
+        let tmp = tempfile::tempdir().unwrap();
+        let store = Store::create(tmp.path()).unwrap();
+        store.write_meta(&meta()).unwrap();
+        let image = Image::from_bytes(fixtures::gif(2, 2)).unwrap();
+        store
+            .append_record(&Record::Message(Message {
+                role: Role::User,
+                content: vec![Block::Image(image.clone())],
+            }))
+            .unwrap();
+        let bundle = store.bundle().unwrap();
+        assert_eq!(bundle.images.len(), 1);
+        let copy = Store::create(tmp.path()).unwrap();
+        copy.write_bundle(&bundle, &meta()).unwrap();
+        let path = copy.dir().join("images").join(image.file_name());
+        assert_eq!(fs::read(path).unwrap(), fixtures::gif(2, 2));
+
+        for name in [
+            "../../evil.png".to_owned(),
+            format!("{}.exe", image.hash),
+            // Bytes that do not match the name.
+            format!("{}.gif", "0".repeat(64)),
+        ] {
+            let mut bad = bundle.clone();
+            bad.images =
+                BTreeMap::from([(name.clone(), crate::image::base64(&fixtures::gif(2, 2)))]);
+            let other = Store::create(tmp.path()).unwrap();
+            let e = other.write_bundle(&bad, &meta()).unwrap_err();
+            assert_eq!(e, format!("image {name}: broken in the file"));
+        }
     }
 }

@@ -1,6 +1,45 @@
-//! The input editor: lines of text and a cursor, counted in characters.
+//! The input editor: lines of text and a cursor, counted in characters. An
+//! image is one character of its own (RFC 0034), shown as `[Image #N]`, so
+//! the cursor passes it and `Backspace` deletes it as one.
 
 use unicode_width::UnicodeWidthChar;
+
+use crate::image::{Image, MAX_PER_MESSAGE, Numbered, placeholder};
+
+/// Images are characters of the Supplementary Private Use Area-A, which no
+/// one types: `MARK + N` stands for image `N`.
+const MARK: u32 = 0xF_0000;
+
+fn mark(number: u32) -> Option<char> {
+    char::from_u32(MARK + number)
+}
+
+/// The image number of a character, if it is one.
+fn image_of(c: char) -> Option<u32> {
+    u32::from(c)
+        .checked_sub(MARK)
+        .filter(|n| (1..0xFFFE).contains(n))
+}
+
+/// What a character shows: an image's placeholder, or itself.
+fn shown(c: char) -> (String, usize) {
+    match image_of(c) {
+        Some(n) => {
+            let text = placeholder(n);
+            let width = text.len();
+            (text, width)
+        }
+        None => (c.to_string(), c.width().unwrap_or(0)),
+    }
+}
+
+/// A placeholder on the screen: its row, first cell and width.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Marked {
+    pub row: usize,
+    pub cell: usize,
+    pub width: usize,
+}
 
 /// An editing key (see `spec/tui.md`, "Input editor").
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,6 +73,11 @@ pub struct Editor {
     browsing: Option<usize>,
     /// The text put aside while browsing.
     draft: String,
+    /// The images pasted, by number; those whose character is gone from
+    /// the text are not sent.
+    images: Vec<Numbered>,
+    /// The number of the last image; numbers are not reused until cleared.
+    last_image: u32,
 }
 
 impl Default for Editor {
@@ -44,6 +88,8 @@ impl Default for Editor {
             col: 0,
             browsing: None,
             draft: String::new(),
+            images: Vec::new(),
+            last_image: 0,
         }
     }
 }
@@ -58,8 +104,78 @@ fn len(line: &str) -> usize {
 }
 
 impl Editor {
+    /// The text with each image as its placeholder `[Image #N]`.
     pub fn text(&self) -> String {
+        self.raw()
+            .chars()
+            .map(|c| image_of(c).map_or_else(|| c.to_string(), placeholder))
+            .collect()
+    }
+
+    /// The text with images as their characters.
+    fn raw(&self) -> String {
         self.lines.join("\n")
+    }
+
+    /// The numbers of the images in the text, in order.
+    pub fn numbers(&self) -> Vec<u32> {
+        self.lines
+            .iter()
+            .flat_map(|l| l.chars())
+            .filter_map(image_of)
+            .collect()
+    }
+
+    /// The images in the text, in order.
+    pub fn images(&self) -> Vec<Numbered> {
+        self.numbers()
+            .iter()
+            .filter_map(|n| self.images.iter().find(|i| i.number == *n))
+            .cloned()
+            .collect()
+    }
+
+    /// Puts an image at the cursor; its number, or why not.
+    pub fn insert_image(&mut self, image: Image) -> Result<u32, String> {
+        if self.numbers().len() >= MAX_PER_MESSAGE {
+            return Err(format!("a message takes at most {MAX_PER_MESSAGE} images"));
+        }
+        let number = self.last_image + 1;
+        let c = mark(number).ok_or("too many images")?;
+        self.browsing = None;
+        self.last_image = number;
+        self.images.push(Numbered { number, image });
+        self.insert(c);
+        Ok(number)
+    }
+
+    /// Turns the placeholders of `images` in the text back into images,
+    /// for a message from the history whose images are still known. Not
+    /// done when a number is taken by another image.
+    pub fn adopt_images(&mut self, images: &[Numbered]) {
+        let taken = images.iter().any(|new| {
+            self.images
+                .iter()
+                .any(|old| old.number == new.number && old.image.hash != new.image.hash)
+        });
+        if taken {
+            return;
+        }
+        let mut raw = self.raw();
+        for numbered in images {
+            if let Some(c) = mark(numbered.number) {
+                raw = raw.replace(&placeholder(numbered.number), &c.to_string());
+            }
+            if !self.images.iter().any(|i| i.number == numbered.number) {
+                self.images.push(numbered.clone());
+            }
+            self.last_image = self.last_image.max(numbered.number);
+        }
+        let browsing = self.browsing;
+        let draft = std::mem::take(&mut self.draft);
+        self.set_text(&raw);
+        self.browsing = browsing;
+        self.draft = draft;
     }
 
     pub fn is_empty(&self) -> bool {
@@ -247,7 +363,8 @@ impl Editor {
                 let Some(last) = history.len().checked_sub(1) else {
                     return;
                 };
-                self.draft = self.text();
+                // Images stay in the text put aside.
+                self.draft = self.raw();
                 Some(last)
             }
             (Some(at), Browse::Earlier) => Some(at.saturating_sub(1)),
@@ -268,22 +385,40 @@ impl Editor {
     /// The text as screen rows of `width` cells and the cursor's row and
     /// cell in them.
     pub fn rows(&self, width: usize) -> (Vec<String>, (usize, usize)) {
+        let (rows, cursor, _) = self.layout(width);
+        (rows, cursor)
+    }
+
+    /// Where the placeholders of images are in [`Editor::rows`].
+    pub fn marked(&self, width: usize) -> Vec<Marked> {
+        self.layout(width).2
+    }
+
+    fn layout(&self, width: usize) -> (Vec<String>, (usize, usize), Vec<Marked>) {
         let width = width.max(1);
         let mut rows = Vec::new();
         let mut cursor = (0, 0);
+        let mut marked = Vec::new();
         for (r, line) in self.lines.iter().enumerate() {
             let mut row = String::new();
             let mut used = 0;
             for (c, ch) in line.chars().enumerate() {
-                let w = ch.width().unwrap_or(0);
-                if used + w > width {
+                let (text, w) = shown(ch);
+                if used + w > width && used > 0 {
                     rows.push(std::mem::take(&mut row));
                     used = 0;
                 }
                 if r == self.row && c == self.col {
                     cursor = (rows.len(), used);
                 }
-                row.push(ch);
+                if image_of(ch).is_some() {
+                    marked.push(Marked {
+                        row: rows.len(),
+                        cell: used,
+                        width: w,
+                    });
+                }
+                row.push_str(&text);
                 used += w;
             }
             if r == self.row && self.col >= len(line) {
@@ -296,7 +431,7 @@ impl Editor {
             }
             rows.push(row);
         }
-        (rows, cursor)
+        (rows, cursor, marked)
     }
 }
 
@@ -442,5 +577,97 @@ mod tests {
         let mut e = typed("日本");
         e.edit(Edit::Left);
         assert_eq!(e.rows(10), (vec!["日本".to_owned()], (0, 2)));
+    }
+
+    fn png(width: u32) -> Image {
+        Image::from_bytes(crate::image::fixtures::png(width, 1)).unwrap()
+    }
+
+    #[test]
+    fn images_are_one_character_shown_as_their_placeholder() {
+        let mut e = typed("see ");
+        assert_eq!(e.insert_image(png(1)), Ok(1));
+        e.paste(" and ");
+        assert_eq!(e.insert_image(png(2)), Ok(2));
+        assert_eq!(e.text(), "see [Image #1] and [Image #2]");
+        assert_eq!(e.numbers(), [1, 2]);
+        // Backspace removes the whole image; its number is not reused.
+        e.edit(Edit::Backspace);
+        assert_eq!(e.text(), "see [Image #1] and ");
+        assert_eq!(e.insert_image(png(3)), Ok(3));
+        assert_eq!(
+            e.images().iter().map(|i| i.image.width).collect::<Vec<_>>(),
+            [1, 3]
+        );
+        // The cursor passes it in one step.
+        e.edit(Edit::Home);
+        for _ in 0..4 {
+            e.edit(Edit::Right);
+        }
+        e.edit(Edit::Delete);
+        assert_eq!(e.text(), "see  and [Image #3]");
+        assert_eq!(e.numbers(), [3]);
+        e.clear();
+        assert_eq!(e.insert_image(png(1)), Ok(1));
+    }
+
+    #[test]
+    fn at_most_ten_images() {
+        let mut e = Editor::default();
+        for _ in 0..10 {
+            e.insert_image(png(1)).unwrap();
+        }
+        assert!(e.insert_image(png(1)).is_err());
+        e.edit(Edit::Backspace);
+        assert!(e.insert_image(png(1)).is_ok());
+    }
+
+    #[test]
+    fn images_wrap_whole_and_are_marked() {
+        let mut e = typed("abcdef");
+        e.insert_image(png(1)).unwrap();
+        e.edit(Edit::Left);
+        e.edit(Edit::Right);
+        let (rows, cursor) = e.rows(12);
+        assert_eq!(rows, ["abcdef", "[Image #1]"]);
+        assert_eq!(cursor, (1, 10));
+        assert_eq!(
+            e.marked(12),
+            [Marked {
+                row: 1,
+                cell: 0,
+                width: 10
+            }]
+        );
+        // Narrower than the placeholder: it takes a row of its own.
+        let (rows, _) = e.rows(4);
+        assert_eq!(rows, ["abcd", "ef", "[Image #1]", ""]);
+    }
+
+    #[test]
+    fn images_survive_browsing_and_come_back_from_history() {
+        let mut e = typed("draft ");
+        e.insert_image(png(1)).unwrap();
+        let old = Numbered {
+            number: 4,
+            image: png(4),
+        };
+        let history = vec!["old [Image #4]".to_owned()];
+        e.browse(&history, Browse::Earlier);
+        e.adopt_images(std::slice::from_ref(&old));
+        assert_eq!(e.numbers(), [4]);
+        assert_eq!(e.text(), "old [Image #4]");
+        e.browse(&history, Browse::Later);
+        assert_eq!(e.numbers(), [1]);
+        assert_eq!(e.text(), "draft [Image #1]");
+        // A number taken by another image: the history stays text.
+        let mut e = Editor::default();
+        e.insert_image(png(9)).unwrap();
+        e.set_text("old [Image #1]");
+        e.adopt_images(&[Numbered {
+            number: 1,
+            image: png(4),
+        }]);
+        assert!(e.numbers().is_empty());
     }
 }

@@ -1571,3 +1571,23 @@ fn a_project_may_only_hide_more() {
         "{e:?}"
     );
 }
+
+#[test]
+fn models_read_images_unless_openai_compatible() {
+    let config = ok(BASE);
+    assert!(config.providers["anthropic"].models["sonnet"].images);
+    assert!(!config.providers["local"].models["qwen"].images);
+    let config = ok(&BASE.replace(
+        "context_window = 32768",
+        "context_window = 32768\nimages = true",
+    ));
+    assert!(config.providers["local"].models["qwen"].images);
+    let e = errs(
+        &BASE.replace(
+            "context_window = 32768",
+            "context_window = 32768\nimages = 1",
+        ),
+        None,
+    );
+    assert!(e[0].contains("expected a boolean"), "{e:?}");
+}

@@ -666,6 +666,7 @@ impl Talk {
         let request = Request::Send {
             session: self.session.name.clone(),
             text: text.to_owned(),
+            images: Vec::new(),
         };
         if let Err(e) = self.client.request(request).await {
             self.note(&e.to_string());

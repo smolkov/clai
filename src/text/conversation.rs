@@ -58,7 +58,7 @@ impl Conversation {
     /// The text this event adds; `replay` for events from the log.
     pub fn event(&mut self, event: &SessionEvent, replay: bool) -> String {
         match event {
-            SessionEvent::UserMessage { text } => {
+            SessionEvent::UserMessage { text, .. } => {
                 if !replay && self.sent.front() == Some(text) {
                     self.sent.pop_front();
                     return String::new();

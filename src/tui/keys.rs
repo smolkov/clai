@@ -50,6 +50,9 @@ pub enum Action {
     CopyAnswer,
     /// `Ctrl-T`: show or hide the calls of the last turn.
     ToggleCalls,
+    /// `Ctrl-V` or `Alt-V` in the input: an image or text from the
+    /// clipboard (RFC 0034).
+    PasteClipboard,
     Nothing,
 }
 
@@ -111,6 +114,13 @@ pub fn action(key: KeyEvent, focus: Focus) -> Action {
                     .intersects(KeyModifiers::SHIFT | KeyModifiers::ALT) =>
             {
                 Action::Send
+            }
+            KeyCode::Char('v' | 'V')
+                if key
+                    .modifiers
+                    .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+            {
+                Action::PasteClipboard
             }
             _ => edit(key).map_or(Action::Nothing, Action::Edit),
         },

@@ -11,13 +11,15 @@ use ratatui::layout::Rect;
 use crate::agent::{Closed, QuestionKind, SessionEvent, State, now_secs};
 use crate::config::edit::{Setting, Stamp};
 use crate::config::{ActivityLine, SavedDefault, Symbols, Theme, ThemeWarning, Tui};
+use crate::image::{Image, Kind as ImageKind, Numbered};
 use crate::protocol::{
     DefaultFrom, ModelInfo, Notice, Payload, Range, Request, ServerMessage, SessionInfo,
-    TokenTotals,
+    TokenTotals, Upload,
 };
 use indexmap::IndexMap;
 
 use super::activity::Activity;
+use super::clipboard::Clip;
 use super::commands::{self, Command};
 use super::conversation::{Conversation, Expansion, Kind};
 use super::details::Details;
@@ -186,6 +188,16 @@ pub enum Input {
     SwitchFailed(String),
     /// Copied text did not reach the clipboard: why.
     CopyFailed(String),
+    /// What `Ctrl-V` found in the clipboard, or why it could not look.
+    Clipboard(Result<Clip, String>),
+    /// The bytes of an image file (`/image PATH`, a dropped file), or why
+    /// they could not be read. `text` is the pasted text, used when the file
+    /// is not an image.
+    ImageFile {
+        path: String,
+        result: Result<Vec<u8>, String>,
+        text: Option<String>,
+    },
     /// The grammars for syntax highlighting are loaded: lay code out again.
     Highlighting,
 }
@@ -204,6 +216,15 @@ pub enum Effect {
     Mouse(bool),
     /// Put the text in the clipboard, as `tui.clipboard` says.
     Copy(String),
+    /// Read the clipboard for `Ctrl-V`.
+    ReadClipboard,
+    /// Read an image file: `path` as typed or pasted, relative to `base`;
+    /// `text` is pasted instead when it is not an image.
+    ReadImage {
+        path: String,
+        base: PathBuf,
+        text: Option<String>,
+    },
     /// Load `[tui]` and the themes from the user file again.
     ReloadConfig,
     /// Write `[tui]` changes into the user file, if it still has `stamp`.
@@ -282,6 +303,9 @@ pub struct App {
     /// The activity line: what the turn does, and since when.
     pub activity: Activity,
     pub editor: Editor,
+    /// The images of the last messages sent, by their text, so that the
+    /// history and a refused send bring them back (RFC 0034).
+    sent_images: Vec<(String, Vec<Numbered>)>,
     pub prompt: Option<Prompt>,
     pub dialog: Option<Dialog>,
     pub picker: Option<Picker>,
@@ -403,6 +427,7 @@ impl App {
             conversation,
             activity: Activity::new(0x5eed),
             editor: Editor::default(),
+            sent_images: Vec::new(),
             prompt: None,
             dialog: None,
             picker: None,
@@ -776,6 +801,8 @@ impl App {
         match input {
             Input::Key(key) => self.key(key),
             Input::Paste(text) => self.paste(&text),
+            Input::Clipboard(result) => self.clipboard(result),
+            Input::ImageFile { path, result, text } => self.image_file(&path, result, text),
             Input::Mouse(mouse) => self.mouse(mouse),
             Input::Resize => vec![Effect::Redraw],
             Input::Server(message) => self.server(message),
@@ -1091,8 +1118,11 @@ impl App {
         let conversation = &mut self.conversation;
         match event {
             SessionEvent::State { state } => self.session.state = state,
-            SessionEvent::UserMessage { text } => {
+            SessionEvent::UserMessage { text, images } => {
                 conversation.user(&text);
+                if !images.is_empty() {
+                    conversation.notice(images_line(&images));
+                }
                 (self.requests, self.tool_calls) = (0, 0);
             }
             SessionEvent::TextDelta { text } => conversation.text_delta(&text),
@@ -1309,6 +1339,7 @@ impl App {
                 self.conversation.unqueue(&text);
                 if self.editor.is_empty() {
                     self.editor.set_text(&text);
+                    self.adopt_sent_images();
                 }
                 if !lost {
                     self.conversation.error(message);
@@ -2319,9 +2350,69 @@ impl App {
                     self.flash("the last turn has no tool calls");
                 }
             }
+            Action::PasteClipboard => {
+                if self.ended.is_none() {
+                    self.flash("pasting…");
+                    return vec![Effect::ReadClipboard, Effect::Redraw];
+                }
+            }
             Action::Detach | Action::Nothing => {}
         }
         Vec::new()
+    }
+
+    // Images (RFC 0034).
+
+    fn clipboard(&mut self, result: Result<Clip, String>) -> Vec<Effect> {
+        self.message = None;
+        match result {
+            Ok(Clip::Image(bytes)) => self.attach_image(bytes),
+            Ok(Clip::Text(text)) => return self.paste(&text),
+            Ok(Clip::Empty) => self.flash("the clipboard is empty"),
+            Err(e) => self.flash(format!("Ctrl-V: {e}")),
+        }
+        vec![Effect::Redraw]
+    }
+
+    fn image_file(
+        &mut self,
+        path: &str,
+        result: Result<Vec<u8>, String>,
+        text: Option<String>,
+    ) -> Vec<Effect> {
+        match (result, text) {
+            (Ok(bytes), _) if ImageKind::sniff(&bytes).is_some() => self.attach_image(bytes),
+            // A pasted path that is not an image stays the text it was.
+            (_, Some(text)) => self.edit_input(|editor| editor.paste(&text), false),
+            (Ok(_), None) => self
+                .conversation
+                .notice(format!("{path}: not an image (PNG, JPEG, GIF or WebP)")),
+            (Err(e), None) => self.conversation.notice(format!("{path}: {e}")),
+        }
+        vec![Effect::Redraw]
+    }
+
+    /// Puts an image at the cursor of the input.
+    fn attach_image(&mut self, bytes: Vec<u8>) {
+        let image = match Image::from_bytes(bytes) {
+            Ok(image) => image,
+            Err(e) => return self.flash(e),
+        };
+        let description = image.describe();
+        match self.editor.insert_image(image) {
+            Ok(n) => self.flash(format!("image #{n}: {description}")),
+            Err(e) => self.flash(e),
+        }
+    }
+
+    /// Brings back the images of a message sent before, if its text is
+    /// in the input.
+    fn adopt_sent_images(&mut self) {
+        let text = self.editor.text();
+        if let Some((_, images)) = self.sent_images.iter().rev().find(|(t, _)| *t == text) {
+            let images = images.clone();
+            self.editor.adopt_images(&images);
+        }
     }
 
     /// `Ctrl-C`: twice within 1 s detaches; else it cancels the running turn
@@ -2360,6 +2451,7 @@ impl App {
                 if !self.editor.up() {
                     let history = self.conversation.user_messages();
                     self.editor.browse(&history, Browse::Earlier);
+                    self.adopt_sent_images();
                 }
             }
             Focus::Conversation => {
@@ -2375,6 +2467,7 @@ impl App {
                 if !self.editor.down() {
                     let history = self.conversation.user_messages();
                     self.editor.browse(&history, Browse::Later);
+                    self.adopt_sent_images();
                 }
             }
             Focus::Conversation => {
@@ -2399,6 +2492,13 @@ impl App {
         } else if let Some(list) = &mut self.session_list {
             list.paste(text);
         } else if self.dialog.is_none() && self.ended.is_none() && self.focus == Focus::Input {
+            if let Some(path) = dropped_image(text) {
+                return vec![Effect::ReadImage {
+                    path,
+                    base: self.session.path.clone(),
+                    text: Some(text.to_owned()),
+                }];
+            }
             self.edit_input(|editor| editor.paste(text), false);
         }
         vec![Effect::Redraw]
@@ -2484,13 +2584,27 @@ impl App {
             self.message = Some("server disconnected; the input is kept".to_owned());
             return Vec::new();
         }
+        let images = self.editor.images();
+        if let Err(e) = crate::image::check_message(&images) {
+            self.flash(e);
+            return vec![Effect::Redraw];
+        }
         self.editor.clear();
         self.follow = true;
         self.new_output = false;
         self.conversation.queued.push(text.clone());
+        let uploads = images.iter().map(Upload::of).collect();
+        if !images.is_empty() {
+            self.sent_images.push((text.clone(), images));
+            // Each message may hold 12 MB; a few are enough to go back to.
+            if self.sent_images.len() > SENT_IMAGES {
+                self.sent_images.remove(0);
+            }
+        }
         vec![Effect::Request(Request::Send {
             session: self.session.name.clone(),
             text,
+            images: uploads,
         })]
     }
 
@@ -2544,6 +2658,15 @@ impl App {
                 self.conversation.notice("usage: /rename NAME");
                 return Vec::new();
             }
+            ("image", "") => {
+                self.conversation.notice("usage: /image PATH");
+                return Vec::new();
+            }
+            ("image", path) => vec![Effect::ReadImage {
+                path: path.to_owned(),
+                base: self.session.path.clone(),
+                text: None,
+            }],
             ("rename", name) => vec![Effect::Request(Request::Rename {
                 session,
                 name: name.to_owned(),
@@ -2742,4 +2865,41 @@ pub fn clock(secs: u64, offset: i64) -> String {
         minutes.rem_euclid(60),
     );
     format!("{h:02}:{m:02}")
+}
+
+/// Messages whose images the TUI keeps for the history.
+const SENT_IMAGES: usize = 8;
+
+/// `images: #1 PNG 1366×306 48 KB · #2 JPEG 800×600 91 KB`.
+pub fn images_line(images: &[Numbered]) -> String {
+    let each: Vec<String> = images
+        .iter()
+        .map(|i| format!("#{} {}", i.number, i.image.describe()))
+        .collect();
+    format!("images: {}", each.join(" · "))
+}
+
+/// The path of an image file in pasted text: what a terminal pastes for a
+/// dropped file. One absolute path (or `~/…`, `file://…`), maybe quoted or
+/// with escaped spaces, with an image extension; the type is checked from
+/// the bytes later.
+pub fn dropped_image(text: &str) -> Option<String> {
+    let text = text.trim();
+    if text.contains('\n') {
+        return None;
+    }
+    let unquoted = ['\'', '"']
+        .iter()
+        .find_map(|q| text.strip_prefix(*q).and_then(|t| t.strip_suffix(*q)))
+        .unwrap_or(text);
+    let path = unquoted.strip_prefix("file://").unwrap_or(unquoted);
+    let path = path.replace("\\ ", " ").replace("%20", " ");
+    if !(path.starts_with('/') || path.starts_with("~/")) {
+        return None;
+    }
+    let lower = path.to_ascii_lowercase();
+    [".png", ".jpg", ".jpeg", ".gif", ".webp"]
+        .iter()
+        .any(|ext| lower.ends_with(ext))
+        .then_some(path)
 }

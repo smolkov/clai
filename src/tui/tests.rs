@@ -331,7 +331,10 @@ fn screen(app: &mut App, width: u16, height: u16) -> String {
 #[test]
 fn replay_builds_entries() {
     let app = app_with(vec![
-        SessionEvent::UserMessage { text: "hi".into() },
+        SessionEvent::UserMessage {
+            text: "hi".into(),
+            images: Vec::new(),
+        },
         SessionEvent::TextDelta { text: "he".into() },
         SessionEvent::TextDone {
             text: "hello".into(),
@@ -537,7 +540,8 @@ fn enter_sends_and_shows_it_as_queued() {
         requests(&effects),
         [Request::Send {
             session: "project".into(),
-            text: "hello".into()
+            text: "hello".into(),
+            images: Vec::new(),
         }]
     );
     assert!(app.editor.is_empty());
@@ -545,6 +549,7 @@ fn enter_sends_and_shows_it_as_queued() {
     assert!(screen(&mut app, 80, 24).contains("> hello (queued)"));
     app.update(live(SessionEvent::UserMessage {
         text: "hello".into(),
+        images: Vec::new(),
     }));
     assert!(app.conversation.queued.is_empty());
     assert_eq!(kinds(&app), [Kind::User("hello".into())]);
@@ -596,7 +601,8 @@ fn slash_slash_sends_a_message() {
         requests(&app.update(key(KeyCode::Enter))),
         [Request::Send {
             session: "project".into(),
-            text: "/etc/passwd".into()
+            text: "/etc/passwd".into(),
+            images: Vec::new(),
         }]
     );
 }
@@ -611,8 +617,14 @@ fn empty_input_sends_nothing() {
 #[test]
 fn message_history_comes_from_the_conversation() {
     let mut app = app_with(vec![
-        SessionEvent::UserMessage { text: "one".into() },
-        SessionEvent::UserMessage { text: "two".into() },
+        SessionEvent::UserMessage {
+            text: "one".into(),
+            images: Vec::new(),
+        },
+        SessionEvent::UserMessage {
+            text: "two".into(),
+            images: Vec::new(),
+        },
     ]);
     typed(&mut app, "draft");
     app.update(key(KeyCode::Up));
@@ -836,8 +848,14 @@ fn tool_preview_all_and_zero_means_no_limit() {
 #[test]
 fn up_and_down_select_entries_in_the_conversation() {
     let mut app = app_with(vec![
-        SessionEvent::UserMessage { text: "a".into() },
-        SessionEvent::UserMessage { text: "b".into() },
+        SessionEvent::UserMessage {
+            text: "a".into(),
+            images: Vec::new(),
+        },
+        SessionEvent::UserMessage {
+            text: "b".into(),
+            images: Vec::new(),
+        },
     ]);
     select_last(&mut app);
     assert_eq!(app.selected, Some(1));
@@ -1276,7 +1294,10 @@ fn an_ended_session_does_not_reconnect() {
 
 fn lost() -> App {
     let mut app = app_with(vec![
-        SessionEvent::UserMessage { text: "hi".into() },
+        SessionEvent::UserMessage {
+            text: "hi".into(),
+            images: Vec::new(),
+        },
         SessionEvent::ToolCall(done(call("c1", "read_file", CallState::Running), "a\nb")),
     ]);
     screen(&mut app, 80, 24);
@@ -1309,7 +1330,10 @@ fn the_input_stays_while_disconnected() {
 #[test]
 fn reconnecting_rebuilds_the_conversation_and_keeps_the_view() {
     let mut app = app_with(vec![
-        SessionEvent::UserMessage { text: "hi".into() },
+        SessionEvent::UserMessage {
+            text: "hi".into(),
+            images: Vec::new(),
+        },
         SessionEvent::ToolCall(done(call("c1", "read_file", CallState::Running), "a\nb")),
     ]);
     notices_in(&mut app, 100);
@@ -1324,7 +1348,10 @@ fn reconnecting_rebuilds_the_conversation_and_keeps_the_view() {
     let top = app.top;
     app.update(Input::Disconnected);
     let log = vec![
-        SessionEvent::UserMessage { text: "hi".into() },
+        SessionEvent::UserMessage {
+            text: "hi".into(),
+            images: Vec::new(),
+        },
         SessionEvent::ToolCall(done(call("c1", "read_file", CallState::Running), "a\nb")),
     ];
     let mut events = log;
@@ -1584,10 +1611,16 @@ fn timestamps_prefix_live_entries_only() {
     settings.timestamps = Some(0);
     let mut app = App::new(
         settings,
-        attachment(vec![SessionEvent::UserMessage { text: "old".into() }]),
+        attachment(vec![SessionEvent::UserMessage {
+            text: "old".into(),
+            images: Vec::new(),
+        }]),
         Instant::now(),
     );
-    app.update(live(SessionEvent::UserMessage { text: "new".into() }));
+    app.update(live(SessionEvent::UserMessage {
+        text: "new".into(),
+        images: Vec::new(),
+    }));
     let text = screen(&mut app, 80, 24);
     let line_of = |wanted: &str| {
         text.lines()
@@ -1607,6 +1640,7 @@ fn idle_session() -> App {
     let mut app = app_with(vec![
         SessionEvent::UserMessage {
             text: "fix the failing test".into(),
+            images: Vec::new(),
         },
         SessionEvent::TextDone {
             text: "The test fails because `parse` drops the last line. Let me look.".into(),
@@ -1692,6 +1726,7 @@ fn frame_ascii_symbols() {
     let events = vec![
         SessionEvent::UserMessage {
             text: "fix the failing test".into(),
+            images: Vec::new(),
         },
         SessionEvent::ToolCall(done(
             call("c1", "read_file", CallState::Running),
@@ -1781,6 +1816,7 @@ fn ten_thousand_lines_scroll_quickly() {
     for i in 0..10 {
         app.update(live(SessionEvent::UserMessage {
             text: format!("question {i}"),
+            images: Vec::new(),
         }));
         app.update(live(SessionEvent::TextDone { text: text.clone() }));
     }
@@ -2512,6 +2548,7 @@ fn command_list_does_not_open_otherwise() {
     // From a message of the history.
     let mut app = app_with(vec![SessionEvent::UserMessage {
         text: "/etc/passwd".into(),
+        images: Vec::new(),
     }]);
     app.update(key(KeyCode::Up));
     assert_eq!(app.editor.text(), "/etc/passwd");
@@ -2557,7 +2594,8 @@ fn a_message_written_with_two_slashes_is_still_sent() {
         requests(&command(&mut app, "//text")),
         [Request::Send {
             session: "project".into(),
-            text: "/text".into()
+            text: "/text".into(),
+            images: Vec::new(),
         }]
     );
 }
@@ -2600,6 +2638,7 @@ fn a_closed_command_list_opens_again_only_from_an_empty_input() {
 fn up_and_down_select_in_the_command_list() {
     let mut app = app_with(vec![SessionEvent::UserMessage {
         text: "earlier".into(),
+        images: Vec::new(),
     }]);
     typed(&mut app, "/");
     app.update(key(KeyCode::Up));
@@ -2624,7 +2663,7 @@ fn a_new_search_selects_the_best_match() {
     assert_eq!(selected_command(&app), Some("model"));
     assert_eq!(
         listed(&app),
-        ["model", "permissions", "rename", "theme", "commit"]
+        ["model", "permissions", "rename", "theme", "commit", "image"]
     );
     // Moving the cursor is no new search.
     app.update(key(KeyCode::Down));
@@ -2920,6 +2959,7 @@ fn a_switch_keeps_the_view_of_each_session() {
         "docs",
         vec![SessionEvent::UserMessage {
             text: "in docs".into(),
+            images: Vec::new(),
         }],
     ));
     assert_eq!(app.session.name, "docs");
@@ -3924,7 +3964,10 @@ fn frame_of_each_theme() {
         "one-light",
     ] {
         let mut app = app_with(vec![
-            SessionEvent::UserMessage { text: "hi".into() },
+            SessionEvent::UserMessage {
+                text: "hi".into(),
+                images: Vec::new(),
+            },
             SessionEvent::TextDone {
                 text: "**done** `x`".into(),
             },
@@ -4124,7 +4167,13 @@ fn status_of(state: State) -> crate::protocol::SessionStatus {
                 state: State::Working,
             },
         ),
-        (t, SessionEvent::UserMessage { text: "go".into() }),
+        (
+            t,
+            SessionEvent::UserMessage {
+                text: "go".into(),
+                images: Vec::new(),
+            },
+        ),
         (
             t + 2_000,
             SessionEvent::Usage {
@@ -4183,6 +4232,7 @@ fn status_of(state: State) -> crate::protocol::SessionStatus {
         stats.count(
             &SessionEvent::UserMessage {
                 text: "more".into(),
+                images: Vec::new(),
             },
             Some(t + 100_000),
         );
@@ -4663,6 +4713,7 @@ fn thinking() -> App {
     app.update(state_event(State::Working));
     app.update(live(SessionEvent::UserMessage {
         text: "fix the failing test".into(),
+        images: Vec::new(),
     }));
     app.update(live(SessionEvent::TextDelta {
         text: "The test fails because `parse` drops the last line. Let me look.".into(),
@@ -4943,7 +4994,10 @@ fn an_attach_to_a_working_session_takes_the_start_from_the_server() {
                 replayed(SessionEvent::State {
                     state: State::Working,
                 }),
-                replayed(SessionEvent::UserMessage { text: "go".into() }),
+                replayed(SessionEvent::UserMessage {
+                    text: "go".into(),
+                    images: Vec::new(),
+                }),
             ],
         },
         Instant::now() + Duration::from_secs(3 * 3600),
@@ -5186,6 +5240,7 @@ fn edited() -> Vec<SessionEvent> {
     vec![
         SessionEvent::UserMessage {
             text: "fix it".into(),
+            images: Vec::new(),
         },
         SessionEvent::ToolCall(running),
         SessionEvent::ToolCall(done(
@@ -5296,6 +5351,7 @@ fn enter_on_a_preview_expands_and_a_collapsed_call_stays_collapsed() {
 fn y_copies_the_selected_entry() {
     let mut events = vec![SessionEvent::UserMessage {
         text: "hello".into(),
+        images: Vec::new(),
     }];
     events.push(SessionEvent::TextDone {
         text: "Use **this**:\n\n```sh\nls -l\n```\n".into(),
@@ -5363,6 +5419,7 @@ fn copy_commands() {
         },
         SessionEvent::UserMessage {
             text: "more".into(),
+            images: Vec::new(),
         },
         SessionEvent::TextDone {
             text: "second".into(),
@@ -5410,6 +5467,7 @@ fn a_drag_selects_and_a_release_copies() {
     let mut app = previewing(vec![
         SessionEvent::UserMessage {
             text: "first line".into(),
+            images: Vec::new(),
         },
         SessionEvent::TextDone {
             text: "an answer that the TUI wraps because it is longer than the width of the screen \
@@ -5851,6 +5909,7 @@ fn answers() -> Vec<SessionEvent> {
     vec![
         SessionEvent::UserMessage {
             text: "fix the failing test".into(),
+            images: Vec::new(),
         },
         SessionEvent::TextDone {
             text: "The test fails because `parse` drops the last line of the input, \
@@ -6535,4 +6594,195 @@ fn the_wheel_scrolls_the_status_box_under_it_and_the_conversation_above() {
     let before = app.status_box.as_ref().unwrap().top;
     app.update(wheel(0));
     assert_eq!(app.status_box.as_ref().unwrap().top, before);
+}
+
+// Images in the input (RFC 0034).
+
+mod images {
+    use super::*;
+    use crate::image::fixtures;
+    use crate::tui::app::dropped_image;
+    use crate::tui::clipboard::Clip;
+
+    fn pasted(app: &mut App, bytes: Vec<u8>) {
+        let effects = app.update(ctrl('v'));
+        assert!(effects.contains(&Effect::ReadClipboard), "{effects:?}");
+        app.update(Input::Clipboard(Ok(Clip::Image(bytes))));
+    }
+
+    fn sent_images(effects: &[Effect]) -> Vec<(u32, Vec<u8>)> {
+        requests(effects)
+            .into_iter()
+            .flat_map(|r| match r {
+                Request::Send { images, .. } => images,
+                _ => Vec::new(),
+            })
+            .map(|u| (u.number, crate::image::base64_decode(&u.data).unwrap()))
+            .collect()
+    }
+
+    #[test]
+    fn ctrl_v_pastes_an_image_and_text_goes_around_it() {
+        let mut app = app();
+        typed(&mut app, "compare ");
+        pasted(&mut app, fixtures::png(1366, 306));
+        assert_eq!(app.message.as_deref(), Some("image #1: PNG 1366×306 33 B"));
+        typed(&mut app, " with ");
+        // Alt-V does the same.
+        let effects = app.update(press(KeyCode::Char('v'), KeyModifiers::ALT));
+        assert!(effects.contains(&Effect::ReadClipboard));
+        app.update(Input::Clipboard(Ok(Clip::Image(fixtures::gif(20, 10)))));
+        assert_eq!(app.editor.text(), "compare [Image #1] with [Image #2]");
+        insta::assert_snapshot!(screen(&mut app, 60, 12));
+        let effects = app.update(key(KeyCode::Enter));
+        assert_eq!(
+            sent_images(&effects),
+            [(1, fixtures::png(1366, 306)), (2, fixtures::gif(20, 10))]
+        );
+        assert!(app.editor.is_empty());
+        assert!(app.editor.images().is_empty());
+    }
+
+    #[test]
+    fn a_deleted_placeholder_drops_its_image() {
+        let mut app = app();
+        pasted(&mut app, fixtures::png(1, 1));
+        pasted(&mut app, fixtures::png(2, 2));
+        app.update(key(KeyCode::Backspace));
+        typed(&mut app, "x");
+        let effects = app.update(key(KeyCode::Enter));
+        assert_eq!(sent_images(&effects), [(1, fixtures::png(1, 1))]);
+    }
+
+    #[test]
+    fn ctrl_v_with_text_errors_and_nothing() {
+        let mut app = app();
+        app.update(ctrl('v'));
+        app.update(Input::Clipboard(Ok(Clip::Text("some text".into()))));
+        assert_eq!(app.editor.text(), "some text");
+        app.update(Input::Clipboard(Err(
+            "no access to the local clipboard over SSH; use /image PATH".into(),
+        )));
+        assert_eq!(
+            app.message.as_deref(),
+            Some("Ctrl-V: no access to the local clipboard over SSH; use /image PATH")
+        );
+        app.update(Input::Clipboard(Ok(Clip::Empty)));
+        assert_eq!(app.message.as_deref(), Some("the clipboard is empty"));
+        app.update(Input::Clipboard(Ok(Clip::Image(b"not an image".to_vec()))));
+        assert_eq!(
+            app.message.as_deref(),
+            Some("not an image (PNG, JPEG, GIF or WebP)")
+        );
+        assert_eq!(app.editor.text(), "some text");
+    }
+
+    #[test]
+    fn a_dropped_file_becomes_an_image_and_other_text_stays_text() {
+        let mut app = app();
+        let effects = app.update(Input::Paste("'/home/me/shot one.png'".into()));
+        assert_eq!(
+            effects,
+            [Effect::ReadImage {
+                path: "/home/me/shot one.png".into(),
+                base: app.session.path.clone(),
+                text: Some("'/home/me/shot one.png'".into()),
+            }]
+        );
+        app.update(Input::ImageFile {
+            path: "/home/me/shot one.png".into(),
+            result: Ok(fixtures::png(3, 3)),
+            text: Some("'/home/me/shot one.png'".into()),
+        });
+        assert_eq!(app.editor.text(), "[Image #1]");
+        // A path that turns out not to be an image is pasted as text.
+        app.update(Input::ImageFile {
+            path: "/tmp/fake.png".into(),
+            result: Ok(b"text".to_vec()),
+            text: Some("/tmp/fake.png".into()),
+        });
+        assert_eq!(app.editor.text(), "[Image #1]/tmp/fake.png");
+        // Ordinary text never reads a file.
+        let effects = app.update(Input::Paste("/tmp/notes.txt".into()));
+        assert_eq!(effects, [Effect::Redraw]);
+    }
+
+    #[test]
+    fn dropped_paths() {
+        assert_eq!(dropped_image("/a/b.PNG"), Some("/a/b.PNG".into()));
+        assert_eq!(dropped_image(" ~/s.jpg\n"), Some("~/s.jpg".into()));
+        assert_eq!(
+            dropped_image("file:///a/b%20c.webp"),
+            Some("/a/b c.webp".into())
+        );
+        assert_eq!(dropped_image("/a/b\\ c.gif"), Some("/a/b c.gif".into()));
+        assert_eq!(dropped_image("\"/a/b.jpeg\""), Some("/a/b.jpeg".into()));
+        for text in ["a.png", "/a.png\n/b.png", "/a/b.txt", "see /a.png"] {
+            assert_eq!(dropped_image(text), None, "{text}");
+        }
+    }
+
+    #[test]
+    fn slash_image_reads_a_file() {
+        let mut app = app();
+        typed(&mut app, "/image shots/a.png");
+        let effects = app.update(key(KeyCode::Enter));
+        assert!(effects.contains(&Effect::ReadImage {
+            path: "shots/a.png".into(),
+            base: app.session.path.clone(),
+            text: None,
+        }));
+        assert!(app.editor.is_empty());
+        app.update(Input::ImageFile {
+            path: "shots/a.png".into(),
+            result: Err("No such file or directory (os error 2)".into()),
+            text: None,
+        });
+        assert_eq!(
+            notices(&app),
+            ["shots/a.png: No such file or directory (os error 2)"]
+        );
+        app.update(Input::ImageFile {
+            path: "shots/a.png".into(),
+            result: Ok(fixtures::jpeg(8, 6)),
+            text: None,
+        });
+        assert_eq!(app.editor.text(), "[Image #1]");
+    }
+
+    #[test]
+    fn a_refused_send_and_the_history_bring_the_images_back() {
+        let mut app = app();
+        typed(&mut app, "look ");
+        pasted(&mut app, fixtures::png(5, 5));
+        let effects = app.update(key(KeyCode::Enter));
+        let request = requests(&effects).remove(0);
+        app.update(Input::Response {
+            request: request.clone(),
+            result: Err("fake/one does not read images".into()),
+        });
+        assert_eq!(app.editor.text(), "look [Image #1]");
+        assert_eq!(app.editor.images().len(), 1);
+        // Sent again, shown, and found again in the history.
+        app.update(key(KeyCode::Enter));
+        let numbered = crate::protocol::Upload::of(&app_numbered(5))
+            .image()
+            .unwrap();
+        app.update(live(SessionEvent::UserMessage {
+            text: "look [Image #1]".into(),
+            images: vec![numbered],
+        }));
+        assert_eq!(notices(&app), ["images: #1 PNG 5×5 33 B"]);
+        app.update(key(KeyCode::Up));
+        assert_eq!(app.editor.text(), "look [Image #1]");
+        assert_eq!(app.editor.images().len(), 1);
+        insta::assert_snapshot!(screen(&mut app, 60, 12));
+    }
+
+    fn app_numbered(size: u32) -> crate::image::Numbered {
+        crate::image::Numbered {
+            number: 1,
+            image: crate::image::Image::from_bytes(fixtures::png(size, size)).unwrap(),
+        }
+    }
 }

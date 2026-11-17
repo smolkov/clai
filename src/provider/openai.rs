@@ -12,7 +12,7 @@ use super::error::{ErrorKind, ProviderError};
 use super::http::{StatusError, status_kind, status_message};
 use super::remote::{Codec, Decode};
 use super::sse::SseEvent;
-use super::types::{Block, Event, Request, Role, StopReason, parse_arguments};
+use super::types::{Block, Event, Request, Role, StopReason, image_note, parse_arguments};
 use crate::config::ApiKey;
 
 pub(crate) struct OpenAi;
@@ -101,7 +101,7 @@ pub(crate) fn encode(request: &Request) -> Value {
                                 "function": {"name": name, "arguments": arguments},
                             }));
                         }
-                        Block::ToolResult { .. } => {}
+                        Block::ToolResult { .. } | Block::Image(_) => {}
                     }
                 }
                 let mut m = Map::new();
@@ -120,7 +120,19 @@ pub(crate) fn encode(request: &Request) -> Value {
                 messages.push(Value::Object(m));
             }
             Role::User => {
+                // Plain text when there is no image; else parts in order.
                 let mut text = String::new();
+                let mut parts: Vec<Value> = Vec::new();
+                let has_image = request.images
+                    && message
+                        .content
+                        .iter()
+                        .any(|b| matches!(b, Block::Image(i) if i.loaded()));
+                let flush = |text: &mut String, parts: &mut Vec<Value>| {
+                    if !text.is_empty() {
+                        parts.push(json!({"type": "text", "text": std::mem::take(text)}));
+                    }
+                };
                 for block in &message.content {
                     match block {
                         Block::ToolResult {
@@ -141,10 +153,28 @@ pub(crate) fn encode(request: &Request) -> Value {
                             }
                             text.push_str(t);
                         }
+                        Block::Image(image) if has_image && image.loaded() => {
+                            flush(&mut text, &mut parts);
+                            let url = format!(
+                                "data:{};base64,{}",
+                                image.media_type.media_type(),
+                                image.base64()
+                            );
+                            parts.push(json!({"type": "image_url", "image_url": {"url": url}}));
+                        }
+                        Block::Image(image) => {
+                            if !text.is_empty() {
+                                text.push('\n');
+                            }
+                            text.push_str(&image_note(image, request.images));
+                        }
                         Block::ToolCall { .. } => {}
                     }
                 }
-                if !text.is_empty() {
+                if has_image {
+                    flush(&mut text, &mut parts);
+                    messages.push(json!({"role": "user", "content": parts}));
+                } else if !text.is_empty() {
                     messages.push(json!({"role": "user", "content": text}));
                 }
             }
@@ -577,6 +607,7 @@ mod tests {
             }],
             max_output_tokens: Some(1000),
             temperature: None,
+            images: true,
         };
         assert_eq!(
             encode(&request),
@@ -633,5 +664,45 @@ mod tests {
     #[test]
     fn bearer_only_with_key() {
         assert!(OpenAi.headers(None).is_empty());
+    }
+
+    #[test]
+    fn images() {
+        let image = crate::image::Image::from_bytes(crate::image::fixtures::png(2, 2)).unwrap();
+        let request = |images| Request {
+            model: "m".into(),
+            system: String::new(),
+            messages: vec![Message {
+                role: Role::User,
+                content: vec![
+                    Block::Text {
+                        text: "look [Image #1]".into(),
+                    },
+                    Block::Image(image.clone()),
+                    Block::Text {
+                        text: "please".into(),
+                    },
+                ],
+            }],
+            tools: Vec::new(),
+            max_output_tokens: None,
+            temperature: None,
+            images,
+        };
+        let url = format!("data:image/png;base64,{}", image.base64());
+        assert_eq!(
+            encode(&request(true))["messages"][0],
+            json!({"role": "user", "content": [
+                {"type": "text", "text": "look [Image #1]"},
+                {"type": "image_url", "image_url": {"url": url}},
+                {"type": "text", "text": "please"},
+            ]})
+        );
+        // Without images, one text as before.
+        assert_eq!(
+            encode(&request(false))["messages"][0],
+            json!({"role": "user", "content":
+                "look [Image #1]\n[image omitted: this model does not read images]\nplease"})
+        );
     }
 }

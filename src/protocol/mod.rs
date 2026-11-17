@@ -21,7 +21,7 @@ use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWrite, AsyncWr
 use crate::agent::{Answer, Question, SessionEvent, State};
 
 /// The protocol version; a new message or event kind needs a new one.
-pub const VERSION: u32 = 9;
+pub const VERSION: u32 = 10;
 
 /// The longest message accepted, in bytes.
 pub const MAX_LINE: usize = 16 << 20;
@@ -64,6 +64,35 @@ pub enum ClientMessage {
     },
 }
 
+/// An image sent with a message: the number of its placeholder and the
+/// bytes in base64. The server checks the type and size itself.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Upload {
+    pub number: u32,
+    pub data: String,
+}
+
+impl Upload {
+    pub fn of(numbered: &crate::image::Numbered) -> Upload {
+        Upload {
+            number: numbered.number,
+            data: numbered.image.base64(),
+        }
+    }
+
+    /// The image, checked; the error is for the user.
+    pub fn image(&self) -> Result<crate::image::Numbered, String> {
+        let bytes = crate::image::base64_decode(&self.data)
+            .ok_or_else(|| format!("image #{}: not base64", self.number))?;
+        let image = crate::image::Image::from_bytes(bytes)
+            .map_err(|e| format!("image #{}: {e}", self.number))?;
+        Ok(crate::image::Numbered {
+            number: self.number,
+            image,
+        })
+    }
+}
+
 /// Session commands. Sessions are named by their current name.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "command", rename_all = "snake_case")]
@@ -99,6 +128,10 @@ pub enum Request {
     Send {
         session: String,
         text: String,
+        /// Images of the message, for its `[Image #N]` placeholders
+        /// (RFC 0034).
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        images: Vec<Upload>,
     },
     SetModel {
         session: String,

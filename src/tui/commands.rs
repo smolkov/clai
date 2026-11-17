@@ -109,6 +109,10 @@ pub const COMMANDS: &[Command] = &[
         "[N|code]",
     ),
     command("diff", "Show the changes of the last turn"),
+    required(
+        command("image", "Add an image file to the message (or Ctrl-V)"),
+        "PATH",
+    ),
     Command {
         alias: Some("quit"),
         ..command("detach", "Leave; the session keeps running")
@@ -231,7 +235,7 @@ mod tests {
         // `model` starts with it; the others only contain it.
         assert_eq!(
             names("m"),
-            ["model", "permissions", "rename", "theme", "commit"]
+            ["model", "permissions", "rename", "theme", "commit", "image"]
         );
         // Each group keeps the table order.
         assert_eq!(
@@ -247,6 +251,7 @@ mod tests {
                 "settings",
                 "theme",
                 "kill",
+                "image",
                 "detach"
             ]
         );

@@ -14,13 +14,13 @@ expression: "screen(&mut app, 80, 24)"
                                                                                 
                                                                                 
                                                                                 
-                                                                                
 ────────────────────────────────────────────────────────────────────────────────
   /model [PROVIDER/MODEL]  Change or choose the model; --default saves it       
 ▶ /permissions             later version                                        
   /rename NAME             Rename the session                                   
   /theme [NAME]            Choose the colour theme, saved as the default        
   /commit [HINT]           later version                                        
+  /image PATH              Add an image file to the message (or Ctrl-V)         
 ────────────────────────────────────────────────────────────────────────────────
 > /m                                                                            
 ────────────────────────────────────────────────────────────────────────────────

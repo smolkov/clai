@@ -94,6 +94,7 @@ fn request(model: &str, messages: Vec<Message>, tools: Vec<ToolSpec>) -> Request
         tools,
         max_output_tokens: Some(256),
         temperature: Some(0.0),
+        images: true,
     }
 }
 

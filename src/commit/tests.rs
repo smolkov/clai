@@ -353,6 +353,7 @@ fn model() -> Model {
         context_window: 100_000,
         max_output_tokens: None,
         temperature: None,
+        images: true,
     }
 }
 

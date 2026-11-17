@@ -184,6 +184,8 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [x] Theme files in `themes/` next to the user file; bundled `atom-one-dark`,
       `nord`, `gruvbox-dark`, `solarized-light`.
 - [x] Ten more bundled themes with their syntax colours (RFC 0031).
+- [x] Images in the input: `Ctrl-V`, dropped files, `/image` (RFC 0034).
+- [ ] Try `Ctrl-V` by hand on Wayland, X11 and macOS (RFC 0034).
 - [x] `[tui]` applied live: from `/settings`, `/theme` and `config_reloaded`.
 - [x] Saving `[tui]` into the user file with `toml_edit`: comments kept,
       checked, atomic, refused when the file changed.

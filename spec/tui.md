@@ -635,6 +635,7 @@ Up Down choose ─ Enter next ─ Tab question ─ Esc skip ─ Ctrl-C cancel tu
   this session.
 - Pasted text is inserted as is, including newlines (bracketed paste); it is
   not sent until `Enter`.
+- Images can be part of a message; see [Images](#images).
 - The user may type and send while a turn runs. The message goes to the server
   at once, which queues it until the turn ends (other clients see the queue
   too); the TUI shows it as "queued" until the turn that takes it starts.
@@ -660,6 +661,7 @@ Up Down choose ─ Enter next ─ Tab question ─ Esc skip ─ Ctrl-C cancel tu
 | `/commit [HINT]` | Generate a commit message for all changes in the workspace and commit them after confirmation; see [Commit](#commit) and [`commit.md`](commit.md). |
 | `/copy [N\|code]` | Copy the last answer of the model as Markdown; `N` the answer N back (`/copy 2` is the one before the last); `code` the last code block of the last answer. See [Copy](#copy). |
 | `/diff` | Open the details view with the diffs of all edits and writes of the last turn, one after the other. |
+| `/image PATH` | Add the image file `PATH` (relative to the workspace, or `~/…`) to the message at the cursor. See [Images](#images). |
 | `/detach`, `/quit` | Detach and exit the TUI; the session keeps running. |
 
 ### Command list
@@ -802,6 +804,7 @@ the diff.
 | `?` (conversation focus) | Show help. |
 | `Ctrl-Y`             | Copy the last answer, as `/copy`. |
 | `Ctrl-T`             | Show or hide the previews of the tool calls of the last turn. |
+| `Ctrl-V` / `Alt-V` (input focus) | Paste an image from the clipboard, else its text. See [Images](#images). |
 | Click on a tool call | On its summary line: closed → short view (the preview, or for a call without one its details cut at `tui.tool_output_lines`); short or full → closed. A call whose preview `tui.tool_preview` shows counts as short. The focus does not move. A click on its `… N lines` row opens the details view. |
 | Double click on a tool call | On its summary line: the whole result, or closed when it was whole. The first click acts at once and the second one, on the same row within 400 ms, turns the call to whole, so a single click never waits. A third click acts as a single click. |
 
@@ -873,6 +876,59 @@ when a call is selected, and `y copy`, `? help` and, with the mouse on,
 - After a copy the footer says `copied 12 lines` for two seconds. The TUI
   cannot know whether the terminal took the text, so it says `copied`. A
   clipboard command that cannot be started says `cannot copy: …`.
+
+## Images
+
+A message may hold images (RFC 0034), e.g. a screenshot:
+
+```
+────────────────────────────────────────────────────────────
+images: #1 PNG 1366×306 33 KB · #2 GIF 20×10 1 KB
+> compare [Image #1] with [Image #2]
+────────────────────────────────────────────────────────────
+```
+
+- **`Ctrl-V`** (or `Alt-V`, for terminals that keep `Ctrl-V` for their own
+  paste) reads the clipboard: its first image of `image/png`,
+  `image/jpeg`, `image/webp` or `image/gif`, else its text, which is
+  pasted as bracketed paste would. The terminal passes only text, so the TUI
+  asks the desktop itself: `wl-paste` (Wayland), `xclip` (X11) or
+  `osascript` (macOS, PNG only; text with `pbpaste`). Each program has 2 s.
+  The footer says `pasting…`, then `image #1: PNG 1366×306 33 KB`, or why
+  nothing came: `the clipboard is empty`, `Ctrl-V: …`.
+- `tui.clipboard` decides whether it may: `auto` reads only when the session
+  is local (over SSH the programs would read the remote clipboard),
+  `command` always, `osc52` and `off` never. Without access the footer says
+  so and points to `/image PATH`.
+- **A dropped file:** pasted text that is one absolute path (`/…`, `~/…`,
+  `file://…`, maybe quoted or with `\ ` for spaces) ending in `.png`,
+  `.jpg`, `.jpeg`, `.gif` or `.webp` is read as an image; a file that is not
+  one is pasted as the text it was.
+- **`/image PATH`** adds an image file; relative paths are below the
+  workspace. The file is read by the TUI as the user's own action, not by a
+  tool, so no permission rule applies.
+- The type comes from the first bytes, the width and height from the
+  header: PNG, JPEG, GIF and WebP. Other files are refused (`not an image
+  (PNG, JPEG, GIF or WebP)`), as are images over 5 MiB, more than 10 images
+  in a message, or more than 11 MiB of images together.
+- **In the input** an image is one character, drawn as `[Image #N]` in the
+  accent colour: the cursor passes it in one step, `Backspace` or `Delete`
+  removes it and its image. Numbers count from 1 per message in the order
+  of pasting and are not reused until the message is sent, so `#2` stays
+  `#2` when `#1` goes. Text is written around images as usual. Typing the
+  text `[Image #1]` by hand gives text, not an image. The line above the
+  input lists the images in it.
+- **Sending:** the text keeps its placeholders, and each image follows the
+  text up to its placeholder, so the model can refer to "image 1". A
+  message of images alone is sent too. The server refuses images for a
+  model without `images` ([`config.md`](config.md), "Model keys"); the
+  message then comes back to the input with its images.
+- **In the conversation** the message shows its placeholders and, below it,
+  the `images:` line. The first image of a session adds the notice `images
+  are sent as they are; secrets in them are not hidden`.
+- **History:** `Up` brings back a message with its images while the TUI
+  still has them (the last 8 messages with images sent from it); older
+  ones, and those of other clients, come back as text.
 
 ## Details view
 

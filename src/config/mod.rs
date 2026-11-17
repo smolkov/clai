@@ -86,6 +86,9 @@ pub struct Model {
     pub context_window: u64,
     pub max_output_tokens: Option<u64>,
     pub temperature: Option<f64>,
+    /// Whether the model reads images (RFC 0034). Default: `false` for
+    /// `openai-compatible`, where many local models read only text.
+    pub images: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1004,7 +1007,7 @@ fn build_providers(
 
         let mut models = IndexMap::new();
         for (model_name, model) in file.models {
-            if let Some(model) = build_model(ctx, &key, model_name.clone(), model, errors) {
+            if let Some(model) = build_model(ctx, &key, api, model_name.clone(), model, errors) {
                 models.insert(model_name, model);
             }
         }
@@ -1031,6 +1034,7 @@ fn build_providers(
 fn build_model(
     ctx: FileCtx<'_>,
     provider_key: &str,
+    api: Option<Api>,
     name: String,
     spanned: Spanned<ModelFile>,
     errors: &mut Vec<ConfigError>,
@@ -1092,6 +1096,7 @@ fn build_model(
         context_window: u64::try_from(context_window).unwrap_or(0),
         max_output_tokens: max_output_tokens.and_then(|n| u64::try_from(n).ok()),
         temperature: file.temperature.map(Spanned::into_inner),
+        images: file.images.unwrap_or(api != Some(Api::OpenAiCompatible)),
     })
 }
 

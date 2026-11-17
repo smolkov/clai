@@ -5,12 +5,14 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
-use crate::agent::{Agent, SessionEvent, Setup, State, now_ms, now_secs, system_prompt, today};
+use crate::agent::{
+    Agent, SessionEvent, Setup, State, UserInput, now_ms, now_secs, system_prompt, today,
+};
 use crate::config::{self, Config, LoadOptions};
 use crate::permissions::{SessionRules, Workspace};
 use crate::protocol::{
     DirInfo, ErrorReply, LimitsInfo, ModelInfo, ModelStatus, Notice, Outcome, Payload, Range,
-    Request, SessionInfo, SessionStatus, SkillsInfo, Stats, Status,
+    Request, SessionInfo, SessionStatus, SkillsInfo, Stats, Status, Upload,
 };
 use crate::scratch::Scratch;
 use crate::session::global::{self, Part, Summary};
@@ -641,19 +643,11 @@ impl Conn {
                 self.attached.remove(&id);
                 Payload::Done
             }),
-            Request::Send { session, text } => {
-                if text.trim().is_empty() {
-                    Err(ErrorReply::usage("the message is empty"))
-                } else {
-                    match shared.running(&session, None).await {
-                        Ok(handle) => handle
-                            .message(text)
-                            .map(|()| Payload::Done)
-                            .map_err(ErrorReply::failed),
-                        Err(e) => Err(e),
-                    }
-                }
-            }
+            Request::Send {
+                session,
+                text,
+                images,
+            } => self.send_message(&session, text, &images).await,
             Request::SetModel { session, model } => self.set_model(&session, &model).await,
             Request::Skills { workspace, session } => match shared.skills(&workspace) {
                 Ok(found) => {
@@ -880,6 +874,45 @@ impl Conn {
 
     /// Changes the model; a saved session is resumed with the new one,
     /// even if its old model is no longer configured.
+    /// A user message, with its images checked (RFC 0034).
+    async fn send_message(&self, session: &str, text: String, uploads: &[Upload]) -> Reply {
+        let images = uploads
+            .iter()
+            .map(Upload::image)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(ErrorReply::usage)?;
+        crate::image::check_message(&images).map_err(ErrorReply::usage)?;
+        let input = UserInput { text, images };
+        if input.is_empty() {
+            return Err(ErrorReply::usage("the message is empty"));
+        }
+        let shared = self.shared.clone();
+        let handle = shared.running(session, None).await?;
+        if !input.images.is_empty()
+            && let Some(info) = handle.info().await
+            && let Some(false) = self.reads_images(&info.model)
+        {
+            return Err(ErrorReply::usage(format!(
+                "{} does not read images; set `images = true` in its model table if it does, \
+                 or choose another model",
+                info.model
+            )));
+        }
+        handle
+            .message(input)
+            .map(|()| Payload::Done)
+            .map_err(ErrorReply::failed)
+    }
+
+    /// Whether the model `provider/model` reads images; `None` when the
+    /// configuration does not name it any more.
+    fn reads_images(&self, model: &str) -> Option<bool> {
+        let shared = &self.shared;
+        let config = shared.config(&shared.load.env.temp_dir.clone()).ok()?;
+        let model_ref = config.resolve_model(model).ok()?;
+        config.model(&model_ref).map(|(_, m)| m.images)
+    }
+
     async fn set_model(&self, session: &str, model: &str) -> Reply {
         let shared = self.shared.clone();
         match shared.find(session)? {

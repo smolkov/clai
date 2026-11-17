@@ -115,6 +115,9 @@ pub enum SessionEvent {
     },
     UserMessage {
         text: String,
+        /// The images of the message, without their bytes (RFC 0034).
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        images: Vec<crate::image::Numbered>,
     },
     TextDelta {
         text: String,

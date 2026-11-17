@@ -37,6 +37,7 @@ context_window = 100000
 [providers.fake.models.two]
 id             = "model-two"
 context_window = 100000
+images         = true
 "#;
 
 const WAIT: Duration = Duration::from_secs(10);
@@ -302,6 +303,7 @@ async fn send(client: &mut Client, name: &str, text: &str) {
         .request(Request::Send {
             session: name.into(),
             text: text.into(),
+            images: Vec::new(),
         })
         .await
         .unwrap();
@@ -584,7 +586,8 @@ async fn detach_and_replay() {
     .await;
     assert_eq!(replayed, (q.id.clone(), true));
     assert!(before.contains(&SessionEvent::UserMessage {
-        text: "write it".into()
+        text: "write it".into(),
+        images: Vec::new()
     }));
     assert!(
         before
@@ -617,7 +620,10 @@ async fn messages_are_queued() {
         _ => None,
     })
     .await;
-    assert!(events.contains(&SessionEvent::UserMessage { text: "two".into() }));
+    assert!(events.contains(&SessionEvent::UserMessage {
+        text: "two".into(),
+        images: Vec::new()
+    }));
     assert!(events.contains(&SessionEvent::TextDone {
         text: "second".into()
     }));
@@ -900,7 +906,8 @@ async fn sessions_survive_a_restart() {
     })
     .await;
     assert!(replayed.contains(&SessionEvent::UserMessage {
-        text: "write a.txt".into()
+        text: "write a.txt".into(),
+        images: Vec::new()
     }));
     assert!(replayed.contains(&SessionEvent::TextDelta {
         text: "written".into()
@@ -1056,6 +1063,7 @@ async fn a_missing_workspace_keeps_it_saved() {
         .request(Request::Send {
             session: "g".into(),
             text: "hi".into(),
+            images: Vec::new(),
         })
         .await;
     assert!(
@@ -2201,5 +2209,140 @@ async fn queued_messages_are_saved_without_their_secrets() {
     })
     .await
     .unwrap();
+    fx.stop().await;
+}
+
+/// The images of the user messages of each request: (width, loaded).
+fn user_images(script: &Script) -> Vec<Vec<(u32, bool)>> {
+    script
+        .requests
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|r| {
+            r.messages
+                .iter()
+                .flat_map(|m| &m.content)
+                .filter_map(|b| match b {
+                    crate::provider::Block::Image(i) => Some((i.width, i.loaded())),
+                    _ => None,
+                })
+                .collect()
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn images_reach_the_model_and_are_saved() {
+    use crate::image::{Image, Numbered, fixtures};
+    use crate::protocol::Upload;
+    use std::os::unix::fs::PermissionsExt;
+
+    let script = Script::new(vec![say("seen"), say("again")]);
+    let mut fx = Fixture::start(vec![script.clone()]).await;
+    fx.add_script(script.clone());
+    let mut c = fx.client("tui", true).await;
+    new_session(&mut c, &fx.ws, Some("s")).await;
+    attach(&mut c, "s").await;
+    let png = Numbered {
+        number: 1,
+        image: Image::from_bytes(fixtures::png(40, 30)).unwrap(),
+    };
+    let with_image = |text: &str, uploads: Vec<Upload>| Request::Send {
+        session: "s".into(),
+        text: text.into(),
+        images: uploads,
+    };
+    // `fake/one` is openai-compatible without `images`: refused.
+    let refused = c
+        .request(with_image("look [Image #1]", vec![Upload::of(&png)]))
+        .await;
+    assert!(
+        matches!(&refused, Err(Error::Usage(m)) if m.contains("fake/one does not read images")),
+        "{refused:?}"
+    );
+    // Not an image, and too many.
+    let broken = Upload {
+        number: 2,
+        data: crate::image::base64(b"text"),
+    };
+    let refused = c.request(with_image("x", vec![broken])).await;
+    assert!(
+        matches!(&refused, Err(Error::Usage(m)) if m.contains("image #2: not an image")),
+        "{refused:?}"
+    );
+    let refused = c.request(with_image("x", vec![Upload::of(&png); 11])).await;
+    assert!(matches!(refused, Err(Error::Usage(_))));
+
+    c.request(Request::SetModel {
+        session: "s".into(),
+        model: "two".into(),
+    })
+    .await
+    .unwrap();
+    // Images alone are a message.
+    c.request(with_image("", vec![Upload::of(&png)]))
+        .await
+        .unwrap();
+    let (images, before) = until(&mut c, |e, _| match e {
+        SessionEvent::UserMessage { images, .. } => Some(images.clone()),
+        _ => None,
+    })
+    .await;
+    assert_eq!(images.len(), 1);
+    assert_eq!(images[0].image.hash, png.image.hash);
+    assert!(!before.is_empty());
+    let (notice, _) = until(&mut c, |e, _| match e {
+        SessionEvent::Notice { text } => Some(text.clone()),
+        _ => None,
+    })
+    .await;
+    assert!(
+        notice.contains("secrets in them are not hidden"),
+        "{notice}"
+    );
+    turn_end(&mut c).await;
+    assert_eq!(user_images(&script), [vec![(40, true)]]);
+    let dir = saved_dir(&fx);
+    let file = dir.join("images").join(png.image.file_name());
+    assert_eq!(fs::read(&file).unwrap(), fixtures::png(40, 30));
+    assert_eq!(
+        fs::metadata(&file).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+    // The history names the image by its hash, without the bytes.
+    let history = fs::read_to_string(dir.join("history.jsonl")).unwrap();
+    assert!(history.contains(&png.image.hash), "{history}");
+    assert!(!history.contains(&png.image.base64()), "{history}");
+    drop(c);
+
+    // After a restart the image is read back and sent again.
+    fx.restart().await;
+    let mut c = fx.client("tui", true).await;
+    attach(&mut c, "s").await;
+    send(&mut c, "s", "and now?").await;
+    turn_end(&mut c).await;
+    assert_eq!(user_images(&script).last().unwrap(), &[(40, true)]);
+
+    // Export carries the image; import writes it back.
+    let bundle = fx.tmp.path().join("s.json");
+    c.request(Request::Export {
+        session: "s".into(),
+        path: bundle.clone(),
+    })
+    .await
+    .unwrap();
+    c.request(Request::Import {
+        path: bundle,
+        name: Some("copy".into()),
+    })
+    .await
+    .unwrap();
+    let copies: Vec<PathBuf> = store::list(&fx.sessions_dir())
+        .into_iter()
+        .filter(|(_, meta)| meta.name == "copy")
+        .map(|(s, _)| s.dir().join("images").join(png.image.file_name()))
+        .collect();
+    assert_eq!(fs::read(&copies[0]).unwrap(), fixtures::png(40, 30));
     fx.stop().await;
 }

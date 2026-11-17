@@ -46,12 +46,20 @@ A message has a `role`, `user` or `assistant`, and a list of blocks.
 | `Text`       | `text`                          | `user`, `assistant` |
 | `ToolCall`   | `id`, `name`, `arguments` (JSON object) | `assistant` |
 | `ToolResult` | `call_id`, `content` (text), `is_error` | `user` |
+| `Image` | `media_type`, `width`, `height`, `size`, `hash`, and the bytes | `user` |
 
 - Every `ToolCall` in an assistant message is answered by exactly one
   `ToolResult` with the same id in the next user message, in the same order.
   The agent loop ensures this, also for denied and cancelled calls; the
   adapter may rely on it.
 - `id` is opaque text. The agent loop only copies it into `call_id`.
+- An `Image` (RFC 0034) follows the text block that ends with its
+  placeholder `[Image #N]`. It is saved and sent to clients without its
+  bytes; `hash` names its file. The request has `images`, the model's key:
+  without it, or when the bytes are missing (the file went), an adapter
+  sends the text `[image omitted: this model does not read images]` or
+  `[image omitted: the file of this PNG image is missing]` instead, so the
+  history stays valid after a change of model.
 
 ### ToolSpec
 
@@ -181,6 +189,7 @@ Default `base_url`: `https://api.anthropic.com`.
 | `Text` | `{"type": "text"}` content block. |
 | `ToolCall` | `{"type": "tool_use", "id", "name", "input"}` block in an assistant message. |
 | `ToolResult` | `{"type": "tool_result", "tool_use_id", "content", "is_error"}` block in a user message. |
+| `Image` | `{"type": "image", "source": {"type": "base64", "media_type", "data"}}` block. |
 | `ToolSpec` | `tools[]` entry with `name`, `description`, `input_schema`. |
 | `max_output_tokens` | `max_tokens` (required by the API; the adapter sends the model's `max_output_tokens`, else 8192). **(assumption)** |
 | Key | Header `x-api-key`, plus `anthropic-version: 2023-06-01`. |
@@ -226,6 +235,7 @@ Ollama, vLLM, llama.cpp and similar servers. `base_url` is required.
 | `Text` | `content` of a `user` or `assistant` message. |
 | `ToolCall` | `tool_calls[]` entry `{"id", "type": "function", "function": {"name", "arguments"}}` of an assistant message; `arguments` is JSON as text. |
 | `ToolResult` | Its own message `{"role": "tool", "tool_call_id", "content"}`. The API has no error flag, so `is_error` results get the prefix `Error: `. **(assumption)** |
+| `Image` | A user message with an image has `content` as a list of parts in order: `{"type": "text", "text"}` and `{"type": "image_url", "image_url": {"url": "data:<type>;base64,<data>"}}`. Without images the content stays one text. |
 | `ToolSpec` | `tools[]` entry `{"type": "function", "function": {"name", "description", "parameters"}}`. |
 | `max_output_tokens` | `max_tokens`, only when set. |
 | Key | Header `Authorization: Bearer <key>`, only when a key is configured. |
@@ -279,8 +289,8 @@ it or return `Unsupported`.
 1. Should reasoning ("thinking") blocks be part of the shared types in the
    first version? They differ between providers and must be sent back
    unchanged in some APIs.
-2. Should images (e.g. screenshots given by the user) be supported as input
-   in the first version?
+2. ~~Should images (e.g. screenshots given by the user) be supported as input
+   in the first version?~~ Yes, in user messages (RFC 0034).
 3. Should retries live in the adapter, as proposed, or in the agent loop, so
    that a stream that broke halfway can also be repeated?
 4. ~~Should prompt caching (Anthropic `cache_control`) be used, and is it

@@ -57,7 +57,11 @@ impl Execute for Send {
                 None => name,
             };
             client
-                .request(Request::Send { session, text })
+                .request(Request::Send {
+                    session,
+                    text,
+                    images: Vec::new(),
+                })
                 .await
                 .map(|_| ())
         })

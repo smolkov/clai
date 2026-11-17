@@ -18,7 +18,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::agent::{
     Agent, Answer, Asker, CancelReason, EventSink, ModelHandle, Question, Reply, SessionEvent,
-    SessionRef, SkillsHandle, State,
+    SessionRef, SkillsHandle, State, UserInput,
 };
 use crate::config::Model;
 use crate::protocol::{
@@ -70,7 +70,7 @@ enum Msg {
         client: ClientId,
     },
     Send {
-        text: String,
+        input: UserInput,
     },
     Cancel,
     SetModel {
@@ -155,8 +155,8 @@ impl SessionHandle {
     }
 
     /// A user message: starts a turn, or is queued while one runs.
-    pub fn message(&self, text: String) -> Result<(), String> {
-        self.send(Msg::Send { text })
+    pub fn message(&self, input: UserInput) -> Result<(), String> {
+        self.send(Msg::Send { input })
     }
 
     pub fn cancel(&self) -> Result<(), String> {
@@ -334,7 +334,7 @@ struct Actor {
     agent: Option<Agent>,
     turn: Option<Turn>,
     state: State,
-    queue: VecDeque<String>,
+    queue: VecDeque<UserInput>,
     log: Vec<SessionEvent>,
     stats: Stats,
     clients: HashMap<ClientId, Client>,
@@ -449,8 +449,8 @@ impl Actor {
             Msg::Detach { client } => {
                 self.clients.remove(&client);
             }
-            Msg::Send { text } => {
-                self.queue.push_back(text);
+            Msg::Send { input } => {
+                self.queue.push_back(input);
                 if !self.next_turn() {
                     self.save_meta();
                 }
@@ -652,11 +652,23 @@ impl Actor {
         self.meta.queued = self
             .queue
             .iter()
-            .map(|text| match &self.secrets {
-                Some(secrets) => secrets.hide(text),
-                None => text.clone(),
+            .map(|input| UserInput {
+                text: match &self.secrets {
+                    Some(secrets) => secrets.hide(&input.text),
+                    None => input.text.clone(),
+                },
+                images: input.images.clone(),
             })
             .collect();
+        // The images of queued messages are saved before the meta that
+        // names them.
+        for input in &self.queue {
+            for numbered in &input.images {
+                if let Err(e) = store.save_image(&numbered.image) {
+                    tracing::warn!("cannot save an image: {e}");
+                }
+            }
+        }
         let result = store.write_meta(&self.meta);
         self.saved(result);
     }
@@ -704,7 +716,7 @@ impl Actor {
         let Some(mut agent) = self.agent.take() else {
             return false;
         };
-        let Some(text) = self.queue.pop_front() else {
+        let Some(input) = self.queue.pop_front() else {
             self.agent = Some(agent);
             return false;
         };
@@ -715,7 +727,7 @@ impl Actor {
         let asker = self.asker.clone();
         let token = cancel.clone();
         let join = tokio::spawn(async move {
-            agent.run_turn(text, &sink, asker.as_ref(), token).await;
+            agent.run_turn(input, &sink, asker.as_ref(), token).await;
             agent
         });
         self.turn = Some(Turn { join, cancel });

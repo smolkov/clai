@@ -174,6 +174,7 @@ impl Fixture {
                 context_window: 200_000,
                 max_output_tokens: Some(1000),
                 temperature: None,
+                images: true,
             },
             model_name: "test/m".into(),
             limits,
@@ -217,7 +218,7 @@ impl Fixture {
         let (sink, mut rx) = EventSink::channel();
         let end = self
             .agent
-            .run_turn(message.into(), &sink, asker, cancel)
+            .run_turn(UserInput::from(message), &sink, asker, cancel)
             .await;
         let mut events = Vec::new();
         while let Ok(event) = rx.try_recv() {
@@ -391,7 +392,10 @@ async fn plain_answer() {
             SessionEvent::State {
                 state: State::Working
             },
-            SessionEvent::UserMessage { text: "hi".into() },
+            SessionEvent::UserMessage {
+                text: "hi".into(),
+                images: Vec::new()
+            },
             SessionEvent::TextDelta {
                 text: "Hello.".into()
             },

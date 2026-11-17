@@ -14,6 +14,9 @@ pub struct Request {
     pub tools: Vec<ToolSpec>,
     pub max_output_tokens: Option<u64>,
     pub temperature: Option<f64>,
+    /// Whether the model reads images; without, image blocks go as a note
+    /// (RFC 0034).
+    pub images: bool,
 }
 
 /// Saved in session files (see `spec/sessions.md`, "Persistence"); the
@@ -67,6 +70,21 @@ pub enum Block {
         content: String,
         is_error: bool,
     },
+    /// In user messages (RFC 0034); saved without its bytes.
+    Image(crate::image::Image),
+}
+
+/// What an adapter sends for an image the model cannot have: the model
+/// does not read images, or the image's file went missing.
+pub fn image_note(image: &crate::image::Image, images: bool) -> String {
+    if !images {
+        "[image omitted: this model does not read images]".to_owned()
+    } else {
+        format!(
+            "[image omitted: the file of this {} image is missing]",
+            image.media_type.name()
+        )
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

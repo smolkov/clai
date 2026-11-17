@@ -162,7 +162,7 @@ impl Stats {
                     self.stop_working(at);
                 }
             }
-            SessionEvent::UserMessage { text } => {
+            SessionEvent::UserMessage { text, .. } => {
                 self.secrets_hidden += crate::secrets::count(text) as u64;
                 self.turn = Some(RunningTurn {
                     started: at,
@@ -560,7 +560,10 @@ mod tests {
     }
 
     fn user() -> SessionEvent {
-        SessionEvent::UserMessage { text: "hi".into() }
+        SessionEvent::UserMessage {
+            text: "hi".into(),
+            images: Vec::new(),
+        }
     }
 
     #[test]

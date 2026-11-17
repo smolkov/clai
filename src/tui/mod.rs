@@ -33,7 +33,7 @@ mod tests;
 
 use std::collections::HashMap;
 use std::io::{IsTerminal, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
@@ -467,6 +467,32 @@ async fn event_loop(
                         let _ = reports.send(Report::Input(Input::CopyFailed(e)));
                     }
                 }
+                Effect::ReadClipboard => {
+                    let path = options.env.var_os("PATH").map(ToOwned::to_owned);
+                    let reader = clipboard::reader(
+                        app.settings.tui.clipboard,
+                        options.env.getenv(),
+                        |name| clipboard::on_path(name, path.as_deref()),
+                    );
+                    let temp = options.env.temp_dir.clone();
+                    let reports = reports.clone();
+                    tokio::spawn(async move {
+                        let result = match reader {
+                            Ok(reader) => clipboard::read(reader, path.as_deref(), &temp).await,
+                            Err(e) => Err(e),
+                        };
+                        let _ = reports.send(Report::Input(Input::Clipboard(result)));
+                    });
+                }
+                Effect::ReadImage { path, base, text } => {
+                    let file = image_path(&path, &base, options.env.home.as_deref());
+                    let reports = reports.clone();
+                    tokio::spawn(async move {
+                        let result = read_image(&file).await;
+                        let _ =
+                            reports.send(Report::Input(Input::ImageFile { path, result, text }));
+                    });
+                }
                 Effect::Mouse(on) => {
                     if let Err(e) = terminal::set_mouse(on) {
                         tracing::info!("mouse capture: {e}");
@@ -524,6 +550,32 @@ async fn event_loop(
             }
         }
     }
+}
+
+/// The file of `/image PATH` or a dropped path: `~/` is the home
+/// directory, a relative path is below the workspace.
+fn image_path(path: &str, base: &Path, home: Option<&Path>) -> PathBuf {
+    match (path.strip_prefix("~/"), home) {
+        (Some(rest), Some(home)) => home.join(rest),
+        _ => base.join(path),
+    }
+}
+
+/// The bytes of an image file; a larger file than an image may be is not
+/// read.
+async fn read_image(path: &Path) -> std::result::Result<Vec<u8>, String> {
+    let meta = tokio::fs::metadata(path).await.map_err(|e| e.to_string())?;
+    if !meta.is_file() {
+        return Err("not a file".to_owned());
+    }
+    if meta.len() > crate::image::MAX_BYTES as u64 {
+        return Err(format!(
+            "the image is {}, more than {}; crop it or make it smaller",
+            crate::image::size_text(meta.len()),
+            crate::image::size_text(crate::image::MAX_BYTES as u64)
+        ));
+    }
+    tokio::fs::read(path).await.map_err(|e| e.to_string())
 }
 
 /// A seed for the verbs of the activity line, different for each run.

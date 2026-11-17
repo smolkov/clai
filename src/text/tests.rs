@@ -491,7 +491,10 @@ fn conversation_streams() {
     c.sent("hi");
     let mut out = String::new();
     for event in [
-        SessionEvent::UserMessage { text: "hi".into() },
+        SessionEvent::UserMessage {
+            text: "hi".into(),
+            images: Vec::new(),
+        },
         SessionEvent::TextDelta {
             text: "Let me ".into(),
         },
@@ -518,7 +521,13 @@ fn conversation_streams() {
     );
     // Messages from the log and from other clients are shown.
     assert_eq!(
-        c.event(&SessionEvent::UserMessage { text: "hi".into() }, true),
+        c.event(
+            &SessionEvent::UserMessage {
+                text: "hi".into(),
+                images: Vec::new()
+            },
+            true
+        ),
         "> hi\n"
     );
     assert_eq!(
@@ -527,7 +536,13 @@ fn conversation_streams() {
     );
     assert!(c.mid_line());
     assert_eq!(
-        c.event(&SessionEvent::UserMessage { text: "x".into() }, false),
+        c.event(
+            &SessionEvent::UserMessage {
+                text: "x".into(),
+                images: Vec::new()
+            },
+            false
+        ),
         "\n> x\n"
     );
 }

@@ -7,6 +7,12 @@ notes are taken from that section by `ci/notes.sh`.
 
 ## Unreleased
 
+- Images in messages (RFC 0034): `Ctrl-V` (or `Alt-V`) pastes a screenshot
+  from the clipboard as `[Image #1]` at the cursor, a dropped image file
+  and `/image PATH` add one too; text goes around them. Models with the new
+  model key `images` (default on for `anthropic`) see them. Sessions keep
+  the images in `images/`; export and import carry them. Protocol version 10.
+
 - Ten more bundled themes, each with matching syntax colours (RFC 0031):
   `emacs`, `flexoki-dark`, `flexoki-light`, `material-oceanic`, `monokai`,
   `nightfox`, `one-light`, `solarized-dark`, `textual-dark` and

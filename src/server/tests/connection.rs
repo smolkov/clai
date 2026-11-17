@@ -55,10 +55,11 @@ async fn requests_are_answered_while_events_stream() {
     let sent = connection.request(Request::Send {
         session: "a".into(),
         text: "hi".into(),
+        images: Vec::new(),
     });
     assert_eq!(response(sent).await.unwrap(), Payload::Done);
     until_event(&mut connection, |e| match e {
-        SessionEvent::UserMessage { text } => Some(text.clone()),
+        SessionEvent::UserMessage { text, .. } => Some(text.clone()),
         _ => None,
     })
     .await;
@@ -109,6 +110,7 @@ async fn answering_a_question_through_the_connection() {
     let sent = connection.request(Request::Send {
         session: "a".into(),
         text: "write".into(),
+        images: Vec::new(),
     });
     response(sent).await.unwrap();
     let id = until_event(&mut connection, |e| match e {
@@ -154,6 +156,7 @@ async fn a_second_client_answers_first() {
     let sent = slow.request(Request::Send {
         session: "a".into(),
         text: "write".into(),
+        images: Vec::new(),
     });
     response(sent).await.unwrap();
     let question = |e: &SessionEvent| match e {

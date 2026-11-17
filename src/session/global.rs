@@ -449,7 +449,10 @@ mod tests {
         let log = [
             (
                 Some(TODAY + HOUR),
-                SessionEvent::UserMessage { text: "hi".into() },
+                SessionEvent::UserMessage {
+                    text: "hi".into(),
+                    images: Vec::new(),
+                },
             ),
             (Some(TODAY + HOUR), usage(100, 10, "")),
             (Some(TODAY + HOUR), changed("a/one", "a/two")),

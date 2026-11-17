@@ -81,6 +81,7 @@ pub fn request(prepared: &Prepared, model: &Model) -> Request {
                 .map_or(MAX_OUTPUT_TOKENS, |m| m.min(MAX_OUTPUT_TOKENS)),
         ),
         temperature: model.temperature,
+        images: model.images,
     }
 }
 

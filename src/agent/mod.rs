@@ -7,6 +7,7 @@
 
 mod events;
 mod history;
+mod input;
 mod prompt;
 mod question;
 mod stream;
@@ -30,6 +31,7 @@ pub use events::{
     active_skills, retry_text,
 };
 pub use history::{History, INTERRUPTED, Journal, Record};
+pub use input::UserInput;
 pub use prompt::{date_of, now_ms, now_secs, system_prompt, today, with_lsp, with_skills};
 pub use question::{
     ASK_USER_CHOICES, Answer, AskCall, AskUser, Asker, CallInfo, Choice, Closed, LIMIT_CHOICES,
@@ -448,11 +450,12 @@ impl Agent {
     /// soon as possible, with the history still valid.
     pub async fn run_turn(
         &mut self,
-        message: String,
+        message: impl Into<UserInput>,
         events: &EventSink,
         asker: &dyn Asker,
         cancel: CancellationToken,
     ) -> TurnEnd {
+        let UserInput { text, images } = message.into();
         self.turns += 1;
         if let Some(lsp) = &self.env.lsp {
             lsp.new_turn();
@@ -470,11 +473,24 @@ impl Agent {
         events.emit(SessionEvent::State {
             state: State::Working,
         });
-        let message = self.hide_in_message(message, events);
+        let input = UserInput {
+            text: self.hide_in_message(text, events),
+            images,
+        };
+        let had_images = self
+            .history
+            .messages()
+            .iter()
+            .any(|m| m.content.iter().any(|b| matches!(b, Block::Image(_))));
         events.emit(SessionEvent::UserMessage {
-            text: message.clone(),
+            text: input.text.clone(),
+            images: input.images.clone(),
         });
-        self.push(Role::User, vec![Block::Text { text: message }]);
+        if !input.images.is_empty() && !had_images {
+            // Secret hiding works on text only; said once per session.
+            events.notice("images are sent as they are; secrets in them are not hidden");
+        }
+        self.push(Role::User, input.blocks());
         let reason = self.turn(&mut budget, events, asker, &cancel).await;
         match reason {
             EndReason::Cancelled => match self.cancel_reason.take() {
@@ -529,6 +545,7 @@ impl Agent {
                 tools: tools.clone(),
                 max_output_tokens: model.max_output_tokens,
                 temperature: model.temperature,
+                images: model.images,
             };
             let stream = provider.stream(request, cancel.child_token());
             let answer = stream::collect(stream, events, cancel).await;
@@ -1325,7 +1342,7 @@ fn calls_of(answer: &Streamed) -> Vec<CallIn> {
                 arguments: arguments.clone(),
                 text: (!text.is_empty()).then(|| text.clone()),
             }),
-            Block::ToolResult { .. } => {}
+            Block::ToolResult { .. } | Block::Image(_) => {}
         }
     }
     calls
