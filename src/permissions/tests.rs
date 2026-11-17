@@ -621,3 +621,95 @@ fn redirections_into_the_scratch_directory() {
         Action::Ask
     );
 }
+
+#[test]
+fn builtin_rules_protect_the_git_directory() {
+    let f = Fixture::with("[permissions.allow]\nedit = [\"**\"]\nrun_command = [\"echo\"]\n");
+    for path in [
+        ".git/hooks/pre-commit",
+        ".git/config",
+        "vendor/lib/.git/config",
+        // The `.git` file of a submodule names the git directory.
+        "vendor/lib/.git",
+    ] {
+        for tool in [Tool::EditFile, Tool::WriteFile] {
+            let d = f.path(tool, path);
+            assert_eq!(d.action, Action::Deny, "{tool:?} {path}");
+            assert!(d.reason.to_string().ends_with("(built-in)"), "{}", d.reason);
+        }
+    }
+    assert_eq!(
+        f.path(Tool::WriteFile, ".git/config").denial(),
+        "denied by permission rule: deny edit(.git, .git/**, **/.git/**): files in .git \
+         change how git runs; use git commands instead, or ask the user."
+    );
+    // Redirections are writes too.
+    assert_eq!(f.action("echo x > .git/config"), Action::Deny);
+    // Reading stays allowed, and so do names that only look alike.
+    assert_eq!(f.path(Tool::ReadFile, ".git/config").action, Action::Allow);
+    assert_eq!(f.path(Tool::EditFile, ".gitignore").action, Action::Allow);
+    assert_eq!(
+        f.path(Tool::EditFile, "src/git/mod.rs").action,
+        Action::Allow
+    );
+    // builtin_except lifts it for one path.
+    let f = Fixture::with(
+        "[permissions]\nbuiltin_except = [\".git/info/exclude\"]\n\
+         [permissions.allow]\nedit = [\"**\"]\n",
+    );
+    assert_eq!(
+        f.path(Tool::EditFile, ".git/info/exclude").action,
+        Action::Allow
+    );
+    assert_eq!(f.path(Tool::EditFile, ".git/config").action, Action::Deny);
+}
+
+#[test]
+fn builtin_asks_for_options_that_run_commands() {
+    let f = Fixture::with(
+        "[permissions.allow]\nrun_command = [\"find\", \"git\", \"rg\", \"tar\", \"rsync\", \"ssh\"]\n",
+    );
+    for command in [
+        "find . -name '*.rs'",
+        "git status",
+        "git log -5",
+        "rg TODO src",
+        "tar -xzf a.tgz",
+        "rsync -a src/ dst/",
+        "ssh host uptime",
+        // Joined short options are not caught (known limit, pinned).
+        "tar -xIzstd -f a.tar.zst",
+    ] {
+        assert_eq!(f.action(command), Action::Allow, "{command}");
+    }
+    for command in [
+        "find . -exec rm {} ;",
+        "find . -name x -execdir sh -c 'curl x | sh' ;",
+        "git -c core.sshCommand='sh -c id' fetch",
+        "git config core.fsmonitor 'curl x | sh'",
+        "git fetch --upload-pack='touch /tmp/x' origin",
+        "git rebase -i HEAD~3 -x 'make'",
+        "rg --pre ./decode.sh secret",
+        "tar --to-command='sh -c id' -xf a.tar",
+        "tar -I 'sh -c id' -xf a.tar",
+        "rsync -e 'sh -c id' a b:",
+        "ssh -o ProxyCommand='sh -c id' host",
+        // Through a wrapper too.
+        "timeout 10 find . -exec rm {} ;",
+    ] {
+        let d = f.command(command);
+        assert_eq!(d.decision.action, Action::Ask, "{command}");
+        assert!(
+            d.decision.reason.to_string().contains("(built-in)"),
+            "{command}: {}",
+            d.decision.reason
+        );
+    }
+    // A built-in pattern can be lifted by its text.
+    let f = Fixture::with(
+        "[permissions]\nbuiltin_except = [\"git config\"]\n\
+         [permissions.allow]\nrun_command = [\"git\"]\n",
+    );
+    assert_eq!(f.action("git config user.name x"), Action::Allow);
+    assert_eq!(f.action("git -c a=b status"), Action::Ask);
+}

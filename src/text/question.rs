@@ -47,6 +47,10 @@ pub fn render_question(question: &Question, place: &str, unicode: bool) -> Strin
 /// The question and its choices, in a given style.
 pub fn render_question_styled(question: &Question, style: &Style) -> String {
     let unicode = style.unicode;
+    // Hidden characters are shown, so a command cannot hide part of itself
+    // (RFC 0035).
+    let (shown, hidden) = super::safe::visible_question(question, unicode);
+    let question = &shown;
     let rule = if unicode { "──" } else { "--" };
     let mut out = format!(
         "{rule} {} {} {} {} {} {rule}\n",
@@ -56,6 +60,9 @@ pub fn render_question_styled(question: &Question, style: &Style) -> String {
         dot(unicode),
         question.id
     );
+    if let Some(note) = super::safe::hidden_note(hidden, unicode) {
+        let _ = writeln!(out, "{note}");
+    }
     match &question.kind {
         QuestionKind::Permission(p) => permission(&mut out, question, p, style),
         QuestionKind::Limit(_) => {
@@ -91,6 +98,12 @@ fn ask_intro(out: &mut String, a: &AskUser, unicode: bool) {
 /// One question from the model with its numbered options and how to
 /// answer (see `spec/command.md`, "codeagent chat").
 pub fn ask_block(a: &AskUser, index: usize) -> String {
+    let out = ask_block_text(a, index);
+    // The model's text, with its hidden characters shown (RFC 0035).
+    super::safe::visible(&out, true).0.into_owned()
+}
+
+fn ask_block_text(a: &AskUser, index: usize) -> String {
     let mut out = String::new();
     let Some(q) = a.questions.get(index) else {
         return out;
@@ -160,9 +173,14 @@ fn permission(out: &mut String, question: &Question, p: &Permission, style: &Sty
             timeout_s,
             parts,
             redirects,
+            sandbox,
             ..
         } => {
-            label(out, "in", &format!("{cwd}, timeout {timeout_s} s"));
+            let sandbox = sandbox
+                .as_ref()
+                .map(|s| format!(", in {s}"))
+                .unwrap_or_default();
+            label(out, "in", &format!("{cwd}, timeout {timeout_s} s{sandbox}"));
             let width = parts
                 .iter()
                 .map(|p| p.text.chars().count())

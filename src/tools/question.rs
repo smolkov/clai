@@ -97,6 +97,10 @@ pub enum Details {
         env: Vec<(String, String)>,
         parts: Vec<PartDecision>,
         redirects: Vec<RedirectDecision>,
+        /// `sandbox` or `sandbox, no network` when the command runs in the
+        /// sandbox (RFC 0035).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        sandbox: Option<String>,
     },
     /// A question to a language server; `path` is missing for
     /// `workspace_symbols` without one.

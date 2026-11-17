@@ -1,6 +1,7 @@
 //! `codeagent`: AI coding agent for the terminal. Behaviour: `spec/`.
 
 pub mod agent;
+pub mod child;
 pub mod cli;
 pub mod client;
 pub mod command;

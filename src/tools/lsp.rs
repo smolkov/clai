@@ -495,7 +495,11 @@ impl Op {
             return ToolOutput::error("language servers are off in this session");
         };
         let name = self.server.name.clone();
-        let setup = self.server.setup(&self.root, &lsp.config);
+        let mut setup = self.server.setup(&self.root, &lsp.config);
+        // Servers run the project's code: no provider keys (RFC 0035).
+        setup
+            .remove_env
+            .clone_from(&env.workspace.children().remove_env);
         let server = match lsp.pool.get(&setup, &lsp.user).await {
             Ok(server) => server,
             Err(err) => return ToolOutput::error(failure(&name, &err)),

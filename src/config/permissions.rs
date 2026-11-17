@@ -392,7 +392,14 @@ impl Permissions {
             }
         }
         let mut except = Vec::new();
+        let mut texts = Vec::new();
         for text in file.builtin_except.iter().flat_map(|l| l.get_ref()) {
+            // The text of a built-in command pattern lifts that pattern
+            // (RFC 0035); anything else is a path pattern.
+            if is_builtin_command(text.get_ref()) {
+                texts.push(text.get_ref().clone());
+                continue;
+            }
             match PathPattern::parse(text.get_ref(), home) {
                 Ok(p) => except.push(Pattern::Path(p)),
                 Err(message) => errors.push(ctx.error(
@@ -402,7 +409,7 @@ impl Permissions {
                 )),
             }
         }
-        perms.builtin = builtin_rules(except);
+        perms.builtin = builtin_rules_except(except, &texts);
         perms
     }
 
@@ -501,10 +508,99 @@ const BUILTIN_MESSAGE: &str = "this file usually holds secrets and is not shown 
      Ask the user for the value you need; the user can add the path to \
      permissions.builtin_except.";
 
-/// The built-in `deny` rules for well-known secret files (see
-/// `spec/config.md`, "Built-in rules"), with `extra` added to the
-/// exceptions of each.
+/// The message of the built-in rule for `.git`, for the model.
+const GIT_MESSAGE: &str = "files in .git change how git runs; use git commands instead, \
+     or ask the user.";
+
+/// The message of the built-in asks for command options.
+const OPTION_MESSAGE: &str = "this option runs another command";
+
+/// Options of common commands that run another command (RFC 0035): an
+/// `allow` rule for the command does not allow them.
+const COMMAND_OPTIONS: [&[&str]; 6] = [
+    &[
+        "find ** -exec",
+        "find ** -execdir",
+        "find ** -ok",
+        "find ** -okdir",
+    ],
+    &[
+        "git ** -c",
+        "git ** --config-env*",
+        "git config",
+        "git ** --upload-pack*",
+        "git ** --receive-pack*",
+        "git rebase ** --exec*",
+        "git rebase ** -x",
+    ],
+    &["rg ** --pre*"],
+    &[
+        "tar ** --to-command*",
+        "tar ** --use-compress-program*",
+        "tar ** -I",
+        "tar ** --checkpoint-action*",
+    ],
+    &["rsync ** -e", "rsync ** --rsh*"],
+    &["ssh ** -o", "ssh ** -F"],
+];
+
+/// Whether `text` is one of the built-in command patterns.
+fn is_builtin_command(text: &str) -> bool {
+    COMMAND_OPTIONS.iter().any(|row| row.contains(&text.trim()))
+}
+
+/// The built-in rules with `extra` added to the exceptions of the path
+/// rules (see [`builtin_rules_except`]).
 pub fn builtin_rules(extra: Vec<Pattern>) -> Vec<Rule> {
+    builtin_rules_except(extra, &[])
+}
+
+/// The built-in rules (see `spec/config.md`, "Built-in rules"): `deny` for
+/// well-known secret files and for writes into `.git`, with `extra` added
+/// to their exceptions, and `ask` for command options that run another
+/// command, without the patterns named in `lifted`.
+pub fn builtin_rules_except(extra: Vec<Pattern>, lifted: &[String]) -> Vec<Rule> {
+    let mut rules = secret_rules(&extra);
+    let parse_path = |texts: &[&str]| -> Vec<Pattern> {
+        texts
+            .iter()
+            .filter_map(|t| PathPattern::parse(t, None).ok().map(Pattern::Path))
+            .collect()
+    };
+    rules.push(Rule {
+        action: Action::Deny,
+        tools: tools_named("edit").unwrap_or_default(),
+        label: "edit".to_owned(),
+        patterns: parse_path(&[".git", ".git/**", "**/.git/**"]),
+        except: extra,
+        message: Some(GIT_MESSAGE.to_owned()),
+        source: Source::BuiltIn,
+    });
+    for row in COMMAND_OPTIONS {
+        let patterns: Vec<Pattern> = row
+            .iter()
+            .filter(|t| !lifted.iter().any(|l| l.trim() == **t))
+            .filter_map(|t| CommandPattern::parse(t).ok().map(Pattern::Command))
+            .collect();
+        if patterns.is_empty() {
+            continue;
+        }
+        rules.push(Rule {
+            action: Action::Ask,
+            tools: vec![Tool::RunCommand],
+            label: "run_command".to_owned(),
+            patterns,
+            except: Vec::new(),
+            message: Some(OPTION_MESSAGE.to_owned()),
+            source: Source::BuiltIn,
+        });
+    }
+    rules
+}
+
+/// The built-in `deny` rules for well-known secret files, with `extra`
+/// added to the exceptions of each.
+fn secret_rules(extra: &[Pattern]) -> Vec<Rule> {
     const RULES: [(&[&str], &[&str]); 3] = [
         (
             &[".env", ".env.*"],

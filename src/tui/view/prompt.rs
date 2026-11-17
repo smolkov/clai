@@ -14,6 +14,9 @@ const EXPLAIN: &str = "Message to the model: ";
 /// The rows of the bar in `width` cells.
 pub fn lines(prompt: &Prompt, width: usize, look: &Look) -> Vec<Line<'static>> {
     let mut out = Vec::new();
+    if let Some(note) = crate::text::safe::hidden_note(prompt.hidden, look.symbols.unicode) {
+        out.extend(plain(&note, width, look.styles.warning));
+    }
     if let Some(error) = &prompt.error {
         out.extend(plain(
             &format!("not accepted: {error}"),
@@ -44,9 +47,12 @@ pub fn cursor(prompt: &Prompt, area: Rect) -> Option<(u16, u16)> {
     };
     let width = usize::from(area.width);
     let (_, (_, cell)) = editor.rows(width.saturating_sub(EXPLAIN.len()));
-    let error_rows = prompt.error.as_ref().map_or(0, |e| {
-        plain(&format!("not accepted: {e}"), width, Default::default()).len()
-    });
+    let note_rows = crate::text::safe::hidden_note(prompt.hidden, true)
+        .map_or(0, |n| plain(&n, width, Default::default()).len());
+    let error_rows = note_rows
+        + prompt.error.as_ref().map_or(0, |e| {
+            plain(&format!("not accepted: {e}"), width, Default::default()).len()
+        });
     Some((
         area.x + u16::try_from(EXPLAIN.len() + cell).ok()?,
         area.y + u16::try_from(error_rows).ok()?,
@@ -58,7 +64,7 @@ fn keys_piece(text: String, look: &Look) -> Piece {
 }
 
 fn choices(out: &mut Vec<Line<'static>>, prompt: &Prompt, width: usize, look: &Look) {
-    let question = &prompt.question;
+    let question = &prompt.shown;
     let none: Piece = (String::new(), look.styles.text);
     let mut head: Vec<Piece> = Vec::new();
     let mut keys = Vec::new();

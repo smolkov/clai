@@ -7,6 +7,7 @@ use crate::agent::{CallState, SessionEvent};
 
 use super::ansi::{BOLD, DIM, GREEN, RED, YELLOW, paint};
 use super::events::tool_line;
+use super::safe::terminal;
 
 /// Turns session events into text. Questions are not shown here; the
 /// chat shows them with its dialog.
@@ -64,14 +65,17 @@ impl Conversation {
                     return String::new();
                 }
                 let prompt = self.paint(BOLD, ">");
-                format!("{}{prompt} {text}\n", self.break_line())
+                format!("{}{prompt} {}\n", self.break_line(), terminal(text))
             }
             SessionEvent::TextDelta { text } => {
                 if text.is_empty() {
                     return String::new();
                 }
+                // Escape sequences are left out (RFC 0035); one cut between
+                // two parts loses its ESC here and cannot act.
+                let text = terminal(text).into_owned();
                 self.mid_line = !text.ends_with('\n');
-                text.clone()
+                text
             }
             SessionEvent::TextDone { .. } => self.break_line().to_owned(),
             SessionEvent::ToolCall(call) => {
@@ -82,7 +86,7 @@ impl Conversation {
                     return String::new();
                 }
                 let summary = self.summaries.get(&call.id).map(String::as_str);
-                let line = tool_line(call, summary, self.unicode);
+                let line = terminal(&tool_line(call, summary, self.unicode)).into_owned();
                 let colour = match call.state {
                     CallState::Done => GREEN,
                     CallState::Error => RED,
@@ -92,7 +96,7 @@ impl Conversation {
             }
             SessionEvent::Notice { text } => self.note(text),
             SessionEvent::Error { message } => {
-                let line = format!("codeagent: error: {message}");
+                let line = format!("codeagent: error: {}", terminal(message));
                 format!("{}{}\n", self.break_line(), self.paint(RED, &line))
             }
             SessionEvent::Retry {
@@ -116,7 +120,7 @@ impl Conversation {
 
     /// `codeagent: <text>`, dimmed.
     pub fn note(&mut self, text: &str) -> String {
-        let line = format!("codeagent: {text}");
+        let line = format!("codeagent: {}", terminal(text));
         format!("{}{}\n", self.break_line(), self.paint(DIM, &line))
     }
 }

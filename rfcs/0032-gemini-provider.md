@@ -1,7 +1,7 @@
 # Gemini provider
 
 - RFC: 0032
-- Status: draft
+- Status: done
 - Spec: [`spec/providers.md`](../spec/providers.md), "Shared types",
   "Adapters", "Adding an API type"; [`spec/config.md`](../spec/config.md),
   "Providers and models"
@@ -186,7 +186,7 @@ The error body is `{"error": {"code", "message", "status", "details"}}`.
 ## Implementation plan
 
 1. **Signature in the shared types**
-   - Status: todo
+   - Status: done
    - Files: `src/provider/types.rs`, `src/agent/stream.rs`,
      `src/agent/history.rs`, the other adapters, `src/session/store.rs`
    - Result: a tool call carries an optional signature through the loop
@@ -194,14 +194,14 @@ The error body is `{"error": {"code", "message", "status", "details"}}`.
    - Tests: session round trip, old sessions.
 
 2. **Gemini adapter**
-   - Status: todo
+   - Status: done
    - Files: `src/provider/gemini.rs`, `src/provider/mod.rs`,
      `src/provider/tests_http.rs`, `tests/fixtures/gemini/`
    - Result: requests are encoded and answers decoded.
    - Tests: encoding, decoding, status errors.
 
 3. **Configuration and docs**
-   - Status: todo
+   - Status: done
    - Files: `src/config/mod.rs`, `src/config/example.toml`,
      `src/config/tests.rs`, `tests/configs/`, `spec/`, `readme.md`,
      `CHANGELOG.md`, `todo.md`
@@ -249,3 +249,40 @@ The error body is `{"error": {"code", "message", "status", "details"}}`.
    block in the shared types, see `spec/providers.md`, open question 1)?
 6. Should `thinking_level` become a model key (`minimal` … `high`) in this
    RFC, or later?
+
+All answered when the RFC was built: `generateContent` (1); `gemini/flash`
+and `gemini/hydrogen` (2, 4); calls of another model go as text (3);
+thought summaries (5) and `thinking_level` (6) are left for later.
+
+## Changes while building
+
+- **Tool schemas go as `parameters`, not `parametersJsonSchema`.** The API
+  reference documents only `parameters`, a subset of OpenAPI, so the
+  adapter leaves out the keys outside it (`additionalProperties` is in 10
+  of the tool schemas) and turns a type list with `"null"` into
+  `nullable`.
+- **Calls of another model go as text.** Google documents no placeholder
+  signature, so a call without a signature is sent as a text part
+  `[tool call NAME ARGUMENTS]`, and its result as text too. To tell the
+  calls apart, a call of this adapter always has a signature: Gemini's, or
+  an empty one when Gemini sent none (a parallel call, a model without
+  thinking).
+- **Made-up ids are `gemini_call_N`** and are not sent back, so the
+  adapter can tell them from ids of the API.
+- **Images are in.** RFC 0034 was built first: images go as `inlineData`,
+  and `images` is on by default for `gemini`.
+- **`Codec::url` gets the request**, because the model id is part of the
+  path.
+- **`Done` comes when the body ends**, not with the chunk that has the
+  `finishReason`, because the usage may follow in a later chunk.
+- **The models in the example** are `gemini-3.8-flash` and
+  `gemini-4-hydrogen`, both stable and meant for coding and agents on
+  Google's models page in November 2026, each with a 1 048 576-token
+  context and 65 536 output tokens.
+- The live tests have `gemini_text` and `gemini_tools`
+  (`GEMINI_API_KEY`); their answers may now have 2048 tokens, because
+  thinking models spend output tokens on thoughts.
+- Not tested with a real key: the whole adapter is tested against
+  fixtures written from the API reference, not against recorded answers.
+  `todo.md` has the manual check.
+

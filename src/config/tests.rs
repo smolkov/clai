@@ -176,7 +176,7 @@ fn provider_errors() {
         &with(
             r#"
 [providers.bad]
-api = "gemini"
+api = "bedrock"
 
 [providers.both]
 api = "anthropic"
@@ -197,7 +197,7 @@ timeout_s = 0
         None,
     );
     let expect = [
-        "providers.bad.api: unknown api `gemini`",
+        "providers.bad.api: unknown api `bedrock`; expected anthropic, openai-compatible or gemini",
         "providers.both: set only one of api_key, api_key_env and api_key_cmd",
         "providers.open: missing base_url (required for openai-compatible)",
         "providers.url.base_url: `localhost` must start with http:// or https://",
@@ -646,11 +646,28 @@ fn builtin_except() {
     assert_eq!(p.builtin.len(), builtin_rules(Vec::new()).len());
     for rule in &p.builtin {
         assert_eq!(rule.source, Source::BuiltIn);
-        assert_eq!(rule.except.last().map(Pattern::text), Some("deploy/*.pem"));
+        // The path rules get the exception; the command asks have none.
+        if rule.action == Action::Deny {
+            assert_eq!(rule.except.last().map(Pattern::text), Some("deploy/*.pem"));
+        } else {
+            assert!(rule.except.is_empty());
+        }
     }
-    // Every shipped pattern parses.
+    // Every shipped pattern parses: secret files, `.git`, then the
+    // options of find, git, rg, tar, rsync and ssh (RFC 0035).
     let counts: Vec<usize> = p.builtin.iter().map(|r| r.patterns.len()).collect();
-    assert_eq!(counts, [2, 7, 2]);
+    assert_eq!(counts, [2, 7, 2, 3, 4, 7, 1, 4, 2, 2]);
+
+    // The text of a built-in command pattern lifts that pattern only.
+    let config = ok(&with("[permissions]\nbuiltin_except = [\"git config\"]\n"));
+    let git: Vec<&str> = config.permissions.builtin[5]
+        .patterns
+        .iter()
+        .map(Pattern::text)
+        .collect();
+    assert_eq!(git.len(), 6);
+    assert!(!git.contains(&"git config"));
+    assert!(git.contains(&"git ** -c"));
     assert_eq!(p.builtin[0].except.len(), 5);
 
     let e = errs(&with("[permissions]\nbuiltin_except = [\"x/\"]\n"), None);
@@ -1590,4 +1607,115 @@ fn models_read_images_unless_openai_compatible() {
         None,
     );
     assert!(e[0].contains("expected a boolean"), "{e:?}");
+}
+
+#[test]
+fn gemini_provider() {
+    let config = ok(&with(
+        r#"
+[providers.gemini]
+api = "gemini"
+api_key_env = "GEMINI_API_KEY"
+
+[providers.gemini.models.flash]
+id = "gemini-3.8-flash"
+context_window = 1048576
+"#,
+    ));
+    let provider = &config.providers["gemini"];
+    assert_eq!(provider.api, Api::Gemini);
+    assert_eq!(
+        provider.base_url,
+        "https://generativelanguage.googleapis.com"
+    );
+    assert!(provider.models["flash"].images, "images are on by default");
+
+    let e = errs(
+        &with(
+            r#"
+[providers.gemini]
+api = "gemini"
+
+[providers.gemini.models.bad]
+id = "models/gemini-3.8-flash"
+context_window = 1048576
+"#,
+        ),
+        None,
+    );
+    assert_eq!(e.len(), 1, "{e:?}");
+    assert!(
+        e[0].contains(
+            "providers.gemini.models.bad.id: `models/gemini-3.8-flash` must not contain /, ? or # for a gemini provider"
+        ),
+        "{}",
+        e[0]
+    );
+}
+
+#[test]
+fn run_command_and_sandbox() {
+    let config = ok(&with(
+        r#"
+[run_command]
+keep_env = ["OPENAI_API_KEY"]
+
+[sandbox]
+enabled = true
+network = false
+hide = ["/srv/kube", "/opt/secrets"]
+"#,
+    ));
+    assert_eq!(config.keep_env, ["OPENAI_API_KEY"]);
+    assert!(config.sandbox.enabled);
+    assert!(!config.sandbox.network);
+    assert_eq!(config.sandbox.hide.len(), 2);
+    assert_eq!(config.sandbox.hide[1], Path::new("/opt/secrets"));
+
+    let e = errs(&with("[run_command]\nkeep_env = [\"NOT-A-NAME\"]\n"), None);
+    assert!(
+        e[0].contains("run_command.keep_env: `NOT-A-NAME` is not a variable name"),
+        "{e:?}"
+    );
+    let e = errs(&with("[sandbox]\nhide = [\"relative\"]\n"), None);
+    assert!(e[0].contains("sandbox.hide"), "{e:?}");
+
+    // A repository cannot turn the sandbox off or keep keys.
+    for table in [
+        "[run_command]\nkeep_env = []\n",
+        "[sandbox]\nenabled = false\n",
+    ] {
+        let e = errs(BASE, Some(table));
+        assert!(e[0].contains("only allowed in the user file"), "{e:?}");
+    }
+}
+
+#[test]
+fn an_api_key_in_a_file_others_can_read_gives_a_warning() {
+    use std::os::unix::fs::PermissionsExt;
+    let tmp = tempfile::tempdir().unwrap();
+    let file = tmp.path().join("config.toml");
+    let text = format!("{BASE}\n[providers.inline]\napi = \"anthropic\"\napi_key = \"sk-x\"\n");
+    std::fs::write(&file, &text).unwrap();
+    let options = |file: &Path| LoadOptions {
+        config_file: Some(file.to_path_buf()),
+        workspace: tmp.path().to_path_buf(),
+        env: Environment::default(),
+    };
+    std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).unwrap();
+    let config = load(&options(&file)).unwrap();
+    assert_eq!(
+        config.warnings,
+        [format!(
+            "{}: api_key is readable by other users (mode 0644); run chmod 600 {}",
+            file.display(),
+            file.display()
+        )]
+    );
+    std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600)).unwrap();
+    assert!(load(&options(&file)).unwrap().warnings.is_empty());
+    // Without api_key, the mode is the user's business.
+    std::fs::write(&file, BASE).unwrap();
+    std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).unwrap();
+    assert!(load(&options(&file)).unwrap().warnings.is_empty());
 }

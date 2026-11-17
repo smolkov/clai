@@ -32,12 +32,21 @@ impl Execute for Import {
             path,
             name: self.name.clone(),
         };
-        let name = with_client(ctx, true, async |client| {
+        let (name, dropped) = with_client(ctx, true, async |client| {
             match client.request(request).await? {
-                Payload::Session { session } => Ok(session.name),
+                Payload::Imported {
+                    session,
+                    dropped_rules,
+                } => Ok((session.name, dropped_rules)),
                 other => Err(unexpected(&other)),
             }
         })?;
+        for rule in dropped {
+            crate::output::note(&format!(
+                "left out the session rule {} (rules are not imported)",
+                crate::text::safe::terminal(&rule)
+            ));
+        }
         write_stdout(&format!("{name}\n"))
     }
 }

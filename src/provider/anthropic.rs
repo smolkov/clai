@@ -21,7 +21,7 @@ pub(crate) struct Anthropic {
 }
 
 impl Codec for Anthropic {
-    fn url(&self, base_url: &str) -> String {
+    fn url(&self, base_url: &str, _request: &Request) -> String {
         format!("{base_url}/v1/messages")
     }
 
@@ -181,6 +181,7 @@ fn encode_block(block: &Block, images: bool) -> Value {
             id,
             name,
             arguments,
+            ..
         } => {
             // Invalid arguments are kept as a string; the API needs an object.
             let input = if arguments.is_object() {
@@ -339,6 +340,7 @@ impl Decode for Decoder {
                     events.push(Event::ToolCallEnd {
                         id,
                         arguments: parse_arguments(&json),
+                        signature: None,
                     });
                 }
             }
@@ -482,7 +484,8 @@ mod tests {
                 },
                 Event::ToolCallEnd {
                     id: "toolu_01".into(),
-                    arguments: json!({"path": "src/parse.rs"})
+                    arguments: json!({"path": "src/parse.rs"}),
+                    signature: None,
                 },
                 Event::ToolCallStart {
                     id: "toolu_02".into(),
@@ -490,7 +493,8 @@ mod tests {
                 },
                 Event::ToolCallEnd {
                     id: "toolu_02".into(),
-                    arguments: json!({})
+                    arguments: json!({}),
+                    signature: None,
                 },
                 Event::Done {
                     stop_reason: StopReason::ToolUse
@@ -514,7 +518,8 @@ mod tests {
         .unwrap();
         assert!(events.contains(&Event::ToolCallEnd {
             id: "toolu_09".into(),
-            arguments: json!("{\"path\": \"a")
+            arguments: json!("{\"path\": \"a"),
+            signature: None,
         }));
     }
 
@@ -578,11 +583,13 @@ mod tests {
                             id: "t1".into(),
                             name: "read_file".into(),
                             arguments: json!({"path": "a"}),
+                            signature: None,
                         },
                         Block::ToolCall {
                             id: "t2".into(),
                             name: "read_file".into(),
                             arguments: json!("{broken"),
+                            signature: None,
                         },
                     ],
                 },

@@ -52,6 +52,8 @@ pub struct Setup {
     pub start_timeout: Duration,
     /// Waiting for the answer of each request.
     pub request_timeout: Duration,
+    /// Variables removed from the environment: provider keys (RFC 0035).
+    pub remove_env: Vec<String>,
 }
 
 /// What a server is doing.
@@ -138,12 +140,15 @@ impl Drop for Server {
 impl Server {
     /// Starts the process of `setup` and initializes it. The process gets
     /// its own process group and the environment of `codeagent` plus
-    /// `setup.env`.
+    /// `setup.env`, less `setup.remove_env`.
     pub async fn start(setup: &Setup) -> Result<Server> {
         let Some((program, args)) = setup.command.split_first() else {
             return Err(Error::Start("the command is empty".into()));
         };
         let mut command = Command::new(program);
+        for name in &setup.remove_env {
+            command.env_remove(name);
+        }
         command
             .args(args)
             .envs(setup.env.iter().map(|(k, v)| (k, v)))

@@ -13,7 +13,7 @@ use nix::unistd::Pid;
 use serde::Deserialize;
 use tokio::io::AsyncReadExt;
 use tokio::net::unix::pipe;
-use tokio::process::{Child, Command};
+use tokio::process::Child;
 use tokio::time::{Instant, sleep, sleep_until, timeout};
 use tokio_util::sync::CancellationToken;
 
@@ -57,6 +57,9 @@ pub struct Op {
     timeout_s: u64,
     /// The session's scratch directory: `TMPDIR` and `CODEAGENT_TMP`.
     scratch: Option<PathBuf>,
+    /// No provider keys; maybe the sandbox (RFC 0035).
+    children: crate::child::Children,
+    writable: crate::child::Writable,
 }
 
 pub(super) fn prepare(env: &Env, args: Result<Args, Failure>) -> Result<Call, Failure> {
@@ -87,6 +90,7 @@ pub(super) fn prepare(env: &Env, args: Result<Args, Failure>) -> Result<Call, Fa
                 .collect(),
             parts: checked.parts,
             redirects: checked.redirects,
+            sandbox: env.workspace.children().sandbox_text(),
         },
         decision: checked.decision,
         op: AnyOp::Run(Op {
@@ -94,6 +98,8 @@ pub(super) fn prepare(env: &Env, args: Result<Args, Failure>) -> Result<Call, Fa
             cwd,
             timeout_s,
             scratch: env.workspace.scratch().map(crate::scratch::Scratch::path),
+            children: env.workspace.children().clone(),
+            writable: env.workspace.writable(),
         }),
     })
 }
@@ -155,7 +161,10 @@ impl Op {
                 output.text = cut_for_model(&clean::clean(&output.full));
                 output
             }
-            Err(e) => ToolOutput::error(format!("cannot run the command: {e}")),
+            Err(e) => ToolOutput::error(
+                crate::child::start_error(&self.children, &e)
+                    .unwrap_or_else(|| format!("cannot run the command: {e}")),
+            ),
         }
     }
 
@@ -165,11 +174,9 @@ impl Op {
         mut progress: Option<&mut Sender>,
     ) -> io::Result<ToolOutput> {
         let (reader, writer) = io::pipe()?;
-        let mut command = Command::new("sh");
+        let mut command =
+            crate::child::shell(&self.children, &self.command, &self.cwd, &self.writable);
         command
-            .arg("-c")
-            .arg(&self.command)
-            .current_dir(&self.cwd)
             .envs(ENV)
             .envs(
                 self.scratch

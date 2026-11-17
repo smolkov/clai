@@ -24,7 +24,8 @@ const DESCRIPTION: &str = "      ";
 /// The open question from the model, if there is one.
 fn open(app: &App) -> Option<(&Prompt, &AskUser, &Ask)> {
     let prompt = app.prompt.as_ref()?;
-    let QuestionKind::AskUser(a) = &prompt.question.kind else {
+    // Shown with hidden characters made visible (RFC 0035).
+    let QuestionKind::AskUser(a) = &prompt.shown.kind else {
         return None;
     };
     Some((prompt, a, prompt.ask.as_ref()?))

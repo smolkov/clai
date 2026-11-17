@@ -697,3 +697,114 @@ fn accept_rules() {
         assert!(call.accept_rules(&f.env, proposal).is_ok(), "{proposal:?}");
     }
 }
+
+/// A fixture whose commands get `children`.
+fn with_children(children: crate::child::Children) -> Fixture {
+    let f = Fixture::new();
+    let workspace = (*f.env.workspace).clone().with_children(children);
+    Fixture {
+        env: Env {
+            workspace: Arc::new(workspace),
+            ..f.env
+        },
+        tmp: f.tmp,
+    }
+}
+
+#[tokio::test]
+async fn run_command_gets_no_provider_keys() {
+    // HOME stands in for a key: it is set wherever the tests run.
+    if std::env::var_os("HOME").is_none() {
+        eprintln!("skipped: HOME is not set");
+        return;
+    }
+    let f = with_children(crate::child::Children {
+        remove_env: vec!["HOME".into()],
+        sandbox: None,
+    });
+    assert_eq!(
+        f.ok("run_command", json!({"command": "echo \"${HOME-gone}\""}))
+            .await,
+        "gone\nexit code 0"
+    );
+}
+
+/// Whether `bwrap` can make a sandbox here; tests that need one skip
+/// without, and say why.
+fn bwrap_works() -> bool {
+    let ok = std::process::Command::new("bwrap")
+        .args(["--ro-bind", "/", "/", "--unshare-pid", "--", "true"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success());
+    if !ok {
+        eprintln!("skipped: bwrap is missing or cannot make namespaces here");
+    }
+    ok
+}
+
+#[tokio::test]
+async fn run_command_in_the_sandbox() {
+    if !bwrap_works() {
+        return;
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    let hidden = tmp.path().join("dot-ssh");
+    fs::create_dir(&hidden).unwrap();
+    fs::write(hidden.join("id_ed25519"), "key").unwrap();
+    let outside = tmp.path().join("outside");
+    fs::create_dir(&outside).unwrap();
+    let f = with_children(crate::child::Children {
+        remove_env: vec![],
+        sandbox: Some(crate::child::Sandbox {
+            network: false,
+            hide: vec![hidden.clone()],
+        }),
+    });
+
+    // The question says where it runs.
+    let call = f.ready("run_command", json!({"command": "true"}));
+    match &call.details {
+        crate::tools::Details::RunCommand { sandbox, .. } => {
+            assert_eq!(sandbox.as_deref(), Some("sandbox, no network"));
+        }
+        other => panic!("{other:?}"),
+    }
+
+    // The workspace is writable.
+    f.ok("run_command", json!({"command": "echo in > made.txt"}))
+        .await;
+    assert_eq!(f.read("made.txt"), "in\n");
+    // Elsewhere nothing is written.
+    let target = outside.join("x");
+    let out = f
+        .run(
+            "run_command",
+            // No redirection: the permission check sees no path, the
+            // sandbox stops it.
+            json!({"command": format!("touch {}", target.display())}),
+        )
+        .await;
+    assert!(out.is_error, "{}", out.text);
+    assert!(!target.exists());
+    // Hidden places are empty.
+    assert_eq!(
+        f.ok(
+            "run_command",
+            json!({"command": format!("ls -A {}", hidden.display())})
+        )
+        .await,
+        "exit code 0"
+    );
+    // No network: only the loopback interface.
+    let out = f
+        .ok("run_command", json!({"command": "cat /proc/net/dev"}))
+        .await;
+    let interfaces: Vec<&str> = out
+        .lines()
+        .filter_map(|l| l.split_once(':').map(|(name, _)| name.trim()))
+        .filter(|name| !name.contains('|') && !name.is_empty())
+        .collect();
+    assert_eq!(interfaces, ["lo"], "{out}");
+}

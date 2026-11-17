@@ -95,7 +95,11 @@ pub async fn collect(
                     open.push(Open { id, name });
                 }
                 Event::ToolCallArgsDelta { .. } => {}
-                Event::ToolCallEnd { id, arguments } => {
+                Event::ToolCallEnd {
+                    id,
+                    arguments,
+                    signature,
+                } => {
                     finish_text(&mut text, &mut out.blocks, events);
                     // A call that did not start (a broken adapter) gets no
                     // name; prepare reports it as an unknown tool.
@@ -114,6 +118,7 @@ pub async fn collect(
                         id,
                         name,
                         arguments,
+                        signature,
                     });
                 }
                 Event::Usage {

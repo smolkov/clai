@@ -21,7 +21,7 @@ use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWrite, AsyncWr
 use crate::agent::{Answer, Question, SessionEvent, State};
 
 /// The protocol version; a new message or event kind needs a new one.
-pub const VERSION: u32 = 10;
+pub const VERSION: u32 = 11;
 
 /// The longest message accepted, in bytes.
 pub const MAX_LINE: usize = 16 << 20;
@@ -279,6 +279,12 @@ pub enum Payload {
     },
     Sessions {
         sessions: Vec<SessionInfo>,
+    },
+    /// After `import`: the session, and the session rules of the file that
+    /// were left out (RFC 0035).
+    Imported {
+        session: Box<SessionInfo>,
+        dropped_rules: Vec<String>,
     },
     Status(Status),
     SessionStatus {

@@ -403,7 +403,9 @@ also queued messages; the values stay in the server's memory only.
   session to one JSON file (mode `0600`), with its images in base64;
   `codeagent import FILE` adds it as a saved session, under its name made
   unique or a given one. Image names in the file must be `<sha256>.<ext>`
-  and match their bytes. Use them to
+  and match their bytes. Session rules ("always" answers) in the file are
+  left out, and `codeagent import` names each one: a file from someone
+  else must not grant permissions (RFC 0035). Use them to
   archive a session or move it to another machine.
 
 ## Open questions

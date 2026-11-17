@@ -5,7 +5,7 @@
 
 use std::time::Duration;
 
-use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue, RETRY_AFTER};
+use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue, LOCATION, RETRY_AFTER};
 
 use super::error::{ErrorKind, ProviderError};
 
@@ -46,6 +46,10 @@ impl Http {
         let client = reqwest::Client::builder()
             .connect_timeout(timeout)
             .tls_certs_merge(bundled)
+            // A redirect would carry the key (`x-api-key` is not among the
+            // headers reqwest drops) and the conversation elsewhere
+            // (RFC 0035).
+            .redirect(reqwest::redirect::Policy::none())
             .user_agent(concat!("codeagent/", env!("CARGO_PKG_VERSION")))
             .build()
             .map_err(|e| ProviderError::new(ErrorKind::Network, format!("HTTP client: {e}")))?;
@@ -76,6 +80,20 @@ impl Http {
         let status = response.status();
         if status.is_success() {
             return Ok(response);
+        }
+        if status.is_redirection() {
+            let target = response
+                .headers()
+                .get(LOCATION)
+                .and_then(|v| v.to_str().ok())
+                .map_or_else(|| "another address".to_owned(), redirect_target);
+            return Err(PostError::Provider(ProviderError::new(
+                ErrorKind::InvalidRequest,
+                format!(
+                    "the provider answered with a redirect ({}) to {target}; set base_url to the final address",
+                    status.as_u16()
+                ),
+            )));
         }
         let retry_after = response
             .headers()
@@ -138,6 +156,23 @@ fn network(e: &reqwest::Error) -> ProviderError {
         ErrorKind::Network
     };
     ProviderError::new(kind, message)
+}
+
+/// Where a redirect points, without its query or fragment, which may hold
+/// a token.
+fn redirect_target(location: &str) -> String {
+    let end = location.find(['?', '#']).unwrap_or(location.len());
+    let target = location.get(..end).unwrap_or(location);
+    let target: String = target
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(200)
+        .collect();
+    if end < location.len() {
+        format!("{target}?…")
+    } else {
+        target
+    }
 }
 
 /// Error kind for an HTTP status, before the adapter looks at the body.

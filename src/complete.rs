@@ -118,10 +118,13 @@ mod tests {
             values(""),
             [
                 "anthropic/sonnet=claude-sonnet-5-5",
-                "local/qwen=qwen3-coder:30b"
+                "local/qwen=qwen3-coder:30b",
+                "gemini/flash=gemini-3.8-flash",
+                "gemini/hydrogen=gemini-4-hydrogen"
             ]
         );
         assert_eq!(values("lo"), ["local/qwen=qwen3-coder:30b"]);
+        assert_eq!(values("gemini/h"), ["gemini/hydrogen=gemini-4-hydrogen"]);
         assert!(values("x").is_empty());
         let _ = std::fs::remove_dir_all(dir);
     }

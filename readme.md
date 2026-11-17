@@ -121,7 +121,7 @@ result.
 | `Ctrl-N` / `Ctrl-P` | Attach to the next / previous session. |
 | `Tab` | Switch to the conversation: `Up` / `Down` select, `Enter` expands a tool call, `o` opens it in a view with all of it (`/` search, `y` copy, `w` wrap), `y` copies the entry, `Y` its code block, `?` shows help. |
 | `Ctrl-Y` / `Ctrl-T` | Copy the last answer / show or hide the tool calls of the last turn. |
-| `Ctrl-V` / `Alt-V` | Paste a screenshot from the clipboard as `[Image #1]` (or its text); `/image PATH` and dropped image files work too. Models read them when their table has `images = true` (default for `anthropic`). |
+| `Ctrl-V` / `Alt-V` | Paste a screenshot from the clipboard as `[Image #1]` (or its text); `/image PATH` and dropped image files work too. Models read them when their table has `images = true` (default for `anthropic` and `gemini`). |
 | Mouse | Drag to select and copy (wrapped lines joined, markers left out), double click a word, triple click a line; click a tool call for a short look, double click it for the whole result. `Shift`-drag uses the terminal's selection. |
 
 A tool call that needs permission opens a prompt: `y` yes, `a` always (`Tab`
@@ -296,6 +296,21 @@ id             = "claude-sonnet-5-5"
 context_window = 200000
 ```
 
+Google's Gemini models use `api = "gemini"`; the address is built in:
+
+```toml
+[providers.gemini]
+api         = "gemini"
+api_key_env = "GEMINI_API_KEY"
+
+[providers.gemini.models.flash]
+id             = "gemini-3.8-flash"
+context_window = 1048576
+```
+
+Other providers with a Chat Completions API (OpenAI, Ollama, vLLM, …) use
+`api = "openai-compatible"` and a `base_url`.
+
 Check it with `codeagent models`, which lists every configured model and marks
 the default and providers whose key variable is not set.
 
@@ -350,6 +365,49 @@ the model read one, add it to `builtin_except` in your own config file:
 [permissions]
 builtin_except = ["deploy/certs/*.pem"]
 ```
+
+Two more kinds of built-in rules guard against code that runs later or
+around a rule:
+
+- Files in `.git/` are never written by the model's file tools or
+  redirections: a hook or `core.fsmonitor` there would make `git` run
+  commands without asking. `git` commands still work.
+- Options that run another command ask, even when the command is allowed:
+  `find -exec`, `git -c`, `git config`, `rg --pre`, `tar --to-command`,
+  `rsync -e`, `ssh -o` and the like. So `allow run_command(find)` does not
+  allow `find . -exec sh -c '…' ;`. `builtin_except = ["git config"]`
+  lifts one of them.
+
+## Security
+
+Commands and language servers never get your provider keys
+(`ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, the `api_key_env` of each
+provider, …): an allowed `cargo test` runs the repository's code. A project
+whose own tests need one keeps it with `[run_command] keep_env =
+["OPENAI_API_KEY"]`.
+
+Text from the model and from tools reaches your terminal without escape
+sequences, so it cannot write your clipboard or overwrite a question;
+questions show hidden characters as `⟨U+202E⟩` instead. An imported
+session brings no "always" rules along, and requests to a provider never
+follow a redirect.
+
+On Linux, commands can also run in a sandbox (needs `bwrap`, from the
+`bubblewrap` package):
+
+```toml
+[sandbox]
+enabled = true
+network = false          # optional: no network for commands
+hide = ["~/.kube"]       # more places that are empty inside
+```
+
+Then a command can write only in the workspace, the scratch directory and
+`extra_dirs` with write access; `~/.ssh`, `~/.aws`, `~/.gnupg`,
+`~/.netrc` and `codeagent`'s own files are empty inside. Questions say
+`in sandbox`. Without `bwrap` the command fails rather than run
+unprotected. The threat model, what is guarded and what is not:
+[`spec/security.md`](spec/security.md).
 
 ## Secrets
 

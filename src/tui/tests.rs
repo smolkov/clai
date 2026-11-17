@@ -75,6 +75,7 @@ fn settings(unicode: bool, colour: bool) -> Settings {
             user_file: "/home/u/.config/codeagent/config.toml".into(),
             home: Some("/home/u".into()),
         },
+        warnings: Vec::new(),
     }
 }
 
@@ -6785,4 +6786,36 @@ mod images {
             image: crate::image::Image::from_bytes(fixtures::png(size, size)).unwrap(),
         }
     }
+}
+
+#[test]
+fn a_question_shows_its_hidden_characters_and_answers_with_the_original() {
+    let mut question = permission();
+    question.summary = "edit_file: src/\u{202e}sr.esrap (line 1)".to_owned();
+    let QuestionKind::Permission(p) = &mut question.kind else {
+        panic!("not a permission");
+    };
+    p.proposals = vec![vec!["edit_file(src/\u{202e}sr.esrap)".to_owned()]];
+    let mut app = app();
+    app.update(live(SessionEvent::ToolCall(call(
+        "c1",
+        "edit_file",
+        CallState::Waiting,
+    ))));
+    app.update(live(SessionEvent::Question(Box::new(question))));
+    let text = screen(&mut app, 100, 24);
+    assert!(
+        text.contains("note: this question contains 2 hidden characters, shown as ⟨…⟩"),
+        "{text}"
+    );
+    assert!(text.contains("src/⟨U+202E⟩sr.esrap"), "{text}");
+    // "Always" sends the rule as the server proposed it.
+    app.update(key(KeyCode::Char('a')));
+    let effects = app.update(key(KeyCode::Enter));
+    assert_eq!(
+        answer_of(&effects),
+        Answer::AllowAlways {
+            rules: vec!["edit_file(src/\u{202e}sr.esrap)".to_owned()]
+        }
+    );
 }

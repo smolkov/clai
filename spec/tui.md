@@ -530,6 +530,15 @@ command: rust-analyzer  It may run build scripts and macros of the project.
 
 It has no `a`: "yes" already lasts for the session.
 
+
+A question whose text holds hidden characters (control characters,
+bidirectional controls, zero-width characters) shows them as `⟨U+202E⟩`
+(`␛` for `ESC`) and starts with the line `note: this question contains N
+hidden characters, shown as ⟨…⟩` in the warning colour (RFC 0035; see
+[`command.md`](command.md), "Terminal output"). The answer, and an
+"always" rule, use the question as the server sent it. Elsewhere the TUI
+drops control characters and bidirectional controls.
+
 ## Limit prompt
 
 When a turn reaches its limit of model requests or tool calls, the session

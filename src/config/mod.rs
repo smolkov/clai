@@ -49,6 +49,8 @@ pub use crate::startup::{MODEL_ENV, THEME_ENV};
 pub enum Api {
     Anthropic,
     OpenAiCompatible,
+    /// Google's Gemini API (RFC 0032).
+    Gemini,
 }
 
 impl Api {
@@ -56,6 +58,7 @@ impl Api {
         match name {
             "anthropic" => Some(Api::Anthropic),
             "openai-compatible" => Some(Api::OpenAiCompatible),
+            "gemini" => Some(Api::Gemini),
             _ => None,
         }
     }
@@ -64,6 +67,7 @@ impl Api {
         match self {
             Api::Anthropic => "anthropic",
             Api::OpenAiCompatible => "openai-compatible",
+            Api::Gemini => "gemini",
         }
     }
 
@@ -72,6 +76,7 @@ impl Api {
         match self {
             Api::Anthropic => Some("https://api.anthropic.com"),
             Api::OpenAiCompatible => None,
+            Api::Gemini => Some("https://generativelanguage.googleapis.com"),
         }
     }
 }
@@ -373,6 +378,44 @@ pub struct Config {
     pub lsp: Lsp,
     /// `[skills]`: where skills are found (RFC 0023).
     pub skills: Skills,
+    /// `[run_command] keep_env`: provider key variables commands keep
+    /// (RFC 0035).
+    pub keep_env: Vec<String>,
+    /// `[sandbox]` (RFC 0035).
+    pub sandbox: Sandbox,
+    /// Warnings that do not stop loading, one line each: an `api_key` in a
+    /// file others can read (RFC 0035).
+    pub warnings: Vec<String>,
+}
+
+/// `[sandbox]` of the user file: where commands run (RFC 0035).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sandbox {
+    /// `run_command` runs inside `bwrap`.
+    pub enabled: bool,
+    /// Commands in the sandbox may use the network.
+    pub network: bool,
+    /// More directories or files that are empty in the sandbox; absolute.
+    pub hide: Vec<PathBuf>,
+}
+
+impl Default for Sandbox {
+    fn default() -> Sandbox {
+        Sandbox {
+            enabled: false,
+            network: true,
+            hide: Vec::new(),
+        }
+    }
+}
+
+/// Whether `name` can be the name of an environment variable.
+fn is_env_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 /// `[skills]` of the user file.
@@ -611,7 +654,28 @@ pub fn load_with_user_text(
         text,
     });
     let theme_files = themes::read_directory(&themes::directory(user_path));
-    build(user, project, &options.env, &theme_files).map_err(Error::Config)
+    let mut config = build(user, project, &options.env, &theme_files).map_err(Error::Config)?;
+    config
+        .warnings
+        .extend(readable_key_warning(&config, user_path));
+    Ok(config)
+}
+
+/// A warning when the user file holds an `api_key` and others may read it.
+fn readable_key_warning(config: &Config, path: &Path) -> Option<String> {
+    use std::os::unix::fs::PermissionsExt;
+    let has_key = config
+        .providers
+        .values()
+        .any(|p| matches!(p.key, KeySource::Value(_)));
+    let mode = fs::metadata(path).ok()?.permissions().mode() & 0o777;
+    (has_key && mode & 0o077 != 0).then(|| {
+        format!(
+            "{}: api_key is readable by other users (mode {mode:04o}); run chmod 600 {}",
+            path.display(),
+            path.display()
+        )
+    })
 }
 
 fn read_error(path: &Path, e: &io::Error) -> Error {
@@ -759,6 +823,47 @@ fn build(
         .as_ref()
         .and_then(|s| s.scratch)
         .unwrap_or(true);
+    let mut keep_env = Vec::new();
+    for name in user_file
+        .run_command
+        .iter()
+        .flat_map(|r| r.keep_env.iter().flatten())
+    {
+        if is_env_name(name.get_ref()) {
+            keep_env.push(name.get_ref().clone());
+        } else {
+            errors.push(user.error(
+                Some(name.span()),
+                Some("run_command.keep_env".into()),
+                format!("`{}` is not a variable name", name.get_ref()),
+            ));
+        }
+    }
+    let mut sandbox = Sandbox::default();
+    if let Some(file) = user_file.sandbox {
+        if let Some(enabled) = &file.enabled {
+            sandbox.enabled = *enabled.get_ref();
+            if sandbox.enabled && !cfg!(target_os = "linux") {
+                errors.push(user.error(
+                    Some(enabled.span()),
+                    Some("sandbox.enabled".into()),
+                    format!(
+                        "the sandbox needs Linux (bwrap); not available on {}",
+                        std::env::consts::OS
+                    ),
+                ));
+            }
+        }
+        sandbox.network = file.network.unwrap_or(true);
+        for path in file.hide.iter().flatten() {
+            match permissions::expand_dir(path.get_ref(), env.home.as_deref()) {
+                Ok(path) => sandbox.hide.push(path),
+                Err(message) => {
+                    errors.push(user.error(Some(path.span()), Some("sandbox.hide".into()), message))
+                }
+            }
+        }
+    }
 
     let mut default_given = false;
     let mut default_model = None;
@@ -783,6 +888,8 @@ fn build(
             ("skills", &file.skills),
             ("history", &file.history),
             ("session", &file.session),
+            ("run_command", &file.run_command),
+            ("sandbox", &file.sandbox),
         ] {
             if let Some(value) = value {
                 errors.push(ctx.error(
@@ -862,8 +969,24 @@ fn build(
             theme_warnings,
             lsp,
             skills,
+            keep_env,
+            sandbox,
+            warnings: Vec::new(),
         }),
         _ => Err(ConfigErrors(errors)),
+    }
+}
+
+/// A configuration from the text of a user file, for tests elsewhere.
+#[cfg(test)]
+pub(crate) fn load_for_test(text: &str) -> Config {
+    let user = FileCtx {
+        path: Path::new("user.toml"),
+        text,
+    };
+    match build(user, None, &Environment::default(), &[]) {
+        Ok(config) => config,
+        Err(e) => panic!("{e}"),
     }
 }
 
@@ -928,7 +1051,7 @@ fn build_providers(
                         api.span(),
                         format!("{key}.api"),
                         format!(
-                            "unknown api `{}`; expected anthropic or openai-compatible",
+                            "unknown api `{}`; expected anthropic, openai-compatible or gemini",
                             api.get_ref()
                         ),
                     ));
@@ -1047,6 +1170,18 @@ fn build_model(
         errors.push(ctx.error(Some(span.clone()), Some(key.clone()), message));
     }
     let id = match file.id {
+        // Gemini puts the id into the request path (RFC 0032).
+        Some(id) if api == Some(Api::Gemini) && id.get_ref().contains(['/', '?', '#']) => {
+            errors.push(ctx.error(
+                Some(id.span()),
+                Some(format!("{key}.id")),
+                format!(
+                    "`{}` must not contain /, ? or # for a gemini provider",
+                    id.get_ref()
+                ),
+            ));
+            String::new()
+        }
         Some(id) => id.into_inner(),
         None => {
             errors.push(ctx.error(Some(span.clone()), Some(key.clone()), "missing id"));

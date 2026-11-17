@@ -4,6 +4,7 @@
 mod anthropic;
 mod error;
 pub mod fake;
+mod gemini;
 mod http;
 mod openai;
 mod remote;
@@ -61,6 +62,7 @@ fn with_retry_base(
         Api::OpenAiCompatible => {
             Arc::new(remote::Remote::new(openai::OpenAi, provider, env, base)?)
         }
+        Api::Gemini => Arc::new(remote::Remote::new(gemini::Gemini, provider, env, base)?),
     })
 }
 

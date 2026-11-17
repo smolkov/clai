@@ -1374,6 +1374,7 @@ fn calls_of(answer: &Streamed) -> Vec<CallIn> {
                 id,
                 name,
                 arguments,
+                ..
             } => calls.push(CallIn {
                 id: id.clone(),
                 name: name.clone(),

@@ -20,6 +20,8 @@ pub struct Workspace {
     home: Option<PathBuf>,
     /// The session's scratch directory (RFC 0029), if it has one.
     scratch: Option<ScratchDir>,
+    /// What child processes get (RFC 0035).
+    children: crate::child::Children,
 }
 
 /// The scratch directory as the checks need it.
@@ -119,7 +121,34 @@ impl Workspace {
             extra: dirs,
             home,
             scratch: None,
+            children: crate::child::Children::default(),
         })
+    }
+
+    /// This workspace with what its child processes get (RFC 0035).
+    pub fn with_children(mut self, children: crate::child::Children) -> Workspace {
+        self.children = children;
+        self
+    }
+
+    pub fn children(&self) -> &crate::child::Children {
+        &self.children
+    }
+
+    /// Where a sandboxed command may write: the workspace, the scratch
+    /// directory and the extra directories with write access.
+    pub fn writable(&self) -> crate::child::Writable {
+        let mut dirs = vec![self.root.clone()];
+        dirs.extend(
+            self.extra
+                .iter()
+                .filter(|d| d.access == Access::Write)
+                .map(|d| d.path.clone()),
+        );
+        if let Some(scratch) = &self.scratch {
+            dirs.push(scratch.path.clone());
+        }
+        crate::child::Writable { dirs }
     }
 
     /// This workspace with the session's scratch directory: writable, and
@@ -405,6 +434,7 @@ mod tests {
             extra: Vec::new(),
             home: Some(PathBuf::from("/home/u")),
             scratch: None,
+            children: crate::child::Children::default(),
         };
         assert_eq!(ws.tilde(Path::new("/home/u/ws/docs")), "~/ws/docs");
         assert_eq!(ws.tilde(Path::new("/opt")), "/opt");

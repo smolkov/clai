@@ -3,6 +3,7 @@
 [Introduction](readme.md)
 
 - [Architecture](architecture.md)
+- [Security](security.md)
 
 # User interface
 

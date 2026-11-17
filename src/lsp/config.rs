@@ -86,6 +86,7 @@ impl ServerDef {
             settings: self.settings.clone(),
             start_timeout: lsp.start_timeout,
             request_timeout: lsp.request_timeout,
+            remove_env: Vec::new(),
         }
     }
 

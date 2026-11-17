@@ -19,3 +19,17 @@ base_url = "http://localhost:11434/v1"
 [providers.local.models.qwen]
 id             = "qwen3-coder:30b"
 context_window = 32768
+
+[providers.gemini]
+api         = "gemini"
+api_key_env = "GEMINI_API_KEY"
+
+[providers.gemini.models.flash]
+id                = "gemini-3.8-flash"
+context_window    = 1048576
+max_output_tokens = 65536
+
+[providers.gemini.models.hydrogen]
+id                = "gemini-4-hydrogen"
+context_window    = 1048576
+max_output_tokens = 65536

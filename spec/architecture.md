@@ -278,7 +278,7 @@ need the network. Build output goes to `target/`, the spec book to
 Clients and the server exchange JSON messages over the Unix socket, one
 message per line (at most 16 MiB). Every message is an object with a
 `type`. The first message in each direction is `hello` with the protocol
-version (now `9`); on a mismatch the server sends `error` and closes the
+version (now `11`; RFC 0035 made it `11`, with the `imported` answer); on a mismatch the server sends `error` and closes the
 connection, and the message tells the user to restart the server with
 `codeagent server stop` (see [`sessions.md`](sessions.md), "Server"). The code
 is in `src/protocol/`.
@@ -288,7 +288,7 @@ Message kinds:
 | Direction | Kind | Content |
 |-----------|------|---------|
 | client → server | `hello` | Protocol version; client kind (`tui`, `chat`, `cli`, `bridge`) and name (e.g. `tui pts/3`, `codeagent chat`), which is shown as who answered; whether it answers questions. |
-| client → server | `request` | An id and a command: `new`, `list`, `kill`, `rename`, `attach`, `detach`, `send` (message, with images in base64, RFC 0034), `set_model`, `skills`, `set_skills`, `cancel`, `answer`, `export`, `import`, `status`, `session_status`, `global_stats`, `models`, `lsp_status`, `lsp_restart`, `lsp_stop`, `stop`. Each gets exactly one `response`. Sessions are named by their current name; `attach`, `send`, `set_model` and `set_skills` resume a saved session. |
+| client → server | `request` | An id and a command: `new`, `list`, `kill`, `rename`, `attach`, `detach`, `send` (message, with images in base64, RFC 0034), `set_model`, `skills`, `set_skills`, `cancel`, `answer`, `export`, `import` (answered with the session and the session rules it left out, RFC 0035), `status`, `session_status`, `global_stats`, `models`, `lsp_status`, `lsp_restart`, `lsp_stop`, `stop`. Each gets exactly one `response`. Sessions are named by their current name; `attach`, `send`, `set_model` and `set_skills` resume a saved session. |
 | server → client | `hello` | Protocol version and the server's PID. |
 | server → client | `response` | The request's id and its `result`: `ok` with a payload (`done`, a session, the session list, the status, a session's status, the global statistics, the models; a session is its id, name, workspace, model, state, created and last updated time, turns, queued messages, open question and token totals) or `error` with a message, marked `usage` when the request itself was wrong (the command then exits `2`). |
 | server → client | `event` | Something that happened in an attached session, with the session's id, and `replay` when it is part of the log sent on attach (see below). |
@@ -441,20 +441,11 @@ version is a bug, not an expected case; a new kind needs a new version.
 
 ## Trust boundaries
 
-| Source | Trusted | Guard |
-|--------|---------|-------|
-| User config file | Yes | Validation only. |
-| Project config file | No: comes with the repository | May only make permissions stricter; no providers, models or `[tui]` (see [`config.md`](config.md), "Files"). |
-| Model output (text, tool calls) | No | Argument checks, workspace boundary, permission rules including the built-in rules for secret files (see [`config.md`](config.md), "Built-in rules"), questions (see [`tools.md`](tools.md)). |
-| Language servers | No: they run code of the project (build scripts, macros, plugins) | Started only after the start question, or with `[lsp] start = "allow"` in the user file; a project file may only turn them off. Their answers are data: locations are filtered with the `read_file` rules, text outside the workspace is not shown, and a `workspace/applyEdit` is never applied. A malformed message fails the server, not the session. |
-| Tool output (file contents, command output) | No | Sent to the model as data, and the system prompt says so; never interpreted by `codeagent`, never logged. |
-| Clients | Yes, same user | Socket directory mode `0700`; the server never listens on the network. |
-| A later web UI | Only through a bridge the user starts and authenticates | Same protocol and same answer checks as any client (see [`sessions.md`](sessions.md), "Clients"). |
-| Provider APIs | For their answers only | HTTPS (or a local address the user configured); keys only to the provider they belong to. |
-
-Answers are checked by the server, not by the client: a client can only pick
-one of the choices of the open question, and an `always` rule must match the
-call. A buggy client can therefore not allow more than the user chose.
+What is trusted, from whom `codeagent` protects what, and the guard for each
+entry point: [`security.md`](security.md). In short: the user file and the
+clients are trusted; the project file, model output, tool output, language
+servers, child processes, imported files and the provider's answers are
+not.
 
 ## Errors
 

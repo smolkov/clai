@@ -145,7 +145,9 @@ pub fn wrap_rows(
             std::iter::repeat_n(if tab { ' ' } else { c }, spaces).map(move |c| (c, *style))
         })
     });
-    for (c, style) in chars.filter(|(c, _)| !c.is_control()) {
+    // Control characters and bidirectional controls are dropped (RFC 0035);
+    // questions show them, see `text::safe::visible_question`.
+    for (c, style) in chars.filter(|(c, _)| !c.is_control() && !crate::text::safe::is_bidi(*c)) {
         let w = c.width().unwrap_or(0);
         if used + w > avail(&rows) && !row.is_empty() {
             // A space that does not fit is the break itself.

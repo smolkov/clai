@@ -305,6 +305,7 @@ fn call(id: &str, name: &str, arguments: Value) -> Vec<Result<Event, ProviderErr
         Ok(Event::ToolCallEnd {
             id: id.into(),
             arguments,
+            signature: None,
         }),
     ]
 }
@@ -1861,4 +1862,25 @@ mod refused_images {
                 .contains(&"images are sent as they are; secrets in them are not hidden".into())
         );
     }
+}
+
+#[tokio::test]
+async fn a_call_keeps_its_signature_for_the_next_request() {
+    let mut events = call("c1", "list_files", json!({}));
+    if let Some(Ok(Event::ToolCallEnd { signature, .. })) = events.last_mut() {
+        *signature = Some("sig==".into());
+    }
+    events.extend(done(StopReason::ToolUse));
+    let mut f = Fixture::new(vec![Step::Events(events), say("done")]);
+    let (end, _) = f.turn("go", &no_questions()).await;
+    assert_eq!(end.reason, EndReason::Done);
+    let sent = f.requests()[1]
+        .messages
+        .iter()
+        .flat_map(|m| &m.content)
+        .find_map(|b| match b {
+            Block::ToolCall { signature, .. } => Some(signature.clone()),
+            _ => None,
+        });
+    assert_eq!(sent, Some(Some("sig==".into())));
 }

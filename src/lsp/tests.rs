@@ -389,6 +389,7 @@ fn setup(root: &Path) -> Setup {
         settings: json!({"checkOnSave": false, "fake": {"inner": 1}}),
         start_timeout: Duration::from_secs(2),
         request_timeout: Duration::from_millis(200),
+        remove_env: Vec::new(),
     }
 }
 

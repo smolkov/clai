@@ -7,6 +7,28 @@ notes are taken from that section by `ci/notes.sh`.
 
 ## Unreleased
 
+- Security (RFC 0035), from a second review; the threat model is
+  `spec/security.md`:
+  - Plain output (`run`, `chat`) removes escape sequences from model and
+    tool text, so it cannot write the clipboard or overwrite a question;
+    questions show hidden characters (`⟨U+202E⟩`), also in the TUI.
+  - `codeagent import` leaves out the session rules of the file and says
+    which. Protocol version 11.
+  - Commands and language servers get no provider keys;
+    `[run_command] keep_env` keeps one.
+  - Provider requests do not follow redirects.
+  - Built-in rules: `.git/` is not written by file tools or redirections;
+    options that run commands (`find -exec`, `git -c`, `rg --pre`, …) ask.
+  - A user file with `api_key` that others can read gives a warning.
+  - Opt-in sandbox for commands on Linux with `bwrap`: `[sandbox]`.
+
+- Gemini provider (RFC 0032): `api = "gemini"` talks to Google's Gemini
+  API directly, with tool calls (their thought signatures are kept with
+  the session and sent back), images, and the API's own caching. Tool
+  calls of another model earlier in a session go to Gemini as text. The
+  example config has `gemini/flash` (`gemini-3.8-flash`) and
+  `gemini/hydrogen` (`gemini-4-hydrogen`).
+
 - Images in messages (RFC 0034): `Ctrl-V` (or `Alt-V`) pastes a screenshot
   from the clipboard as `[Image #1]` at the cursor, a dropped image file
   and `/image PATH` add one too; text goes around them. Models with the new

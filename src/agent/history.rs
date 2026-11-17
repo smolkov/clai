@@ -232,6 +232,7 @@ impl<'a> Calls<'a> {
                         id,
                         name,
                         arguments,
+                        ..
                     } => {
                         has_calls = true;
                         by_id.insert(
@@ -375,6 +376,7 @@ mod tests {
                     id: id.clone(),
                     name: "read_file".into(),
                     arguments: json!({"path": format!("f{i}.rs"), "limit": 50}),
+                    signature: None,
                 }],
             );
             h.push(
@@ -481,6 +483,7 @@ mod tests {
                 id: "c2".into(),
                 name: "read_file".into(),
                 arguments: args.clone(),
+                signature: None,
             }],
         );
         h.push(
@@ -501,6 +504,7 @@ mod tests {
                     id: id.clone(),
                     name: "list_files".into(),
                     arguments: json!({}),
+                    signature: None,
                 }],
             );
             more.push(

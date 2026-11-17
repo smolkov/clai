@@ -134,6 +134,7 @@ When a spec file is added, renamed or removed, update this table and
 | [`SUMMARY.md`](SUMMARY.md) | — | Table of contents for mdBook. |
 | [`book.toml`](book.toml) | — | mdBook configuration. |
 | [`architecture.md`](architecture.md) | draft | Roles (client, server, one-shot), components and layers, project tree, state ownership, protocol messages and events, data flow of a turn, concurrency, trust boundaries, errors. |
+| [`security.md`](security.md) | draft | Threat model: assets, attackers, entry points and their guards, accepted risks, the checklist for new features, findings of the reviews. |
 | [`command.md`](command.md) | draft | All command-line commands: syntax, options, output, exit codes. |
 | [`tui.md`](tui.md) | draft | Full-screen interface: layout, session list, model picker, keys, permission prompts, input editor. |
 | [`sessions.md`](sessions.md) | draft | Server, several sessions, attach/detach, session commands. |
@@ -159,5 +160,7 @@ coding agent working on this repository).
 4. **Platforms:** decided in RFC 0020: Linux (static musl builds for x86_64
    and aarch64) and macOS (x86_64, aarch64). Not Windows: `codeagent` uses Unix
    sockets, process groups and signals.
-5. **Sandbox:** should commands run in a sandbox, or only behind the
-   permission prompt?
+5. ~~**Sandbox:** should commands run in a sandbox, or only behind the
+   permission prompt?~~ Both: the permission prompt always, and an opt-in
+   sandbox with `bwrap` on Linux (RFC 0035, [`config.md`](config.md),
+   "Sandbox").

@@ -192,6 +192,9 @@ impl Run {
         let workspace = ctx.workspace(self.dir.as_deref())?;
         let options = ctx.load_options(workspace.clone());
         let config = config::load(&options)?;
+        for warning in &config.warnings {
+            crate::output::note(warning);
+        }
         let model_ref = match &self.model {
             Some(text) => config.resolve_model(text).map_err(Error::Usage)?,
             None => config.default_model.clone(),
@@ -216,6 +219,12 @@ impl Run {
                 }
             }
         }
+        let children = crate::child::Children::from_config(
+            &config,
+            options.env.home.as_deref(),
+            ctx.paths.state.as_deref(),
+            &ctx.paths.runtime,
+        );
         let mut workspace =
             Workspace::new(&workspace, &config.permissions.extra_dirs, options.env.home)
                 .map_err(Error::io(workspace.display().to_string()))?;
@@ -223,6 +232,8 @@ impl Run {
             let key = crate::scratch::run_key(std::process::id());
             workspace = workspace.with_scratch(Scratch::new(&ctx.paths.runtime, &key));
         }
+        // No provider keys for commands; maybe the sandbox (RFC 0035).
+        workspace = workspace.with_children(children);
         let place = workspace.tilde(workspace.root());
         let root = workspace.root().to_path_buf();
         let unicode = unicode(config.tui.symbols, ctx.startup.getenv());

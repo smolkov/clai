@@ -63,6 +63,10 @@ pub enum Block {
         /// A JSON object, or the raw text as a JSON string if the model sent
         /// invalid JSON.
         arguments: Value,
+        /// Opaque data the provider that made the call needs back unchanged
+        /// (Gemini's thought signature, RFC 0032).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        signature: Option<String>,
     },
     /// In user messages; answers the `ToolCall` with the same id.
     ToolResult {
@@ -111,6 +115,8 @@ pub enum Event {
     ToolCallEnd {
         id: String,
         arguments: Value,
+        /// See `Block::ToolCall`.
+        signature: Option<String>,
     },
     /// Token counts of this request; the last one counts. `input_tokens`
     /// is all input, cached or not; the cache fields are parts of it.
@@ -167,5 +173,27 @@ mod tests {
         assert_eq!(parse_arguments(r#"{"path":"a"}"#), json!({"path": "a"}));
         assert_eq!(parse_arguments(r#"{"path":"#), json!(r#"{"path":"#));
         assert_eq!(parse_arguments("[1]"), json!("[1]"));
+    }
+
+    #[test]
+    fn a_signature_is_saved_and_old_calls_load_without_one() {
+        let call = |signature: Option<&str>| Block::ToolCall {
+            id: "c1".into(),
+            name: "read_file".into(),
+            arguments: json!({"path": "a"}),
+            signature: signature.map(str::to_owned),
+        };
+        let saved = serde_json::to_value(call(Some("sig=="))).unwrap();
+        assert_eq!(saved["signature"], json!("sig=="));
+        assert_eq!(
+            serde_json::from_value::<Block>(saved).unwrap(),
+            call(Some("sig=="))
+        );
+
+        // Without one the field is left out, as in files of older versions.
+        let old = json!({"type": "tool_call", "id": "c1", "name": "read_file",
+                         "arguments": {"path": "a"}});
+        assert_eq!(serde_json::to_value(call(None)).unwrap(), old);
+        assert_eq!(serde_json::from_value::<Block>(old).unwrap(), call(None));
     }
 }

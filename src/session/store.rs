@@ -141,6 +141,22 @@ pub struct Bundle {
     pub images: BTreeMap<String, String>,
 }
 
+impl Bundle {
+    /// Takes the session rules out of the history and returns them. A file
+    /// from someone else must not grant permissions (RFC 0035).
+    pub fn take_rules(&mut self) -> Vec<String> {
+        let mut rules = Vec::new();
+        self.history.retain(|record| match record {
+            Record::Rules { rules: texts } => {
+                rules.extend(texts.iter().cloned());
+                false
+            }
+            _ => true,
+        });
+        rules
+    }
+}
+
 /// A loaded session.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Loaded {
@@ -696,6 +712,7 @@ mod tests {
                         id: "c1".into(),
                         name: "read_file".into(),
                         arguments: json!({"path": "a"}),
+                        signature: None,
                     },
                 ],
             }),

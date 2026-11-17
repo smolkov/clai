@@ -19,7 +19,7 @@ use crate::config::{self, ApiKey, KEY_CMD_TIMEOUT, KeySource};
 
 /// Request format and answer decoding of one API type.
 pub(crate) trait Codec: Send + Sync + 'static {
-    fn url(&self, base_url: &str) -> String;
+    fn url(&self, base_url: &str, request: &Request) -> String;
     fn headers(&self, key: Option<&ApiKey>) -> Vec<(&'static str, String)>;
     fn encode(&self, request: &Request) -> serde_json::Value;
     fn status_error(&self, error: StatusError) -> ProviderError;
@@ -201,7 +201,10 @@ impl<C: Codec> Inner<C> {
             .map_err(|e| ProviderError::new(ErrorKind::InvalidRequest, e.to_string()))?;
         let mut attempt = 0;
         loop {
-            match self.attempt(key.as_ref(), body.clone(), sink).await {
+            match self
+                .attempt(request, key.as_ref(), body.clone(), sink)
+                .await
+            {
                 Ok(()) => return Ok(()),
                 Err(e) if e.kind.retryable() && !sink.sent && attempt < self.retry.max_retries => {
                     let wait = self.retry.delay(attempt, e.retry_after);
@@ -224,11 +227,12 @@ impl<C: Codec> Inner<C> {
 
     async fn attempt(
         &self,
+        request: &Request,
         key: Option<&ApiKey>,
         body: Vec<u8>,
         sink: &mut Sink,
     ) -> Result<(), ProviderError> {
-        let url = self.codec.url(&self.base_url);
+        let url = self.codec.url(&self.base_url, request);
         let headers = self.codec.headers(key);
         let mut response = match self.http.post(&url, &headers, body).await {
             Ok(response) => response,

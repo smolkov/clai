@@ -20,7 +20,12 @@ pub enum Mode {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Prompt {
+    /// As the server sent it; answers are built from it.
     pub question: Question,
+    /// For showing: hidden characters made visible (RFC 0035).
+    pub shown: Question,
+    /// How many characters `shown` made visible.
+    pub hidden: usize,
     pub mode: Mode,
     /// Why the server rejected the last answer.
     pub error: Option<String>,
@@ -31,13 +36,17 @@ pub struct Prompt {
 }
 
 impl Prompt {
-    pub fn new(question: Question) -> Prompt {
+    /// `unicode`: how hidden characters are shown.
+    pub fn new(question: Question, unicode: bool) -> Prompt {
         let ask = match &question.kind {
             QuestionKind::AskUser(a) => Some(Ask::new(a)),
             _ => None,
         };
+        let (shown, hidden) = crate::text::safe::visible_question(&question, unicode);
         Prompt {
             question,
+            shown,
+            hidden,
             mode: Mode::Choices,
             error: None,
             sending: false,

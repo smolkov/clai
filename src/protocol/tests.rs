@@ -87,6 +87,7 @@ fn questions_round_trip() {
             },
         }],
         redirects: vec![],
+        sandbox: None,
     });
     assert_eq!(round_trip(&command), command);
 

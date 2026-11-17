@@ -445,9 +445,14 @@ Runs a shell command in the workspace and returns its output.
   a `cd` does not carry over to the next call.
 - Standard input is empty (`/dev/null`); a command that waits for input
   gets end of file instead of hanging.
-- The environment is the server's, plus `PAGER=cat`, `GIT_PAGER=cat`,
-  `GIT_TERMINAL_PROMPT=0` and `TERM=dumb`, so no pager or password prompt
-  waits for input. **(assumption)** With a scratch directory (RFC 0029),
+- The environment is the server's without provider keys (RFC 0035; see
+  [`config.md`](config.md), "run_command"), plus `PAGER=cat`,
+  `GIT_PAGER=cat`, `GIT_TERMINAL_PROMPT=0` and `TERM=dumb`, so no pager or
+  password prompt waits for input. **(assumption)**
+- With `[sandbox] enabled`, the command runs inside `bwrap`: read-only
+  outside the workspace, the scratch directory and the writable
+  `extra_dirs`, with the user's secret places empty, and without network
+  if so set (see [`config.md`](config.md), "Sandbox"). With a scratch directory (RFC 0029),
   `TMPDIR` and `CODEAGENT_TMP` are its path, so `mktemp`, compilers and
   test runners put their temporary files there.
 - The command runs in its own process group. On timeout or when the turn is

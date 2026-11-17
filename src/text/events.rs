@@ -33,14 +33,21 @@ impl Renderer {
         }
     }
 
-    /// The text for standard error that this event adds, if any.
+    /// The text for standard error that this event adds, if any; without
+    /// escape sequences (RFC 0035): it comes from the model and the tools.
     pub fn event(&mut self, event: &SessionEvent) -> String {
+        let text = self.render(event);
+        super::safe::terminal(&text).into_owned()
+    }
+
+    fn render(&mut self, event: &SessionEvent) -> String {
         match event {
             SessionEvent::TextDone { text } => {
                 if !self.pending.is_empty() {
                     self.pending.push('\n');
                 }
-                self.pending.push_str(text);
+                // The final answer goes to standard output as it is kept.
+                self.pending.push_str(&super::safe::terminal(text));
                 String::new()
             }
             SessionEvent::ToolCall(call) => {

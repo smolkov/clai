@@ -44,7 +44,7 @@ A message has a `role`, `user` or `assistant`, and a list of blocks.
 | Block        | Fields                          | Used in |
 |--------------|---------------------------------|---------|
 | `Text`       | `text`                          | `user`, `assistant` |
-| `ToolCall`   | `id`, `name`, `arguments` (JSON object) | `assistant` |
+| `ToolCall`   | `id`, `name`, `arguments` (JSON object), `signature` (optional) | `assistant` |
 | `ToolResult` | `call_id`, `content` (text), `is_error` | `user` |
 | `Image` | `media_type`, `width`, `height`, `size`, `hash`, and the bytes | `user` |
 
@@ -53,6 +53,11 @@ A message has a `role`, `user` or `assistant`, and a list of blocks.
   The agent loop ensures this, also for denied and cancelled calls; the
   adapter may rely on it.
 - `id` is opaque text. The agent loop only copies it into `call_id`.
+- `signature` (RFC 0032) is opaque text the adapter that made the call
+  needs back unchanged: Gemini's thought signature. The agent loop and the
+  saved session keep it with the call; secret hiding and trimming leave it
+  alone. Other adapters neither set nor send it. A saved call without one
+  (older sessions) loads without it.
 - An `Image` (RFC 0034) follows the text block that ends with its
   placeholder `[Image #N]`. It is saved and sent to clients without its
   bytes; `hash` names its file. The request has `images`, the model's key:
@@ -83,7 +88,7 @@ An answer arrives as a stream of events, in this order:
 | `TextDelta`         | `text` | Next part of the answer text. |
 | `ToolCallStart`     | `id`, `name` | The model starts a tool call. |
 | `ToolCallArgsDelta` | `id`, `json` | Next part of the call's arguments, as JSON text. |
-| `ToolCallEnd`       | `id`, `arguments` | The call is complete; `arguments` is the parsed JSON object. |
+| `ToolCallEnd`       | `id`, `arguments`, `signature` | The call is complete; `arguments` is the parsed JSON object; `signature` goes into the `ToolCall` block. |
 | `Usage`             | `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` | Token counts of this request. `input_tokens` is all input, cached or not; the cache fields are parts of it (0 when the provider says nothing about a cache). May come more than once; the last one counts. |
 | `Done`              | `stop_reason` | Last event of the stream. |
 
@@ -174,6 +179,14 @@ An adapter:
 - never panics on any input from the network: anything it cannot decode is
   a `Protocol` error (see [`AGENTS.md`](../AGENTS.md), "Never crash"). A
   single event larger than 16 MiB is a `Protocol` error too.
+
+Redirects are not followed (RFC 0035): a redirect would carry the key
+(`x-api-key` and `x-goog-api-key` are not among the headers an HTTP client
+drops on another host) and, for `307` and `308`, the whole conversation. A
+`3xx` answer is an `InvalidRequest` error, not retried: `the provider
+answered with a redirect (307) to https://other.example/v1/messages; set
+base_url to the final address`. The address is shown without its query,
+which may hold a token.
 
 HTTPS uses the system's trusted certificates plus the bundled Mozilla root
 certificates, so it works both behind a company CA and in a minimal
@@ -267,6 +280,60 @@ this API the arguments of a tool call do not stream. **(assumption)**
 - Error bodies `{"error": {"message", "code"}}` (OpenAI) and
   `{"error": "text"}` (Ollama) are both understood; `code:
   "context_length_exceeded"` is `ContextTooLong`.
+
+### gemini
+
+Google's Gemini API (RFC 0032), `POST
+{base_url}/v1beta/models/{id}:streamGenerateContent?alt=sse`. Default
+`base_url`: `https://generativelanguage.googleapis.com`. The model `id` is
+part of the path, so it must not contain `/`, `?` or `#` (a load error).
+
+| Shared type | Wire format |
+|-------------|-------------|
+| `system` | `systemInstruction: {"parts": [{"text"}]}`; left out when empty. |
+| Message order | `contents[]` with `role: "user"` / `"model"`. Neighbours with the same role are merged; messages without parts are left out. |
+| `Text` | `{"text"}` part; empty text is left out. |
+| `ToolCall` with `signature` | `{"functionCall": {"id", "name", "args"}, "thoughtSignature"}` part. `thoughtSignature` only when the signature is not empty; `id` only when the API gave one (not a made-up one, below). Arguments that are not an object go as `{}`. |
+| `ToolCall` without `signature` | Made by another model before a switch to Gemini: a text part `[tool call NAME ARGUMENTS]`. Google documents no placeholder signature, and a text part is always accepted. |
+| `ToolResult` | `{"functionResponse": {"id", "name", "response"}}` part in a `user` message; `name` from the call with the same id; `response` is `{"output": content}`, or `{"error": content}` when `is_error`. The result of a call sent as text is text too: `[result of tool call NAME]` (or `[error of …]`), a newline, the content. |
+| `Image` | `{"inlineData": {"mimeType", "data"}}` part (base64). |
+| `ToolSpec` | One `tools: [{"functionDeclarations": [...]}]` entry with `name`, `description` and `parameters`. `parameters` takes a subset of OpenAPI, so keys outside it (`additionalProperties`, `$schema`, …) are left out at every level, and a type list with `"null"` becomes the type and `nullable: true`. |
+| `max_output_tokens`, `temperature` | `generationConfig.maxOutputTokens`, `.temperature`, only when set. Gemini 3.6 and later ignore `temperature`. |
+| Key | Header `x-goog-api-key`, never in the URL. |
+
+| Wire data | Event |
+|-----------|-------|
+| `candidates[0].content.parts[].text` (not `thought: true`) | `TextDelta` |
+| parts with `thought: true` | ignored |
+| `parts[].functionCall` | `ToolCallStart`, one `ToolCallArgsDelta` with all arguments, `ToolCallEnd` with the part's `thoughtSignature` as `signature`, or an empty one when the part has none. A call of this adapter always has a signature; that tells it from a call of another model. |
+| `usageMetadata` | `Usage`: `promptTokenCount` is `input_tokens` (it includes cached input), `candidatesTokenCount` + `thoughtsTokenCount` is `output_tokens`, `cachedContentTokenCount` is `cache_read_tokens`. |
+| `candidates[0].finishReason` | at the end of the body, `Done`: `ToolUse` for `STOP` when the answer has a tool call, else `STOP` → `EndTurn`, `MAX_TOKENS` → `MaxTokens`, else `Other` (`SAFETY`, `RECITATION`, `MALFORMED_FUNCTION_CALL`, …; logged) |
+| `promptFeedback.blockReason` without candidates | `Done` with `Other`, logged |
+| chunk with `error` | `ProviderError`, as for an error status |
+
+- A function call arrives whole in one part; its arguments do not stream.
+- A call without `id` gets one made up, `gemini_call_1`, `gemini_call_2`,
+  … per answer; such an id is not sent back to the API.
+- A `thoughtSignature` on a text part or on an empty part at the end is not
+  kept: the API needs signatures only on function calls.
+- The body has no end marker: the answer is complete when the body ends
+  after a chunk with a `finishReason`; a body that ends without one is a
+  broken connection (`Network`).
+- `cache` is ignored: the API caches a repeated prefix by itself and
+  reports it in `cachedContentTokenCount`.
+
+Error bodies are `{"error": {"code", "message", "status", "details"}}`:
+
+| Error | Kind |
+|-------|------|
+| A message about the token limit (`exceeds the maximum number of tokens`, `input token count`, …) | `ContextTooLong` |
+| `API key not valid`, `UNAUTHENTICATED`, `PERMISSION_DENIED`, 401, 403 | `Auth` |
+| `RESOURCE_EXHAUSTED`, 429 | `RateLimit`; the `retryDelay` of a `RetryInfo` detail (`"30s"`) is `retry_after` |
+| `UNAVAILABLE`, `INTERNAL`, 5xx | `Overloaded` |
+| `DEADLINE_EXCEEDED` | `Timeout` |
+| `INVALID_ARGUMENT` and other 400s | `InvalidRequest` |
+
+The message is `HTTP <status>: <STATUS>: <message>`.
 
 ### Adding an API type
 

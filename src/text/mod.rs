@@ -9,6 +9,7 @@ mod dialog;
 mod events;
 pub mod global;
 mod question;
+pub mod safe;
 pub mod sessions;
 pub mod status;
 

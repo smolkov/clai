@@ -52,6 +52,25 @@ Statements marked **(assumption)** need a decision from the user.
 - There is no `help` command; `codeagent help` runs the task "help". Help is
   `-h` / `--help`.
 
+### Terminal output
+
+Text that comes from outside `codeagent` (the model's answer, tool lines,
+notices with file names, errors of a provider) may hold escape sequences:
+OSC 52 writes the clipboard, `ESC [ 2K` and `\r` erase what is shown, OSC 8
+plants a link. `codeagent run` and `codeagent chat` remove them before
+writing (RFC 0035): escape sequences, control
+characters other than newline and tab, and the bidirectional controls
+U+202A–U+202E and U+2066–U+2069. `codeagent`'s own colours are added after
+that. The final answer of `codeagent run` on standard output is cleaned the
+same way; `--report=json` escapes them as JSON does.
+
+Questions show such characters instead of removing them, so the user sees
+that a command hides something: `␛` for `ESC`, `⟨U+202E⟩` for the others,
+zero-width characters (U+200B–U+200F, U+FEFF) too (`\e` and `<U+202E>`
+without Unicode), and a line `note: this question contains 2 hidden
+characters, shown as ⟨…⟩`. The answer is built from the question as the
+server sent it, so an "always" rule stays as proposed.
+
 ## Global options
 
 Accepted by every command, before or after the command name.
@@ -420,6 +439,11 @@ and prints its name: `--name`, or the name in the file made unique (`-2`,
 …). It is resumed by the first command that names it. Exit `1` if the
 file cannot be read, is of a newer format, or `--name` is taken; `2` for
 an invalid name.
+
+Session rules in the file are not imported (RFC 0035); each one is named
+on standard error: `codeagent: left out the session rule allow
+run_command(cargo test) (rules are not imported)`. They can be granted
+again with "always".
 
 ## codeagent send
 

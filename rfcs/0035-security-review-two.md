@@ -1,7 +1,7 @@
 # Second security review: threat model, terminal output, imports, child environment
 
 - RFC: 0035
-- Status: draft
+- Status: done
 - Milestone: none; it closes gaps that a second review of the code found
 - Spec: [`spec/architecture.md`](../spec/architecture.md), "Trust boundaries";
   [`spec/config.md`](../spec/config.md), "Command patterns", "Built-in
@@ -473,7 +473,7 @@ Each step leaves a working, tested state. The order puts the high findings
 first.
 
 1. **Threat model**
-   - Status: todo
+   - Status: done
    - Files: `spec/security.md`, `spec/readme.md`, `spec/SUMMARY.md`,
      `spec/architecture.md`
    - Result: the spec has one place for assets, attackers, guards,
@@ -482,7 +482,7 @@ first.
    - Tests: `mdbook build` of `spec/` (the existing CI step).
 
 2. **Safe terminal text**
-   - Status: todo
+   - Status: done
    - Files: `src/text/safe.rs`, `src/text/mod.rs`,
      `src/text/conversation.rs`, `src/text/question.rs`,
      `src/tui/view/` (questions), `src/command/chat/`, `src/command/run.rs`,
@@ -491,21 +491,21 @@ first.
    - Tests: the `safe`, text and TUI tests above.
 
 3. **Imports without rules**
-   - Status: todo
+   - Status: done
    - Files: `src/session/store.rs`, `src/command/import.rs`,
      `spec/sessions.md`, `spec/command.md`
    - Result: finding 2 closed.
    - Tests: the import tests above.
 
 4. **No redirects**
-   - Status: todo
+   - Status: done
    - Files: `src/provider/http.rs`, `src/provider/tests_http.rs`,
      `spec/providers.md`
    - Result: finding 4 closed.
    - Tests: the redirect test.
 
 5. **Child environment**
-   - Status: todo
+   - Status: done
    - Files: `src/config/file.rs`, `src/config/mod.rs` (`[run_command]`),
      `src/tools/run_command.rs`, `src/lsp/server.rs`, `src/secrets/mod.rs`
      (the shared list of provider variables), `spec/config.md`,
@@ -514,7 +514,7 @@ first.
    - Tests: the `printenv`, `keep_env`, LSP and config tests.
 
 6. **Built-in rules for `.git` and command options**
-   - Status: todo
+   - Status: done
    - Files: `src/config/permissions.rs`, `src/permissions/check.rs`,
      `src/permissions/tests.rs`, `src/tools/tests.rs`, `spec/config.md`,
      `spec/tools.md`
@@ -524,13 +524,13 @@ first.
      `.git/**` fixtures still pass.
 
 7. **Readable key warning**
-   - Status: todo
+   - Status: done
    - Files: `src/config/file.rs`, `src/config/tests.rs`, `spec/config.md`
    - Result: finding 8 closed.
    - Tests: the mode tests.
 
 8. **Sandbox**
-   - Status: todo
+   - Status: done
    - Files: `src/sandbox.rs` (new: building the `bwrap` arguments),
      `src/tools/run_command.rs`, `src/config/` (`[sandbox]`), the question
      details, `spec/config.md`, `spec/tools.md`, `spec/readme.md`
@@ -539,7 +539,7 @@ first.
      for each combination of settings.
 
 9. **Docs**
-   - Status: todo
+   - Status: done
    - Files: `readme.md`, `todo.md`, `CHANGELOG.md`, `spec/security.md`
      (findings marked closed), `rfcs/readme.md`
    - Result: users know about the built-in rules, `keep_env` and the
@@ -588,3 +588,50 @@ first.
 5. Should `--yes` refuse the built-in asks (command options), as it
    refuses a `deny`? It would make `codeagent run --yes` in CI safer
    against injected `find -exec`, at the cost of tasks that need it.
+
+All answered as proposed when the RFC was built: no protection for
+`.envrc` and editor task files (1); the list of options stays (2); the
+sandbox is for `run_command` only (3); it is built in this RFC (4);
+`--yes` answers the built-in asks (5).
+
+## Changes while building
+
+- **The question note** reads `note: this question contains N hidden
+  characters, shown as ⟨…⟩`, for every kind of question, not only
+  commands. It counts each hidden character in every text of the
+  question; a command shown in the summary and in the details counts
+  twice.
+- **Questions are made visible through their JSON form**: every string of
+  a copy of the question goes through `visible`, so new detail kinds are
+  covered without code. The TUI keeps the original for the answer, since
+  "always" sends the proposed rule back as it is.
+- **The TUI drops bidirectional controls everywhere**, not only in
+  questions, as it drops control characters.
+- **`codeagent import` gets its own answer**, `imported`, with the session
+  and the rules left out; the protocol version is now `11`.
+- **`.git` itself is protected**, besides `.git/**` and `**/.git/**`: in a
+  submodule or worktree `.git` is a file that names the git directory.
+- **`git ** --exec*` and `git ** -x` became `git rebase ** --exec*` and
+  `git rebase ** -x`**, since `-x` and `--exec-path` mean other things
+  elsewhere.
+- **`builtin_except` names a command pattern by its text**
+  (`"git config"`); any other entry is still a path pattern.
+- **The sandbox makes `/tmp` a private, empty directory**, besides hiding
+  the listed places. It hides the state and runtime directories as found
+  (`$XDG_STATE_HOME`, `$XDG_RUNTIME_DIR`), so the server's socket is out of
+  reach too; the scratch directory in the runtime directory is bound again.
+  A hidden file (`~/.netrc`) is covered with an empty file.
+- **The question says `in sandbox`** through a new optional field of the
+  command details, `sandbox`, in the plain question and in the TUI's tool
+  details.
+- **The key warning is shown by `codeagent run` and the TUI**;
+  `codeagent chat` does not load the configuration, so it does not show
+  it.
+- **The provider key list** is fixed in `src/child.rs` (`PROVIDER_KEYS`):
+  RFC 0030 has no list of provider variables, only name endings.
+- **Left out:** the `ci/check.sh` check for `print!` in `src/command/`
+  (in "Testing"); a `grep` cannot tell model text from `codeagent`'s own,
+  and the renderers are covered by tests. It is in `todo.md`.
+- The sandbox tests run where `bwrap` can make namespaces and say so when
+  they skip; on the machine this was built on they ran.
+

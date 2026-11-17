@@ -39,6 +39,10 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [x] Shared types, `Provider` trait, `from_config`.
 - [x] SSE parser.
 - [x] `anthropic` and `openai-compatible` adapters.
+- [x] `gemini` adapter, with thought signatures on tool calls (RFC 0032).
+- [ ] Gemini: a session by hand with a real key over several tool rounds
+      (`GEMINI_API_KEY=… cargo test --test live gemini -- --ignored`, then
+      `gemini/flash` in the TUI).
 - [x] Retries with backoff before the first event, timeouts, cancellation.
 - [x] `fake` provider for agent-loop tests.
 - [x] Live tests (`cargo test --test live -- --ignored`).
@@ -401,3 +405,17 @@ Milestones and their order: [`implementation.md`](implementation.md).
         macOS files tried on real machines; then delete it.
   - [x] First crates.io publish by hand, then trusted publishing and the
         `crates-io` environment.
+
+## Security (RFC 0035)
+
+- [x] `spec/security.md`: threat model, guards, accepted risks, checklist.
+- [x] Safe terminal text in plain output; hidden characters in questions.
+- [x] Imports without session rules (protocol 11).
+- [x] No provider keys for commands and language servers; `keep_env`.
+- [x] No redirects to providers.
+- [x] Built-in rules for `.git` and for options that run commands.
+- [x] Warning for a readable `api_key`.
+- [x] Opt-in sandbox with `bwrap` (Linux).
+- [ ] A `ci/check.sh` check that plain output goes through
+      `text::safe::terminal` (RFC 0035 testing; left out, see the RFC).
+- [ ] Sandbox for language servers (out of RFC 0035).

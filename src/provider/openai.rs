@@ -18,7 +18,7 @@ use crate::config::ApiKey;
 pub(crate) struct OpenAi;
 
 impl Codec for OpenAi {
-    fn url(&self, base_url: &str) -> String {
+    fn url(&self, base_url: &str, _request: &Request) -> String {
         format!("{base_url}/chat/completions")
     }
 
@@ -89,6 +89,7 @@ pub(crate) fn encode(request: &Request) -> Value {
                             id,
                             name,
                             arguments,
+                            ..
                         } => {
                             // Invalid arguments are kept as the raw text.
                             let arguments = match arguments {
@@ -246,6 +247,7 @@ impl Decoder {
             events.push(Event::ToolCallEnd {
                 id,
                 arguments: parse_arguments(&tool.arguments),
+                signature: None,
             });
         }
         // Some servers say "stop" although the answer has tool calls.
@@ -450,7 +452,8 @@ mod tests {
                 },
                 Event::ToolCallEnd {
                     id: "call_a".into(),
-                    arguments: json!({"path": "a.rs"})
+                    arguments: json!({"path": "a.rs"}),
+                    signature: None,
                 },
                 Event::ToolCallStart {
                     id: "call_b".into(),
@@ -462,7 +465,8 @@ mod tests {
                 },
                 Event::ToolCallEnd {
                     id: "call_b".into(),
-                    arguments: json!({"path": "b.rs"})
+                    arguments: json!({"path": "b.rs"}),
+                    signature: None,
                 },
                 Event::Done {
                     stop_reason: StopReason::ToolUse
@@ -491,7 +495,8 @@ mod tests {
                 },
                 Event::ToolCallEnd {
                     id: "call_1".into(),
-                    arguments: json!({})
+                    arguments: json!({}),
+                    signature: None,
                 },
                 Event::ToolCallStart {
                     id: "call_2".into(),
@@ -503,7 +508,8 @@ mod tests {
                 },
                 Event::ToolCallEnd {
                     id: "call_2".into(),
-                    arguments: json!({"path": "x"})
+                    arguments: json!({"path": "x"}),
+                    signature: None,
                 },
                 Event::Done {
                     stop_reason: StopReason::ToolUse
@@ -517,7 +523,8 @@ mod tests {
         let events = decode(include_str!("../../tests/fixtures/openai/length.sse")).unwrap();
         assert!(events.contains(&Event::ToolCallEnd {
             id: "call_x".into(),
-            arguments: json!("{\"path\":")
+            arguments: json!("{\"path\":"),
+            signature: None,
         }));
         // A cut-off tool call is still a tool call.
         assert_eq!(
@@ -565,11 +572,13 @@ mod tests {
                             id: "c1".into(),
                             name: "read_file".into(),
                             arguments: json!({"path": "a"}),
+                            signature: None,
                         },
                         Block::ToolCall {
                             id: "c2".into(),
                             name: "read_file".into(),
                             arguments: json!("{broken"),
+                            signature: None,
                         },
                     ],
                 },
@@ -597,6 +606,7 @@ mod tests {
                         id: "c3".into(),
                         name: "list_files".into(),
                         arguments: json!({}),
+                        signature: None,
                     }],
                 },
             ],

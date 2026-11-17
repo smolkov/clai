@@ -86,6 +86,8 @@ pub struct Settings {
     /// The `[tui]` settings in effect; the fields above follow from them.
     pub tui: Tui,
     pub theming: Theming,
+    /// Configuration warnings, shown as notices when the TUI starts.
+    pub warnings: Vec<String>,
 }
 
 /// What the look is made from besides `[tui]`; read once by the shell.
@@ -961,7 +963,7 @@ impl App {
                 Some(prompt) if prompt.id() == q.id && !prompt.sending => Some(prompt),
                 _ => {
                     self.open_question(&q);
-                    Some(Prompt::new(q))
+                    Some(Prompt::new(q, self.settings.look.symbols.unicode))
                 }
             },
             None => None,
@@ -1136,7 +1138,7 @@ impl App {
             SessionEvent::Question(question) => {
                 self.open_question(&question);
                 if !replay && !question.choices.is_empty() {
-                    self.prompt = Some(Prompt::new(*question));
+                    self.prompt = Some(Prompt::new(*question, self.settings.look.symbols.unicode));
                 }
             }
             SessionEvent::QuestionClosed { id, closed } => self.question_closed(&id, &closed),

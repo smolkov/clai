@@ -27,6 +27,24 @@ pub struct UserFile {
     pub history: Option<HistoryFile>,
     pub session: Option<SessionFile>,
     pub secrets: Option<SecretsFile>,
+    pub run_command: Option<RunCommandFile>,
+    pub sandbox: Option<SandboxFile>,
+}
+
+/// `[run_command]` (RFC 0035).
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RunCommandFile {
+    pub keep_env: Option<Vec<Spanned<String>>>,
+}
+
+/// `[sandbox]` (RFC 0035).
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SandboxFile {
+    pub enabled: Option<Spanned<bool>>,
+    pub network: Option<bool>,
+    pub hide: Option<Vec<Spanned<String>>>,
 }
 
 /// `[secrets]` (RFC 0030).
@@ -74,6 +92,8 @@ pub struct ProjectFile {
     pub skills: Option<Spanned<toml::Value>>,
     pub history: Option<Spanned<toml::Value>>,
     pub session: Option<Spanned<toml::Value>>,
+    pub run_command: Option<Spanned<toml::Value>>,
+    pub sandbox: Option<Spanned<toml::Value>>,
     /// Only `patterns` and `values_env`; checked by hand.
     pub secrets: Option<SecretsFile>,
 }

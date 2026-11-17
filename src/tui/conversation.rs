@@ -1032,10 +1032,15 @@ impl Render<'_> {
                 cwd,
                 parts,
                 redirects,
+                sandbox,
                 ..
             }) => {
                 self.command(&mut out, command);
-                out.push(vec![(format!("in {cwd}"), styles.dim)]);
+                let place = match sandbox {
+                    Some(sandbox) => format!("in {cwd}, in {sandbox}"),
+                    None => format!("in {cwd}"),
+                };
+                out.push(vec![(place, styles.dim)]);
                 if call.state == CallState::Waiting {
                     for part in parts {
                         let line = format!("{}  {}", part.text, part.decision.reason);

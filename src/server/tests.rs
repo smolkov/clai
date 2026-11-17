@@ -117,6 +117,7 @@ fn write_call(id: &str, path: &str) -> Step {
         Ok(Event::ToolCallEnd {
             id: id.into(),
             arguments,
+            signature: None,
         }),
         Ok(Event::Done {
             stop_reason: StopReason::ToolUse,
@@ -1104,13 +1105,18 @@ async fn export_and_import() {
         })
         .await
         .unwrap();
-    let Payload::Session { session } = imported else {
-        panic!("not a session");
+    let Payload::Imported {
+        session,
+        dropped_rules,
+    } = imported
+    else {
+        panic!("not an import");
     };
     assert_eq!(
         (session.name.as_str(), session.state),
         ("s-2", State::Saved)
     );
+    assert!(dropped_rules.is_empty());
     let taken = c
         .request(Request::Import {
             path: file,
@@ -1311,8 +1317,8 @@ async fn export_and_import_keep_the_totals() {
         })
         .await
         .unwrap();
-    let Payload::Session { session } = imported else {
-        panic!("not a session");
+    let Payload::Imported { session, .. } = imported else {
+        panic!("not an import");
     };
     assert_eq!(session.usage, totals(100, 10));
     assert_eq!(attach(&mut c, "copy").await.usage, totals(100, 10));
@@ -1761,6 +1767,7 @@ async fn a_question_from_the_model_waits_for_any_client() {
         Ok(Event::ToolCallEnd {
             id: "c1".into(),
             arguments,
+            signature: None,
         }),
         Ok(Event::Done {
             stop_reason: StopReason::ToolUse,
@@ -2344,5 +2351,50 @@ async fn images_reach_the_model_and_are_saved() {
         .map(|(s, _)| s.dir().join("images").join(png.image.file_name()))
         .collect();
     assert_eq!(fs::read(&copies[0]).unwrap(), fixtures::png(40, 30));
+    fx.stop().await;
+}
+
+#[tokio::test]
+async fn an_import_leaves_out_the_session_rules_of_the_file() {
+    let fx = Fixture::start(vec![Script::new(vec![say("hello")])]).await;
+    let mut c = fx.client("tui", true).await;
+    new_session(&mut c, &fx.ws, Some("s")).await;
+    attach(&mut c, "s").await;
+    send(&mut c, "s", "hi").await;
+    turn_end(&mut c).await;
+    let file = fx.tmp.path().join("s.json");
+    c.request(Request::Export {
+        session: "s".into(),
+        path: file.clone(),
+    })
+    .await
+    .unwrap();
+    // Someone else's file, with a rule that would allow every command.
+    let mut bundle: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&file).unwrap()).unwrap();
+    bundle["history"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"record": "rules", "rules": ["allow run_command(*)"]}));
+    fs::write(&file, bundle.to_string()).unwrap();
+
+    let imported = c
+        .request(Request::Import {
+            path: file,
+            name: Some("copy".into()),
+        })
+        .await
+        .unwrap();
+    let Payload::Imported { dropped_rules, .. } = imported else {
+        panic!("not an import");
+    };
+    assert_eq!(dropped_rules, ["allow run_command(*)"]);
+    let saved = store::list(&fx.sessions_dir())
+        .into_iter()
+        .find(|(_, meta)| meta.name == "copy")
+        .unwrap()
+        .0;
+    let history = fs::read_to_string(saved.dir().join("history.jsonl")).unwrap();
+    assert!(!history.contains("run_command(*)"), "{history}");
     fx.stop().await;
 }

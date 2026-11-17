@@ -495,3 +495,96 @@ fn outside_runtime_is_error_not_panic() {
         other => panic!("{other:?}"),
     }
 }
+
+const GEMINI_TEXT: &str = include_str!("../../tests/fixtures/gemini/text.sse");
+const GEMINI_CUT: &str = include_str!("../../tests/fixtures/gemini/cut.sse");
+
+#[tokio::test]
+async fn gemini_stream_puts_the_model_in_the_path_and_the_key_in_a_header() {
+    let server = serve(vec![Reply::sse(GEMINI_TEXT)]).await;
+    let events = collect(&provider(&server, Api::Gemini)).await;
+    assert_eq!(
+        events.last(),
+        Some(&Ok(Event::Done {
+            stop_reason: StopReason::EndTurn
+        }))
+    );
+    let seen = lock(&server.seen);
+    let seen = &seen[0];
+    assert_eq!(
+        seen.path,
+        "/v1beta/models/m-1:streamGenerateContent?alt=sse"
+    );
+    assert_eq!(seen.header("x-goog-api-key"), Some("sk-test"));
+    assert!(
+        !seen.path.contains("sk-test"),
+        "the key is never in the URL"
+    );
+    assert_eq!(
+        seen.body["systemInstruction"],
+        json!({"parts": [{"text": "sys"}]})
+    );
+}
+
+#[tokio::test]
+async fn gemini_rate_limit_waits_for_its_retry_delay_then_succeeds() {
+    let limited = Reply::status(
+        429,
+        r#"{"error": {"code": 429, "message": "Quota exceeded.", "status": "RESOURCE_EXHAUSTED",
+            "details": [{"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": "0.2s"}]}}"#,
+    );
+    let server = serve(vec![limited, Reply::sse(GEMINI_TEXT)]).await;
+    let started = Instant::now();
+    let events = collect(&provider(&server, Api::Gemini)).await;
+    assert!(started.elapsed() >= Duration::from_millis(200), "waited");
+    assert!(events.iter().any(|e| matches!(e, Ok(Event::Retry { .. }))));
+    assert_eq!(
+        events.last(),
+        Some(&Ok(Event::Done {
+            stop_reason: StopReason::EndTurn
+        }))
+    );
+    assert_eq!(server.requests(), 2);
+}
+
+#[tokio::test]
+async fn gemini_errors_by_status() {
+    let bad_key = Reply::status(
+        400,
+        r#"{"error": {"code": 400, "message": "API key not valid. Please pass a valid API key.", "status": "INVALID_ARGUMENT"}}"#,
+    );
+    let server = serve(vec![bad_key]).await;
+    let events = collect(&provider(&server, Api::Gemini)).await;
+    let e = last_error(&events);
+    assert_eq!(e.kind, ErrorKind::Auth);
+    assert_eq!(server.requests(), 1, "not retried");
+
+    // A body cut before its finish reason is a broken connection.
+    let server = serve(vec![Reply::sse(GEMINI_CUT)]).await;
+    let events = collect(&provider(&server, Api::Gemini)).await;
+    assert_eq!(last_error(&events).kind, ErrorKind::Network);
+}
+
+#[tokio::test]
+async fn a_redirect_is_not_followed() {
+    let elsewhere = serve(vec![Reply::sse(ANTHROPIC_TEXT)]).await;
+    let location: &'static str =
+        Box::leak(format!("{}/v1/messages?token=secret", elsewhere.url).into_boxed_str());
+    let mut redirect = Reply::status(307, "");
+    redirect.headers.push(("location", location));
+    let server = serve(vec![redirect]).await;
+    let events = collect(&provider(&server, Api::Anthropic)).await;
+    let e = last_error(&events);
+    assert_eq!(e.kind, ErrorKind::InvalidRequest);
+    assert!(
+        e.message.starts_with(&format!(
+            "the provider answered with a redirect (307) to {}/v1/messages?…",
+            elsewhere.url
+        )),
+        "{}",
+        e.message
+    );
+    assert!(!e.message.contains("secret"), "{}", e.message);
+    assert_eq!(elsewhere.requests(), 0, "nothing reached the other host");
+    assert_eq!(server.requests(), 1, "not retried");
+}

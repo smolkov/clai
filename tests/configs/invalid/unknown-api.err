@@ -1,1 +1,1 @@
-codeagent: CONFIG:5: providers.x.api: unknown api `gemini`; expected anthropic or openai-compatible
+codeagent: CONFIG:5: providers.x.api: unknown api `bedrock`; expected anthropic, openai-compatible or gemini

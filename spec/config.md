@@ -11,8 +11,8 @@ Statements marked **(assumption)** need a decision from the user.
 
 | File                          | Scope   | May define |
 |-------------------------------|---------|------------|
-| `~/.config/codeagent/config.toml`  | User    | Everything: providers, models, defaults, `[limits]`, `[history]`, `[session]`, `[secrets]`, `[permissions]`, `[commit]`, `[tui]`, `[themes]`, `[lsp]`, `[skills]`. |
-| `<workspace>/.codeagent/config.toml` | Project | Defaults and limits only: `default_model`, `[limits]` (only lower, see [Limits](#limits)), `[permissions]` (restricted, see [Permissions](#permissions)), `[commit]`, `[lsp]` (restricted, see [LSP](#lsp)), `[secrets]` (only `patterns` and `values_env`, see [Secrets](#secrets)). Not providers, models, `[history]`, `[session]`, `[tui]`, `[themes]` or `[skills]`. |
+| `~/.config/codeagent/config.toml`  | User    | Everything: providers, models, defaults, `[limits]`, `[history]`, `[session]`, `[secrets]`, `[permissions]`, `[commit]`, `[tui]`, `[themes]`, `[lsp]`, `[skills]`, `[run_command]`, `[sandbox]`. |
+| `<workspace>/.codeagent/config.toml` | Project | Defaults and limits only: `default_model`, `[limits]` (only lower, see [Limits](#limits)), `[permissions]` (restricted, see [Permissions](#permissions)), `[commit]`, `[lsp]` (restricted, see [LSP](#lsp)), `[secrets]` (only `patterns` and `values_env`, see [Secrets](#secrets)). Not providers, models, `[history]`, `[session]`, `[tui]`, `[themes]`, `[skills]`, `[run_command]` or `[sandbox]`. |
 
 `$XDG_CONFIG_HOME` replaces `~/.config` when it is set.
 
@@ -38,6 +38,8 @@ put files from anywhere on the machine into the prompt and make them
 readable for the model (see [Skills](#skills)). `[history]` changes what
 the model sees of its own work, so it is the user's too, and so is
 `[session]`, which decides where the model may write without asking.
+`[run_command]` and `[sandbox]` decide what commands get and may do, so a
+repository may not set them either (RFC 0035).
 
 Precedence, later wins: user file, project file, environment variables,
 command-line options.
@@ -234,7 +236,9 @@ matched on its own, word by word. **(assumption)**
   command.
 - The word `**` matches any number of words, also none, so a pattern can
   name words further on: `git ** --force` matches `git push origin --force`;
-  `find ** -delete` and `find ** -exec` catch those uses of `find`.
+  `find ** -delete` catches that use of `find`. Options that run another
+  command (`find ** -exec`, `git ** -c`, …) are built-in `ask` rules (see
+  [Built-in rules](#built-in-rules)).
 - For `deny` and `ask` rules, the first word also matches by its file name:
   `rm` denies `/bin/rm` and `./rm`. `allow` rules match the command as
   written, so `ls` does not allow a script `./ls` in the repository. A
@@ -349,8 +353,11 @@ sandbox (open question 5 in [`readme.md`](readme.md)).
 
 ### Built-in rules
 
-`codeagent` ships three `deny` rules for the `read` group, for files whose
-content is almost always a secret:
+`codeagent` ships `deny` rules for secret files and for `.git`, and `ask`
+rules for command options that run another command (RFC 0010, RFC 0035).
+
+Three `deny` rules for the `read` group are for files whose content is
+almost always a secret:
 
 | Rule | Patterns | Except |
 |------|----------|--------|
@@ -382,6 +389,46 @@ builtin_except = ["deploy/certs/*.pem", ".env.test"]
 
 It lifts only the built-in rules: a `deny` rule of the user or project
 file on the same path still denies.
+
+A `deny` rule for the `edit` group protects git's own files (RFC 0035):
+
+| Rule | Patterns |
+|------|----------|
+| git directory | `.git`, `.git/**`, `**/.git/**` |
+
+Hooks in `.git/hooks` and settings like `core.fsmonitor` or
+`core.hooksPath` in `.git/config` make `git` run commands later, outside
+any permission check. So `edit_file`, `write_file` and redirections
+(`echo x > .git/config`) may not write there, whatever `allow` rule
+matches; `.git` alone also covers the `.git` file of a submodule or
+worktree, which names the git directory. Reading stays allowed, and `git`
+commands change `.git` as they mean to, behind their own rules. The model
+gets: `files in .git change how git runs; use git commands instead, or ask
+the user.` `builtin_except` lifts it for a path, e.g.
+`".git/info/exclude"`.
+
+`ask` rules for `run_command` cover options whose purpose is to run another
+command, so that `allow run_command(find)` (which "always" proposes for
+`find . -name x`) does not allow `find . -exec sh -c '…' ;`:
+
+| Command | Patterns |
+|---------|----------|
+| `find` | `find ** -exec`, `find ** -execdir`, `find ** -ok`, `find ** -okdir` |
+| `git` | `git ** -c`, `git ** --config-env*`, `git config`, `git ** --upload-pack*`, `git ** --receive-pack*`, `git rebase ** --exec*`, `git rebase ** -x` |
+| `rg` | `rg ** --pre*` |
+| `tar` | `tar ** --to-command*`, `tar ** --use-compress-program*`, `tar ** -I`, `tar ** --checkpoint-action*` |
+| `rsync` | `rsync ** -e`, `rsync ** --rsh*` |
+| `ssh` | `ssh ** -o`, `ssh ** -F` |
+
+They are matched like any `ask` rule (wrappers looked through, the command
+by its file name), so an `allow` rule cannot pass them and the question
+offers no "always"; `--yes` answers them, as any `ask`. The reason reads
+`rule ask run_command(find ** -exec, …) (built-in)`. `builtin_except` lifts
+one of them when it names the pattern as written: `builtin_except = ["git
+config"]`. Joined short options (`tar -xIzstd`) are not caught; commands
+that run code by their nature (`make`, interpreters, `awk`, `sed` with
+`e`) are not either. The sandbox is the answer to both (see
+[Sandbox](#sandbox)).
 
 Secrets in files that are not denied, such as a key in `config.toml`, are
 hidden from the model by [`[secrets]`](#secrets) instead.
@@ -500,6 +547,68 @@ The scratch directory: `spec/sessions.md`, "Scratch directory". With
 `false` there is no directory, no `TMPDIR` or `CODEAGENT_TMP`, no prompt
 line and no built-in `allow` rule. User file only; a change applies to
 sessions started or resumed after it.
+
+## run_command
+
+```toml
+[run_command]
+keep_env = ["OPENAI_API_KEY"]   # provider keys commands may keep
+```
+
+Commands of `run_command` and language servers run the repository's code
+(build scripts, tests, macros), so their environment has no provider keys
+(RFC 0035): the `api_key_env` variable of every configured provider, and
+`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `AZURE_OPENAI_API_KEY`,
+`GEMINI_API_KEY`, `GOOGLE_API_KEY`, `OPENROUTER_API_KEY`,
+`MISTRAL_API_KEY`, `GROQ_API_KEY`, `DEEPSEEK_API_KEY`, `XAI_API_KEY`,
+`TOGETHER_API_KEY`, `FIREWORKS_API_KEY`, `COHERE_API_KEY` and
+`CO_API_KEY`. Other secret variables (`GITHUB_TOKEN`, `AWS_*`) stay: tasks
+need them, and RFC 0030 hides their values in the output.
+
+`keep_env` names variables of that list that commands keep, for a project
+whose own tests call a provider's API. A name that is not a variable name
+is a load error. User file only.
+
+## Sandbox
+
+```toml
+[sandbox]
+enabled = false                 # true: run_command runs inside bwrap
+network = true                  # false: no network inside
+hide = ["~/.kube", "~/.config/gh"]   # more places that are empty inside
+```
+
+With `enabled = true` (Linux only; on other systems it is a load error),
+`run_command` runs its command with `bwrap` (bubblewrap) (RFC 0035):
+
+- The whole file system is there, read-only; `/tmp` is a private, empty
+  directory.
+- The workspace, the scratch directory and the `extra_dirs` with `write`
+  access can be written. So the write boundary of the file tools holds for
+  commands too. Caches outside them (`~/.cargo/registry`, `~/.npm`) are
+  read-only; add them to `extra_dirs` if commands must write there.
+- These are empty inside: `~/.config/codeagent`, `~/.ssh`, `~/.gnupg`,
+  `~/.aws`, `~/.netrc`, the state directory (saved sessions, the log), the
+  runtime directory (the server's socket; the scratch directory in it
+  stays), and each entry of `hide` (absolute or `~/…`). A directory
+  becomes an empty one, a file an empty file; one that does not exist is
+  passed over.
+- `network = false` gives the command no network but loopback.
+- The command gets its own PID namespace and session (`--unshare-pid`,
+  `--new-session`, so it cannot type into the terminal), and ends with
+  `codeagent`'s process.
+
+If `bwrap` is not on `PATH`, the call is an error: `sandbox: bwrap not
+found; install bubblewrap or set sandbox.enabled = false`; the command
+never runs without the sandbox. If `bwrap` cannot make namespaces (user
+namespaces turned off), its own error is the command's output, with a
+non-zero exit. The permission question and the tool's details say
+`in sandbox` or `in sandbox, no network` after the working directory.
+
+The sandbox limits what an allowed command can do; it replaces no
+question. Language servers, `api_key_cmd`, the clipboard programs and the
+`git` of `codeagent commit` do not run in it: the user configured them,
+the model did not ask for them. User file only.
 
 ## Secrets
 
@@ -853,23 +962,41 @@ base_url = "http://localhost:11434/v1"    # e.g. Ollama; no key needed
 [providers.local.models.qwen]
 id             = "qwen3-coder:30b"
 context_window = 32768
+
+[providers.gemini]
+api         = "gemini"                    # Google's Gemini API (RFC 0032)
+api_key_env = "GEMINI_API_KEY"
+
+[providers.gemini.models.flash]
+id                = "gemini-3.8-flash"
+context_window    = 1048576
+max_output_tokens = 65536
+
+[providers.gemini.models.hydrogen]
+id                = "gemini-4-hydrogen"
+context_window    = 1048576
+max_output_tokens = 65536
 ```
 
 ### Provider keys
 
 | Key            | Required | Meaning |
 |----------------|----------|---------|
-| `api`          | yes      | API type: `anthropic` or `openai-compatible`. Decides which adapter encodes requests and decodes answers, see [`providers.md`](providers.md). **(assumption: these two first)** |
-| `base_url`     | no       | API address. Default: the official address of the API type. Required for `openai-compatible`. |
+| `api`          | yes      | API type: `anthropic`, `openai-compatible` or `gemini` (RFC 0032). Decides which adapter encodes requests and decodes answers, see [`providers.md`](providers.md). |
+| `base_url`     | no       | API address. Default: the official address of the API type (`https://api.anthropic.com`, `https://generativelanguage.googleapis.com`). Required for `openai-compatible`. |
 | `api_key`      | no       | The API key itself. Only for a user file that nobody else can read; prefer `api_key_env` or `api_key_cmd`. Must not be empty. |
 | `api_key_env`  | no       | Name of the environment variable that holds the API key. |
 | `api_key_cmd`  | no       | Command whose output is the API key, e.g. `pass show anthropic`. Run with `sh -c` once when the provider is first used; it must finish within 30 s. The trailing newline is removed. Empty output or a non-zero exit is an error that shows the command's standard error. **(assumption)** |
 | `timeout_s`    | no       | Request timeout in seconds. Default 300. |
 | `max_retries`  | no       | Retries for network errors and rate limits. Default 3. |
-| `cache`        | no       | `true` or `false`: mark requests for the provider's prompt cache (`anthropic`; see [`providers.md`](providers.md), "anthropic"). Default `true`. The openai-compatible API caches without marks and ignores it. |
+| `cache`        | no       | `true` or `false`: mark requests for the provider's prompt cache (`anthropic`; see [`providers.md`](providers.md), "anthropic"). Default `true`. The openai-compatible and gemini APIs cache without marks and ignore it. |
 
 At most one of `api_key`, `api_key_env` and `api_key_cmd` is set. With none,
-requests are sent without a key. Providers, and so `api_key`, are only allowed
+requests are sent without a key. A user file that holds an `api_key` and
+that others may read (any of the mode bits `077`) gives a warning, not an
+error (RFC 0035): `config.toml: api_key is readable by other users (mode
+0644); run chmod 600 config.toml`. `codeagent run` prints it on standard
+error, the TUI shows it as a notice when it starts. Providers, and so `api_key`, are only allowed
 in the user file, never in a project file. The key is never written to a log
 or shown in the TUI.
 
@@ -877,12 +1004,12 @@ or shown in the TUI.
 
 | Key                 | Required | Meaning |
 |---------------------|----------|---------|
-| `id`                | yes      | Model id the provider's API expects. |
+| `id`                | yes      | Model id the provider's API expects. For `gemini` it is part of the request path, so `/`, `?` and `#` are a load error. |
 | `display_name`      | no       | Name shown in the TUI. Default: the model's config name. |
 | `context_window`    | yes      | Maximum context size in tokens; used for the header gauge and history truncation. |
 | `max_output_tokens` | no       | Maximum tokens per answer. Default: provider default. |
 | `temperature`       | no       | Sampling temperature. Default: provider default. |
-| `images`            | no       | `true` or `false`: the model reads images in messages (RFC 0034, [`tui.md`](tui.md), "Images"). Default `true` for `anthropic`, `false` for `openai-compatible`, where many local models read only text. A message with images to a model without is refused. A model set to `true` that refuses an image gets text notes instead for the rest of the session ([`agent-loop.md`](agent-loop.md), "Errors"). |
+| `images`            | no       | `true` or `false`: the model reads images in messages (RFC 0034, [`tui.md`](tui.md), "Images"). Default `true` for `anthropic` and `gemini`, `false` for `openai-compatible`, where many local models read only text. A message with images to a model without is refused. A model set to `true` that refuses an image gets text notes instead for the rest of the session ([`agent-loop.md`](agent-loop.md), "Errors"). |
 
 ### Model references
 

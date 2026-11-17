@@ -4,10 +4,12 @@
 //! ANTHROPIC_API_KEY=... cargo test --test live -- --ignored
 //! CODEAGENT_LIVE_OPENAI_URL=http://localhost:11434/v1 CODEAGENT_LIVE_OPENAI_MODEL=qwen3-coder:30b \
 //!     cargo test --test live -- --ignored
+//! GEMINI_API_KEY=... cargo test --test live gemini -- --ignored
 //! ```
 //!
 //! `CODEAGENT_LIVE_ANTHROPIC_MODEL` picks the Anthropic model (default
-//! `claude-haiku-5-5`); `CODEAGENT_LIVE_OPENAI_KEY_ENV` names the variable with
+//! `claude-haiku-5-5`), `CODEAGENT_LIVE_GEMINI_MODEL` the Gemini model
+//! (default `gemini-3.8-flash`); `CODEAGENT_LIVE_OPENAI_KEY_ENV` names the variable with
 //! the key for the openai-compatible server, if it needs one. A test whose
 //! variables are not set prints why and passes.
 //!
@@ -86,13 +88,30 @@ fn openai() -> Option<(Arc<dyn Provider>, String)> {
     Some((provider(Api::OpenAiCompatible, url, key), model))
 }
 
+fn gemini() -> Option<(Arc<dyn Provider>, String)> {
+    if std::env::var("GEMINI_API_KEY").is_err() {
+        eprintln!("skipped: GEMINI_API_KEY is not set");
+        return None;
+    }
+    let model = std::env::var("CODEAGENT_LIVE_GEMINI_MODEL").unwrap_or("gemini-3.8-flash".into());
+    let key = KeySource::Env("GEMINI_API_KEY".into());
+    Some((
+        provider(
+            Api::Gemini,
+            "https://generativelanguage.googleapis.com".into(),
+            key,
+        ),
+        model,
+    ))
+}
+
 fn request(model: &str, messages: Vec<Message>, tools: Vec<ToolSpec>) -> Request {
     Request {
         model: model.into(),
         system: "You are a test. Answer briefly.".into(),
         messages,
         tools,
-        max_output_tokens: Some(256),
+        max_output_tokens: Some(2048),
         temperature: Some(0.0),
         images: true,
     }
@@ -146,10 +165,14 @@ async fn tool_round_trip(provider: Arc<dyn Provider>, model: String) {
         request(&model, vec![ask.clone()], vec![tool.clone()]),
     )
     .await;
-    let calls: Vec<(String, serde_json::Value)> = events
+    let calls: Vec<(String, serde_json::Value, Option<String>)> = events
         .iter()
         .filter_map(|e| match e {
-            Event::ToolCallEnd { id, arguments } => Some((id.clone(), arguments.clone())),
+            Event::ToolCallEnd {
+                id,
+                arguments,
+                signature,
+            } => Some((id.clone(), arguments.clone(), signature.clone())),
             _ => None,
         })
         .collect();
@@ -160,7 +183,7 @@ async fn tool_round_trip(provider: Arc<dyn Provider>, model: String) {
         }),
         "{events:?}"
     );
-    let (id, arguments) = calls.first().unwrap().clone();
+    let (id, arguments, signature) = calls.first().unwrap().clone();
     assert_eq!(arguments["name"], json!("blue"));
 
     let answer = Message {
@@ -169,6 +192,7 @@ async fn tool_round_trip(provider: Arc<dyn Provider>, model: String) {
             id: id.clone(),
             name: "get_number".into(),
             arguments,
+            signature,
         }],
     };
     let result = Message {
@@ -222,6 +246,23 @@ async fn openai_text() {
 #[ignore = "needs CODEAGENT_LIVE_OPENAI_URL and CODEAGENT_LIVE_OPENAI_MODEL"]
 async fn openai_tools() {
     if let Some((p, m)) = openai() {
+        tool_round_trip(p, m).await;
+    }
+}
+
+#[tokio::test]
+#[ignore = "needs GEMINI_API_KEY and network"]
+async fn gemini_text() {
+    if let Some((p, m)) = gemini() {
+        text_answer(p, m).await;
+    }
+}
+
+/// The thought signature of the call goes back with it (RFC 0032).
+#[tokio::test]
+#[ignore = "needs GEMINI_API_KEY and network"]
+async fn gemini_tools() {
+    if let Some((p, m)) = gemini() {
         tool_round_trip(p, m).await;
     }
 }

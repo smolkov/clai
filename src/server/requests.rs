@@ -184,6 +184,13 @@ impl Shared {
         if config.scratch {
             ws = ws.with_scratch(self.scratch(id, store));
         }
+        // No provider keys for commands; maybe the sandbox (RFC 0035).
+        ws = ws.with_children(crate::child::Children::from_config(
+            &config,
+            self.load.env.home.as_deref(),
+            self.sessions_dir.parent(),
+            &self.runtime,
+        ));
         let place = ws.tilde(ws.root());
         let path = ws.root().to_path_buf();
         let mut agent = Agent::new(Setup {
@@ -961,7 +968,9 @@ impl Conn {
 
     fn import(&self, path: &Path, name: Option<String>) -> Reply {
         let shared = &self.shared;
-        let bundle = store::read_bundle(path).map_err(ErrorReply::failed)?;
+        let mut bundle = store::read_bundle(path).map_err(ErrorReply::failed)?;
+        // Session rules are not imported (RFC 0035).
+        let dropped_rules = bundle.take_rules();
         if let Some(name) = &name {
             check_name(name)?;
         }
@@ -993,8 +1002,9 @@ impl Conn {
                 slot: Slot::Saved(Box::new(meta)),
             },
         );
-        Ok(Payload::Session {
+        Ok(Payload::Imported {
             session: Box::new(info),
+            dropped_rules,
         })
     }
 }

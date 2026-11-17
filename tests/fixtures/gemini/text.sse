@@ -1,0 +1,4 @@
+data: {"candidates": [{"content": {"parts": [{"text": "Hello"}],"role": "model"},"index": 0}],"usageMetadata": {"promptTokenCount": 25,"totalTokenCount": 25},"modelVersion": "gemini-3.8-flash"}
+
+data: {"candidates": [{"content": {"parts": [{"text": ", wörld!"}],"role": "model"},"finishReason": "STOP","index": 0}],"usageMetadata": {"promptTokenCount": 25,"candidatesTokenCount": 4,"thoughtsTokenCount": 11,"totalTokenCount": 40},"modelVersion": "gemini-3.8-flash"}
+

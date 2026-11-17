@@ -256,6 +256,7 @@ fn settings(config: &Config, connect: &Connect, options: &LoadOptions) -> Settin
         windows,
         tui: tui.clone(),
         theming,
+        warnings: config.warnings.clone(),
     }
 }
 
@@ -384,6 +385,9 @@ async fn event_loop(
     let Attached { client, attachment } = attached;
     let mut connection = Some(Connection::spawn(client));
     let mut app = App::new(settings, attachment, std::time::Instant::now());
+    for warning in app.settings.warnings.clone() {
+        app.conversation.notice(warning);
+    }
     app.activity.reseed(seed());
     if choose {
         app.choose_session();
