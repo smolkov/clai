@@ -20,7 +20,7 @@ Linux binaries (x86_64, aarch64), macOS binaries, Debian packages, and
 shell completions in `completions/`.
 
 ```sh
-v=0.8.0 t=x86_64-unknown-linux-musl
+v=1.0.0 t=x86_64-unknown-linux-musl
 curl -LO https://github.com/smolkov/codeagent/releases/download/v$v/codeagent-$v-$t.tar.gz
 curl -LO https://github.com/smolkov/codeagent/releases/download/v$v/SHA256SUMS
 sha256sum -c --ignore-missing SHA256SUMS
@@ -35,7 +35,7 @@ On Debian and Ubuntu (the package needs no other package and installs the
 shell completions):
 
 ```sh
-sudo apt install ./codeagent_0.8.0-1_amd64.deb
+sudo apt install ./codeagent_1.0.0-1_amd64.deb
 ```
 
 From crates.io, built from source (needs Rust 1.88 or newer and a C

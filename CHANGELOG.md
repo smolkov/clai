@@ -7,6 +7,8 @@ notes are taken from that section by `ci/notes.sh`.
 
 ## Unreleased
 
+## 1.0.0 - 2026-11-17
+
 - Dependency advisories (RFC 0037): the RustSec audit runs on every push,
   daily, and before every release, which now waits for it; `ci/audit.sh`
   runs it locally and fails on ignored advisories past their review date.
