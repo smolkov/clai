@@ -428,5 +428,6 @@ Milestones and their order: [`implementation.md`](implementation.md).
 - [x] Release binaries built with `cargo auditable`.
 - [ ] Set the GitLab pipeline schedule to daily (project settings).
 - [ ] Once, on a fork: a tag with an open advisory stops before `build`;
-      a release binary passes `cargo audit bin`.
+      the aarch64 binary from `cargo auditable zigbuild` has `.dep-v0`
+      (a native release binary passing `cargo audit bin` is checked).
 - [ ] Review `RUSTSEC-2025-0141` (bincode via syntect) by 2027-02-15.

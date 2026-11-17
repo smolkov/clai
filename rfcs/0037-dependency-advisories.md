@@ -301,8 +301,11 @@ itself (2); no `cargo vet` for now (3); the duplicate versions stay (4).
   arithmetic differs between GNU and BSD, and the scripts are POSIX sh.
   `ci/audit.sh` checks that each ignore has a date and that it has not
   passed. `CODEAGENT_TODAY` replaces today's date for the tests.
-- **Checked by hand on this machine:** `cargo auditable build` of
-  `codeagent` gives a binary with a 4.5 KB `.dep-v0` section. The tag
-  gate and `cargo auditable zigbuild` were not run in a pipeline; that
-  check is in `todo.md`.
+- **Checked by hand on this machine:** `cargo auditable build --release`
+  of `codeagent` gives a stripped 17 MB binary whose `.dep-v0` section
+  survives `strip`; `cargo audit bin` (0.23.0) reads it (313
+  dependencies) and finds only `RUSTSEC-2025-0141` (bincode, unmaintained,
+  the ignored advisory) as a warning, exit 0. The tag gate and `cargo
+  auditable zigbuild` were not run in a pipeline; that check is in
+  `todo.md`.
 
