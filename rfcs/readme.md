@@ -157,3 +157,4 @@ Sections that do not apply may be left out.
 | [0033](0033-copilot-provider.md) | GitHub Copilot provider | draft |
 | [0034](0034-images-in-the-input.md) | Images in the input | done |
 | [0035](0035-security-review-two.md) | Second security review: threat model, terminal output, imports, child environment | draft |
+| [0036](0036-agents.md) | Agents | draft |
