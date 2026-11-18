@@ -579,7 +579,7 @@ impl Agent {
                 }
                 StreamEnd::Failed(e) => {
                     self.push(Role::Assistant, answer.text_only());
-                    let mut message = error_message(&model, e);
+                    let mut message = error_message(&model, &model_name, e);
                     if sent_images && refuses_images(e) {
                         message.push_str(&refused_images_hint(&model_name));
                         self.refused_images.insert(model_name);
@@ -1278,8 +1278,17 @@ fn refused_images_hint(model_name: &str) -> String {
     )
 }
 
-fn error_message(model: &Model, e: &ProviderError) -> String {
+fn error_message(model: &Model, model_name: &str, e: &ProviderError) -> String {
     match e.kind {
+        // Retried already (see `spec/providers.md`, "Adapters").
+        ErrorKind::RateLimit | ErrorKind::Overloaded => {
+            let provider = model_name.split_once('/').map_or(model_name, |(p, _)| p);
+            format!(
+                "{}\nthe provider is busy; send the message again later, or raise max_retries \
+                 in [providers.{provider}]",
+                e.message
+            )
+        }
         ErrorKind::ContextTooLong => format!(
             "the conversation is too long for {} ({} tokens); start a new session",
             model.display_name,

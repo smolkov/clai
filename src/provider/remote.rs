@@ -49,14 +49,23 @@ pub(crate) struct RetryPolicy {
 const MAX_BACKOFF: Duration = Duration::from_secs(30);
 const MAX_RETRY_AFTER: Duration = Duration::from_secs(60);
 
+/// A busy provider (rate limit, no capacity) waits this many times longer
+/// than a broken connection: 5, 10, 20 s instead of 1, 2, 4 s.
+const BUSY_FACTOR: u32 = 5;
+
 impl RetryPolicy {
-    /// Wait before retry number `attempt` (0-based).
-    pub fn delay(&self, attempt: u32, retry_after: Option<Duration>) -> Duration {
+    /// Wait before retry number `attempt` (0-based) after an error of
+    /// `kind`; `retry_after` from the provider wins.
+    pub fn delay(&self, attempt: u32, kind: ErrorKind, retry_after: Option<Duration>) -> Duration {
         if let Some(wait) = retry_after {
             return wait.min(MAX_RETRY_AFTER);
         }
+        let base = match kind {
+            ErrorKind::RateLimit | ErrorKind::Overloaded => self.base.saturating_mul(BUSY_FACTOR),
+            _ => self.base,
+        };
         let factor = 2u32.checked_pow(attempt).unwrap_or(u32::MAX);
-        self.base.saturating_mul(factor).min(MAX_BACKOFF)
+        base.saturating_mul(factor).min(MAX_BACKOFF)
     }
 }
 
@@ -207,7 +216,7 @@ impl<C: Codec> Inner<C> {
             {
                 Ok(()) => return Ok(()),
                 Err(e) if e.kind.retryable() && !sink.sent && attempt < self.retry.max_retries => {
-                    let wait = self.retry.delay(attempt, e.retry_after);
+                    let wait = self.retry.delay(attempt, e.kind, e.retry_after);
                     tracing::info!(
                         provider = %self.name,
                         error = %e,
@@ -299,18 +308,23 @@ mod tests {
             max_retries: 10,
             base: Duration::from_secs(1),
         };
-        let secs = |attempt| policy.delay(attempt, None).as_secs();
+        let secs = |attempt| policy.delay(attempt, ErrorKind::Network, None).as_secs();
         assert_eq!(
             [secs(0), secs(1), secs(2), secs(3), secs(4), secs(5)],
             [1, 2, 4, 8, 16, 30]
         );
         assert_eq!(secs(40), 30);
+        // A busy provider gets longer waits.
+        for kind in [ErrorKind::RateLimit, ErrorKind::Overloaded] {
+            let busy = |attempt| policy.delay(attempt, kind, None).as_secs();
+            assert_eq!([busy(0), busy(1), busy(2), busy(3)], [5, 10, 20, 30]);
+        }
         assert_eq!(
-            policy.delay(0, Some(Duration::from_secs(7))),
+            policy.delay(0, ErrorKind::RateLimit, Some(Duration::from_secs(7))),
             Duration::from_secs(7)
         );
         assert_eq!(
-            policy.delay(0, Some(Duration::from_secs(600))),
+            policy.delay(0, ErrorKind::Network, Some(Duration::from_secs(600))),
             Duration::from_secs(60)
         );
     }

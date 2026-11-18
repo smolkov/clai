@@ -33,26 +33,37 @@ impl Codec for OpenAi {
 
     fn status_error(&self, error: StatusError) -> ProviderError {
         let body: Value = serde_json::from_str(&error.body).unwrap_or(Value::Null);
-        let (detail, code) = match body.get("error") {
+        let text = |v: &Value, key: &str| v.get(key).and_then(Value::as_str).map(str::to_owned);
+        let (detail, code, kind_text) = match body.get("error") {
             // OpenAI: {"error": {"message", "type", "code"}}
-            Some(Value::Object(e)) => (
-                e.get("message")
-                    .and_then(Value::as_str)
-                    .unwrap_or(&error.body),
-                e.get("code").and_then(Value::as_str),
+            Some(e @ Value::Object(_)) => (
+                text(e, "message").unwrap_or_else(|| error.body.clone()),
+                text(e, "code"),
+                text(e, "type"),
             ),
             // Ollama and others: {"error": "text"}
-            Some(Value::String(s)) => (s.as_str(), None),
-            _ => (error.body.as_str(), None),
+            Some(Value::String(s)) => (s.clone(), None, None),
+            // Mistral: {"object": "error", "message", "type", "code"}
+            _ => match text(&body, "message") {
+                Some(message) => (message, text(&body, "code"), text(&body, "type")),
+                None => (error.body.clone(), None, None),
+            },
         };
-        let kind = if code == Some("context_length_exceeded") || too_long(detail) {
+        let kind = if code.as_deref() == Some("context_length_exceeded") || too_long(&detail) {
             ErrorKind::ContextTooLong
+        } else if busy(kind_text.as_deref(), &detail) {
+            ErrorKind::Overloaded
         } else {
             status_kind(error.status)
         };
+        // The type says what the message may not: `backend_out_of_capacity`.
+        let detail = match kind_text.filter(|t| !t.is_empty() && !detail.contains(t.as_str())) {
+            Some(t) => format!("{detail} ({t})"),
+            None => detail,
+        };
         ProviderError {
             kind,
-            message: status_message(error.status, detail),
+            message: status_message(error.status, &detail),
             retry_after: error.retry_after,
         }
     }
@@ -60,6 +71,18 @@ impl Codec for OpenAi {
     fn decoder(&self) -> Box<dyn Decode> {
         Box::new(Decoder::default())
     }
+}
+
+/// Whether an error says the provider has no capacity right now, as opposed
+/// to a limit of the user's account: Mistral's `backend_out_of_capacity`,
+/// and "overloaded" or "capacity" in the message.
+fn busy(kind: Option<&str>, message: &str) -> bool {
+    let kind = kind.unwrap_or_default().to_ascii_lowercase();
+    let message = message.to_ascii_lowercase();
+    kind.contains("capacity")
+        || kind.contains("overloaded")
+        || message.contains("overloaded")
+        || message.contains("capacity")
 }
 
 fn too_long(message: &str) -> bool {
@@ -714,5 +737,49 @@ mod tests {
             json!({"role": "user", "content":
                 "look [Image #1]\n[image omitted: this model does not read images]\nplease"})
         );
+    }
+
+    fn status(status: u16, body: &str) -> ProviderError {
+        OpenAi.status_error(StatusError {
+            status,
+            retry_after: None,
+            body: body.into(),
+        })
+    }
+
+    #[test]
+    fn mistral_errors_are_read() {
+        // As Mistral answered when it had no capacity.
+        let e = status(
+            429,
+            r#"{"object":"error","message":"Not enough capacity available for this request, please retry later.","type":"backend_out_of_capacity","param":null,"code":"3505","raw_status_code":429}"#,
+        );
+        assert_eq!(e.kind, ErrorKind::Overloaded);
+        assert!(e.kind.retryable());
+        assert_eq!(
+            e.message,
+            "HTTP 429: Not enough capacity available for this request, please retry later. \
+             (backend_out_of_capacity)"
+        );
+        // A 400 of Mistral: the message and its type, kind by status.
+        let e = status(
+            400,
+            r#"{"object":"error","message":"Image input is not enabled for this model","type":"invalid_request_invalid_args","param":null,"code":"3051"}"#,
+        );
+        assert_eq!(e.kind, ErrorKind::InvalidRequest);
+        assert_eq!(
+            e.message,
+            "HTTP 400: Image input is not enabled for this model (invalid_request_invalid_args)"
+        );
+        // An account limit stays a rate limit.
+        let e = status(
+            429,
+            r#"{"error":{"message":"Rate limit reached for requests","type":"requests","code":"rate_limit_exceeded"}}"#,
+        );
+        assert_eq!(e.kind, ErrorKind::RateLimit);
+        // A type the message already says is not repeated.
+        assert_eq!(e.message, "HTTP 429: Rate limit reached for requests");
+        // A body that is not JSON stays as it is.
+        assert_eq!(status(502, "bad gateway").message, "HTTP 502: bad gateway");
     }
 }

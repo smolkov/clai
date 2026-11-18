@@ -1884,3 +1884,24 @@ async fn a_call_keeps_its_signature_for_the_next_request() {
         });
     assert_eq!(sent, Some(Some("sig==".into())));
 }
+
+#[tokio::test]
+async fn a_busy_provider_gets_a_hint_after_the_retries() {
+    let busy = ProviderError::new(
+        ErrorKind::Overloaded,
+        "HTTP 429: Not enough capacity available for this request, please retry later. \
+         (backend_out_of_capacity)",
+    );
+    let mut f = Fixture::new(vec![Step::Events(vec![Err(busy)])]);
+    let (end, events) = f.turn("hi", &no_questions()).await;
+    assert_eq!(end.reason, EndReason::Failed);
+    assert!(
+        events.contains(&SessionEvent::Error {
+            message:
+                "HTTP 429: Not enough capacity available for this request, please retry later. \
+                  (backend_out_of_capacity)\nthe provider is busy; send the message again \
+                  later, or raise max_retries in [providers.test]"
+                    .into()
+        })
+    );
+}

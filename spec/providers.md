@@ -164,8 +164,10 @@ An adapter:
   [Events](#events);
 - maps HTTP statuses and API error bodies to `ProviderError` kinds;
 - retries errors marked "yes" in [Errors](#errors), up to `max_retries`
-  times with exponential backoff (1 s, 2 s, 4 s, …, at most 30 s), using
-  `retry_after` when it is given (at most 60 s). It retries only before the
+  times with exponential backoff (1 s, 2 s, 4 s, …, at most 30 s; for
+  `RateLimit` and `Overloaded` five times longer, 5 s, 10 s, 20 s, …, at
+  most 30 s, because a busy provider needs longer than a broken
+  connection), using `retry_after` when it is given (at most 60 s). It retries only before the
   first event is sent; once the stream has started, an error ends it and
   the agent loop decides. A stream that breaks before its first event is
   retried as `Network`. **(assumption)** Before each wait it sends a `Retry`
@@ -277,9 +279,15 @@ this API the arguments of a tool call do not stream. **(assumption)**
 - Some servers send a whole tool call in one chunk, several calls without
   `index`, arguments as a JSON object instead of text, or no `[DONE]`; all
   of these give the same events.
-- Error bodies `{"error": {"message", "code"}}` (OpenAI) and
-  `{"error": "text"}` (Ollama) are both understood; `code:
-  "context_length_exceeded"` is `ContextTooLong`.
+- Error bodies `{"error": {"message", "type", "code"}}` (OpenAI),
+  `{"error": "text"}` (Ollama) and `{"object": "error", "message", "type",
+  "code"}` (Mistral) are all understood. The message is the error's
+  `message`, followed by its `type` in parentheses unless the message
+  already says it: `HTTP 429: Not enough capacity available for this
+  request, please retry later. (backend_out_of_capacity)`. `code:
+  "context_length_exceeded"` is `ContextTooLong`; a `type` with
+  `capacity` or `overloaded`, or a message that says so, is `Overloaded`
+  (the provider is busy), not `RateLimit` (a limit of the account).
 
 ### gemini
 

@@ -7,6 +7,13 @@ notes are taken from that section by `ci/notes.sh`.
 
 ## Unreleased
 
+- A busy provider is retried longer: rate limits and overload wait 5, 10,
+  20 s between retries instead of 1, 2, 4 s, and the last error says to
+  try again later or raise `max_retries`. Mistral's error answers read as
+  text (`HTTP 429: Not enough capacity available … (backend_out_of_capacity)`)
+  instead of raw JSON, and "no capacity" counts as overload, not as a rate
+  limit.
+
 ## 1.0.1 - 2026-11-18
 
 - 1.0.0 was tagged but never released: a test of the sandbox settings
