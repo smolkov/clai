@@ -7,8 +7,11 @@ notes are taken from that section by `ci/notes.sh`.
 
 ## Unreleased
 
-## 1.0.0 - 2026-11-17
+## 1.0.1 - 2026-11-18
 
+- 1.0.0 was tagged but never released: a test of the sandbox settings
+  failed on macOS, where the sandbox is not available by design. 1.0.1
+  holds all changes below, with that test fixed.
 - Dependency advisories (RFC 0037): the RustSec audit runs on every push,
   daily, and before every release, which now waits for it; `ci/audit.sh`
   runs it locally and fails on ignored advisories past their review date.
